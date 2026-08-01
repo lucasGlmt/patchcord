@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PluginService_Handshake_FullMethodName = "/plugin.v1.PluginService/Handshake"
+	PluginService_Handshake_FullMethodName     = "/plugin.v1.PluginService/Handshake"
+	PluginService_ExecuteAction_FullMethodName = "/plugin.v1.PluginService/ExecuteAction"
 )
 
 // PluginServiceClient is the client API for PluginService service.
@@ -34,6 +35,10 @@ type PluginServiceClient interface {
 	// manifest: its identity, version, and the connectors/actions it
 	// contributes to the agent.
 	Handshake(ctx context.Context, in *HandshakeRequest, opts ...grpc.CallOption) (*HandshakeResponse, error)
+	// ExecuteAction runs one of the plugin's contributed actions and returns
+	// its output. The agent only calls this for actions listed in the
+	// manifest's Contributions returned by Handshake.
+	ExecuteAction(ctx context.Context, in *ExecuteActionRequest, opts ...grpc.CallOption) (*ExecuteActionResponse, error)
 }
 
 type pluginServiceClient struct {
@@ -54,6 +59,16 @@ func (c *pluginServiceClient) Handshake(ctx context.Context, in *HandshakeReques
 	return out, nil
 }
 
+func (c *pluginServiceClient) ExecuteAction(ctx context.Context, in *ExecuteActionRequest, opts ...grpc.CallOption) (*ExecuteActionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExecuteActionResponse)
+	err := c.cc.Invoke(ctx, PluginService_ExecuteAction_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginServiceServer is the server API for PluginService service.
 // All implementations must embed UnimplementedPluginServiceServer
 // for forward compatibility.
@@ -66,6 +81,10 @@ type PluginServiceServer interface {
 	// manifest: its identity, version, and the connectors/actions it
 	// contributes to the agent.
 	Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error)
+	// ExecuteAction runs one of the plugin's contributed actions and returns
+	// its output. The agent only calls this for actions listed in the
+	// manifest's Contributions returned by Handshake.
+	ExecuteAction(context.Context, *ExecuteActionRequest) (*ExecuteActionResponse, error)
 	mustEmbedUnimplementedPluginServiceServer()
 }
 
@@ -78,6 +97,9 @@ type UnimplementedPluginServiceServer struct{}
 
 func (UnimplementedPluginServiceServer) Handshake(context.Context, *HandshakeRequest) (*HandshakeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Handshake not implemented")
+}
+func (UnimplementedPluginServiceServer) ExecuteAction(context.Context, *ExecuteActionRequest) (*ExecuteActionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExecuteAction not implemented")
 }
 func (UnimplementedPluginServiceServer) mustEmbedUnimplementedPluginServiceServer() {}
 func (UnimplementedPluginServiceServer) testEmbeddedByValue()                       {}
@@ -118,6 +140,24 @@ func _PluginService_Handshake_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginService_ExecuteAction_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecuteActionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).ExecuteAction(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_ExecuteAction_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).ExecuteAction(ctx, req.(*ExecuteActionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginService_ServiceDesc is the grpc.ServiceDesc for PluginService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -128,6 +168,10 @@ var PluginService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Handshake",
 			Handler:    _PluginService_Handshake_Handler,
+		},
+		{
+			MethodName: "ExecuteAction",
+			Handler:    _PluginService_ExecuteAction_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

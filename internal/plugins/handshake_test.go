@@ -16,8 +16,12 @@ import (
 
 type fakePluginServer struct {
 	pluginv1.UnimplementedPluginServiceServer
+
 	response *pluginv1.HandshakeResponse
 	err      error
+
+	executeResponse *pluginv1.ExecuteActionResponse
+	executeErr      error
 }
 
 func (f *fakePluginServer) Handshake(context.Context, *pluginv1.HandshakeRequest) (*pluginv1.HandshakeResponse, error) {
@@ -25,6 +29,13 @@ func (f *fakePluginServer) Handshake(context.Context, *pluginv1.HandshakeRequest
 		return nil, f.err
 	}
 	return f.response, nil
+}
+
+func (f *fakePluginServer) ExecuteAction(context.Context, *pluginv1.ExecuteActionRequest) (*pluginv1.ExecuteActionResponse, error) {
+	if f.executeErr != nil {
+		return nil, f.executeErr
+	}
+	return f.executeResponse, nil
 }
 
 // dialFakePlugin starts an in-memory gRPC server backed by srv and returns a

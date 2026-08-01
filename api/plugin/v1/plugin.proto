@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package plugin.v1;
 
+import "google/protobuf/struct.proto";
+
 option go_package = "github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1";
 
 // PluginService is implemented by every Patchcord plugin process. The agent
@@ -12,6 +14,11 @@ service PluginService {
   // manifest: its identity, version, and the connectors/actions it
   // contributes to the agent.
   rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+
+  // ExecuteAction runs one of the plugin's contributed actions and returns
+  // its output. The agent only calls this for actions listed in the
+  // manifest's Contributions returned by Handshake.
+  rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse);
 }
 
 // HandshakeRequest is sent once, immediately after the agent connects to a
@@ -42,4 +49,16 @@ message HandshakeResponse {
 message Contributions {
   repeated string connectors = 1;
   repeated string actions = 2;
+}
+
+// ExecuteActionRequest asks the plugin to run one action.
+message ExecuteActionRequest {
+  // The action identifier, e.g. "text.uppercase@1".
+  string action = 1;
+  google.protobuf.Struct input = 2;
+}
+
+// ExecuteActionResponse carries the action's output.
+message ExecuteActionResponse {
+  google.protobuf.Struct output = 1;
 }

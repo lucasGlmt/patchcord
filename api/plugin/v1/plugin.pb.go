@@ -9,6 +9,7 @@ package pluginv1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	structpb "google.golang.org/protobuf/types/known/structpb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -204,11 +205,110 @@ func (x *Contributions) GetActions() []string {
 	return nil
 }
 
+// ExecuteActionRequest asks the plugin to run one action.
+type ExecuteActionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The action identifier, e.g. "text.uppercase@1".
+	Action        string           `protobuf:"bytes,1,opt,name=action,proto3" json:"action,omitempty"`
+	Input         *structpb.Struct `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecuteActionRequest) Reset() {
+	*x = ExecuteActionRequest{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecuteActionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecuteActionRequest) ProtoMessage() {}
+
+func (x *ExecuteActionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecuteActionRequest.ProtoReflect.Descriptor instead.
+func (*ExecuteActionRequest) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExecuteActionRequest) GetAction() string {
+	if x != nil {
+		return x.Action
+	}
+	return ""
+}
+
+func (x *ExecuteActionRequest) GetInput() *structpb.Struct {
+	if x != nil {
+		return x.Input
+	}
+	return nil
+}
+
+// ExecuteActionResponse carries the action's output.
+type ExecuteActionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Output        *structpb.Struct       `protobuf:"bytes,1,opt,name=output,proto3" json:"output,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecuteActionResponse) Reset() {
+	*x = ExecuteActionResponse{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecuteActionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecuteActionResponse) ProtoMessage() {}
+
+func (x *ExecuteActionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecuteActionResponse.ProtoReflect.Descriptor instead.
+func (*ExecuteActionResponse) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ExecuteActionResponse) GetOutput() *structpb.Struct {
+	if x != nil {
+		return x.Output
+	}
+	return nil
+}
+
 var File_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\n" +
-	"\x16plugin/v1/plugin.proto\x12\tplugin.v1\"=\n" +
+	"\x16plugin/v1/plugin.proto\x12\tplugin.v1\x1a\x1cgoogle/protobuf/struct.proto\"=\n" +
 	"\x10HandshakeRequest\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\"\xe0\x01\n" +
 	"\x11HandshakeResponse\x12)\n" +
@@ -221,9 +321,15 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\n" +
 	"connectors\x18\x01 \x03(\tR\n" +
 	"connectors\x12\x18\n" +
-	"\aactions\x18\x02 \x03(\tR\aactions2W\n" +
+	"\aactions\x18\x02 \x03(\tR\aactions\"]\n" +
+	"\x14ExecuteActionRequest\x12\x16\n" +
+	"\x06action\x18\x01 \x01(\tR\x06action\x12-\n" +
+	"\x05input\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05input\"H\n" +
+	"\x15ExecuteActionResponse\x12/\n" +
+	"\x06output\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06output2\xab\x01\n" +
 	"\rPluginService\x12F\n" +
-	"\tHandshake\x12\x1b.plugin.v1.HandshakeRequest\x1a\x1c.plugin.v1.HandshakeResponseB7Z5github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1b\x06proto3"
+	"\tHandshake\x12\x1b.plugin.v1.HandshakeRequest\x1a\x1c.plugin.v1.HandshakeResponse\x12R\n" +
+	"\rExecuteAction\x12\x1f.plugin.v1.ExecuteActionRequest\x1a .plugin.v1.ExecuteActionResponseB7Z5github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_plugin_v1_plugin_proto_rawDescOnce sync.Once
@@ -237,21 +343,28 @@ func file_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_plugin_v1_plugin_proto_goTypes = []any{
-	(*HandshakeRequest)(nil),  // 0: plugin.v1.HandshakeRequest
-	(*HandshakeResponse)(nil), // 1: plugin.v1.HandshakeResponse
-	(*Contributions)(nil),     // 2: plugin.v1.Contributions
+	(*HandshakeRequest)(nil),      // 0: plugin.v1.HandshakeRequest
+	(*HandshakeResponse)(nil),     // 1: plugin.v1.HandshakeResponse
+	(*Contributions)(nil),         // 2: plugin.v1.Contributions
+	(*ExecuteActionRequest)(nil),  // 3: plugin.v1.ExecuteActionRequest
+	(*ExecuteActionResponse)(nil), // 4: plugin.v1.ExecuteActionResponse
+	(*structpb.Struct)(nil),       // 5: google.protobuf.Struct
 }
 var file_plugin_v1_plugin_proto_depIdxs = []int32{
 	2, // 0: plugin.v1.HandshakeResponse.contributes:type_name -> plugin.v1.Contributions
-	0, // 1: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
-	1, // 2: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
-	2, // [2:3] is the sub-list for method output_type
-	1, // [1:2] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 1: plugin.v1.ExecuteActionRequest.input:type_name -> google.protobuf.Struct
+	5, // 2: plugin.v1.ExecuteActionResponse.output:type_name -> google.protobuf.Struct
+	0, // 3: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
+	3, // 4: plugin.v1.PluginService.ExecuteAction:input_type -> plugin.v1.ExecuteActionRequest
+	1, // 5: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
+	4, // 6: plugin.v1.PluginService.ExecuteAction:output_type -> plugin.v1.ExecuteActionResponse
+	5, // [5:7] is the sub-list for method output_type
+	3, // [3:5] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_plugin_v1_plugin_proto_init() }
@@ -265,7 +378,7 @@ func file_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_v1_plugin_proto_rawDesc), len(file_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

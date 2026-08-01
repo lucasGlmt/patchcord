@@ -9,22 +9,31 @@ import (
 	"time"
 )
 
-// fakePluginPath is built once in TestMain and reused by every test in this
-// package, so Launch can be exercised against a real process without
-// needing the (not yet built) plugin SDK.
-var fakePluginPath string
+// fakePluginPath and examplePluginPath are built once in TestMain and
+// reused by every test in this package, so Launch, Handshake and
+// ExecuteAction can be exercised against real processes: a minimal fixture
+// for edge cases, and the actual text-uppercase example plugin (built on
+// the real SDK) for an end-to-end proof of the protocol.
+var (
+	fakePluginPath    string
+	examplePluginPath string
+)
 
 func TestMain(m *testing.M) {
-	tmpDir, err := os.MkdirTemp("", "patchcord-fakeplugin")
+	tmpDir, err := os.MkdirTemp("", "patchcord-plugin-fixtures")
 	if err != nil {
 		panic(err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	fakePluginPath = filepath.Join(tmpDir, "fakeplugin")
-	build := exec.Command("go", "build", "-o", fakePluginPath, "./testdata/fakeplugin")
-	if out, err := build.CombinedOutput(); err != nil {
+	if out, err := exec.Command("go", "build", "-o", fakePluginPath, "./testdata/fakeplugin").CombinedOutput(); err != nil {
 		panic("build fake plugin: " + err.Error() + "\n" + string(out))
+	}
+
+	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
+	if out, err := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase").CombinedOutput(); err != nil {
+		panic("build example plugin: " + err.Error() + "\n" + string(out))
 	}
 
 	os.Exit(m.Run())
