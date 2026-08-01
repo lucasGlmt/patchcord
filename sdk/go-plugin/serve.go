@@ -8,6 +8,8 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -33,6 +35,14 @@ func Serve(plugin Plugin) error {
 
 	grpcServer := grpc.NewServer()
 	pluginv1.RegisterPluginServiceServer(grpcServer, srv)
+
+	// The agent's Plugin Supervisor polls the standard gRPC health protocol
+	// to detect an unresponsive plugin. Report SERVING as soon as the
+	// server starts: this plugin has no sub-components whose health could
+	// diverge from "process is up and the gRPC server is running".
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(grpcServer, healthServer)
 
 	ready, err := json.Marshal(struct {
 		Address string `json:"address"`
