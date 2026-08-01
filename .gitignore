@@ -1,0 +1,32 @@
+# Build output
+/bin/
+/dist/
+patchcord
+patchcord.exe
+
+# Go
+*.test
+*.out
+vendor/
+
+# Local runtime data
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+/data/
+
+# Secrets and local config overrides
+.env
+.env.*
+*.local.yaml
+*.local.yml
+
+# Node (sdk/typescript, apps/examples)
+node_modules/
+dist/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
