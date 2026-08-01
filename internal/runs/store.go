@@ -24,6 +24,10 @@ var ErrWorkflowNotFound = errors.New("workflow not found")
 // recorded.
 var ErrRunNotFound = errors.New("run not found")
 
+// ErrRunNotCancellable is returned by CancelRun when the run has already
+// reached a terminal state.
+var ErrRunNotCancellable = errors.New("run is not in a cancellable state")
+
 // InstallWorkflow validates def against knownActions, then records it as a
 // new, immutable version (ADR-0008): publishing never overwrites an
 // existing (workflow_id, version) row.
@@ -66,6 +70,73 @@ func LatestWorkflow(ctx context.Context, db *sql.DB, workflowID string) (*workfl
 	return workflow.Parse([]byte(source))
 }
 
+// WorkflowVersionSummary describes one installed workflow version, without
+// its full source (see WorkflowSource for that).
+type WorkflowVersionSummary struct {
+	WorkflowID  string
+	Version     int
+	InstalledAt time.Time
+}
+
+// ListWorkflows returns every installed workflow version, most recently
+// installed first.
+func ListWorkflows(ctx context.Context, db *sql.DB) ([]WorkflowVersionSummary, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT workflow_id, version, installed_at
+		FROM workflow_versions
+		ORDER BY installed_at DESC
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list workflows: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []WorkflowVersionSummary
+	for rows.Next() {
+		var s WorkflowVersionSummary
+		if err := rows.Scan(&s.WorkflowID, &s.Version, &s.InstalledAt); err != nil {
+			return nil, fmt.Errorf("scan workflow version: %w", err)
+		}
+		summaries = append(summaries, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list workflows: %w", err)
+	}
+
+	return summaries, nil
+}
+
+// WorkflowSource returns the raw YAML source of one workflow version.
+// version 0 means the latest installed version. It returns
+// ErrWorkflowNotFound if no such (workflow, version) has been installed.
+func WorkflowSource(ctx context.Context, db *sql.DB, workflowID string, version int) (string, error) {
+	var (
+		source string
+		err    error
+	)
+	if version == 0 {
+		err = db.QueryRowContext(ctx, `
+			SELECT definition FROM workflow_versions
+			WHERE workflow_id = ?
+			ORDER BY version DESC
+			LIMIT 1
+		`, workflowID).Scan(&source)
+	} else {
+		err = db.QueryRowContext(ctx, `
+			SELECT definition FROM workflow_versions
+			WHERE workflow_id = ? AND version = ?
+		`, workflowID, version).Scan(&source)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrWorkflowNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("load source of workflow %q version %d: %w", workflowID, version, err)
+	}
+
+	return source, nil
+}
+
 // Run is one execution of a workflow version, as persisted.
 type Run struct {
 	ID              string
@@ -76,16 +147,20 @@ type Run struct {
 	Outputs         map[string]any
 	Error           string
 	CreatedAt       time.Time
+	StartedAt       *time.Time
+	FinishedAt      *time.Time
 }
 
 // Step is one step of a Run, as persisted.
 type Step struct {
-	RunID  string
-	StepID string
-	Status workflow.StepStatus
-	Input  map[string]any
-	Output map[string]any
-	Error  string
+	RunID      string
+	StepID     string
+	Status     workflow.StepStatus
+	Input      map[string]any
+	Output     map[string]any
+	Error      string
+	StartedAt  *time.Time
+	FinishedAt *time.Time
 }
 
 // createRun inserts a new run in the queued state and one pending row per
@@ -215,22 +290,51 @@ func updateStepStatus(ctx context.Context, db *sql.DB, runID, stepID string, fro
 	return nil
 }
 
-// GetRun returns a run and its steps by id. It returns ErrRunNotFound if
-// no such run has been recorded.
-func GetRun(ctx context.Context, db *sql.DB, id string) (*Run, []Step, error) {
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanRun(row rowScanner) (Run, error) {
 	var (
 		run         Run
 		status      string
 		inputsJSON  string
 		outputsJSON string
 		errText     sql.NullString
-		createdAt   time.Time
+		startedAt   sql.NullTime
+		finishedAt  sql.NullTime
 	)
 
-	err := db.QueryRowContext(ctx, `
-		SELECT id, workflow_id, workflow_version, status, inputs, outputs, error, created_at
-		FROM runs WHERE id = ?
-	`, id).Scan(&run.ID, &run.WorkflowID, &run.WorkflowVersion, &status, &inputsJSON, &outputsJSON, &errText, &createdAt)
+	if err := row.Scan(&run.ID, &run.WorkflowID, &run.WorkflowVersion, &status,
+		&inputsJSON, &outputsJSON, &errText, &run.CreatedAt, &startedAt, &finishedAt); err != nil {
+		return Run{}, err
+	}
+
+	run.Status = workflow.RunStatus(status)
+	run.Error = errText.String
+	if startedAt.Valid {
+		run.StartedAt = &startedAt.Time
+	}
+	if finishedAt.Valid {
+		run.FinishedAt = &finishedAt.Time
+	}
+	if err := json.Unmarshal([]byte(inputsJSON), &run.Inputs); err != nil {
+		return Run{}, fmt.Errorf("decode run inputs: %w", err)
+	}
+	if err := json.Unmarshal([]byte(outputsJSON), &run.Outputs); err != nil {
+		return Run{}, fmt.Errorf("decode run outputs: %w", err)
+	}
+
+	return run, nil
+}
+
+const runColumns = `id, workflow_id, workflow_version, status, inputs, outputs, error, created_at, started_at, finished_at`
+
+// GetRun returns a run and its steps by id. It returns ErrRunNotFound if
+// no such run has been recorded.
+func GetRun(ctx context.Context, db *sql.DB, id string) (*Run, []Step, error) {
+	run, err := scanRun(db.QueryRowContext(ctx, `SELECT `+runColumns+` FROM runs WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil, ErrRunNotFound
 	}
@@ -238,18 +342,8 @@ func GetRun(ctx context.Context, db *sql.DB, id string) (*Run, []Step, error) {
 		return nil, nil, fmt.Errorf("get run %s: %w", id, err)
 	}
 
-	run.Status = workflow.RunStatus(status)
-	run.Error = errText.String
-	run.CreatedAt = createdAt
-	if err := json.Unmarshal([]byte(inputsJSON), &run.Inputs); err != nil {
-		return nil, nil, fmt.Errorf("decode run inputs: %w", err)
-	}
-	if err := json.Unmarshal([]byte(outputsJSON), &run.Outputs); err != nil {
-		return nil, nil, fmt.Errorf("decode run outputs: %w", err)
-	}
-
 	rows, err := db.QueryContext(ctx, `
-		SELECT run_id, step_id, status, input, output, error
+		SELECT run_id, step_id, status, input, output, error, started_at, finished_at
 		FROM run_steps WHERE run_id = ?
 		ORDER BY rowid
 	`, id)
@@ -266,12 +360,21 @@ func GetRun(ctx context.Context, db *sql.DB, id string) (*Run, []Step, error) {
 			inputJSON   string
 			outputJSON  string
 			stepErrText sql.NullString
+			startedAt   sql.NullTime
+			finishedAt  sql.NullTime
 		)
-		if err := rows.Scan(&step.RunID, &step.StepID, &stepStatus, &inputJSON, &outputJSON, &stepErrText); err != nil {
+		if err := rows.Scan(&step.RunID, &step.StepID, &stepStatus, &inputJSON, &outputJSON,
+			&stepErrText, &startedAt, &finishedAt); err != nil {
 			return nil, nil, fmt.Errorf("scan step: %w", err)
 		}
 		step.Status = workflow.StepStatus(stepStatus)
 		step.Error = stepErrText.String
+		if startedAt.Valid {
+			step.StartedAt = &startedAt.Time
+		}
+		if finishedAt.Valid {
+			step.FinishedAt = &finishedAt.Time
+		}
 		if err := json.Unmarshal([]byte(inputJSON), &step.Input); err != nil {
 			return nil, nil, fmt.Errorf("decode step input: %w", err)
 		}
@@ -285,4 +388,70 @@ func GetRun(ctx context.Context, db *sql.DB, id string) (*Run, []Step, error) {
 	}
 
 	return &run, steps, nil
+}
+
+// ListRuns returns every recorded run, most recently created first.
+// workflowID, if non-empty, restricts the list to runs of that workflow.
+func ListRuns(ctx context.Context, db *sql.DB, workflowID string) ([]Run, error) {
+	query := `SELECT ` + runColumns + ` FROM runs`
+	args := []any{}
+	if workflowID != "" {
+		query += ` WHERE workflow_id = ?`
+		args = append(args, workflowID)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list runs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []Run
+	for rows.Next() {
+		run, err := scanRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan run: %w", err)
+		}
+		result = append(result, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list runs: %w", err)
+	}
+
+	return result, nil
+}
+
+// CancelRun marks a run still in the queued or running state as cancelled,
+// along with any of its steps that never reached a terminal state.
+//
+// patchcord workflow run executes synchronously within its own process, so
+// this cannot interrupt a run actively in progress elsewhere — it is meant
+// for a run left behind non-terminal by a crashed process. It returns
+// ErrRunNotCancellable if the run has already reached a terminal state.
+func CancelRun(ctx context.Context, db *sql.DB, id string) error {
+	run, steps, err := GetRun(ctx, db, id)
+	if err != nil {
+		return err
+	}
+
+	if run.Status != workflow.RunQueued && run.Status != workflow.RunRunning {
+		return ErrRunNotCancellable
+	}
+
+	cancelErr := errors.New("cancelled")
+	if err := updateRunStatus(ctx, db, run, workflow.RunCancelled, run.Outputs, cancelErr); err != nil {
+		return err
+	}
+
+	for _, step := range steps {
+		if step.Status != workflow.StepPending && step.Status != workflow.StepRunning {
+			continue
+		}
+		if err := updateStepStatus(ctx, db, id, step.StepID, step.Status, workflow.StepCancelled, step.Input, step.Output, nil); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

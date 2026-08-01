@@ -36,8 +36,14 @@ func TestNewRootCommand_HasWorkflowAndRunSubcommands(t *testing.T) {
 
 	for _, path := range [][]string{
 		{"workflow", "install"},
+		{"workflow", "list"},
+		{"workflow", "validate"},
+		{"workflow", "export"},
 		{"workflow", "run"},
+		{"run", "list"},
 		{"run", "inspect"},
+		{"run", "logs"},
+		{"run", "cancel"},
 	} {
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
 			cmd, _, err := root.Find(path)
@@ -80,6 +86,86 @@ steps:
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected an error for an unknown action, got nil")
 	}
+}
+
+func TestWorkflowValidateCommand_Success(t *testing.T) {
+	dataDir := t.TempDir()
+
+	pluginInstall := newPluginInstallCommand()
+	pluginInstall.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
+	pluginInstall.SetContext(context.Background())
+	if err := pluginInstall.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+
+	path := writeWorkflowFile(t, helloPatchcordYAML)
+	cmd := newWorkflowValidateCommand()
+	cmd.SetArgs([]string{path, "--data-dir", dataDir})
+	cmd.SetContext(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("workflow validate error = %v", err)
+	}
+	if !strings.Contains(out.String(), "is valid") {
+		t.Fatalf("output = %q, want it to say the workflow is valid", out.String())
+	}
+
+	// validate must not install anything.
+	list, err := newWorkflowListOutput(t, dataDir)
+	if err != nil {
+		t.Fatalf("workflow list error = %v", err)
+	}
+	if strings.Contains(list, "hello_patchcord") {
+		t.Fatalf("workflow list = %q, want validate not to have installed the workflow", list)
+	}
+}
+
+func TestWorkflowValidateCommand_FailsForAnUnknownAction(t *testing.T) {
+	path := writeWorkflowFile(t, `
+schema_version: 1
+id: broken
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: step
+    uses: does.not.exist@1
+`)
+
+	cmd := newWorkflowValidateCommand()
+	cmd.SetArgs([]string{path, "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected an error for an unknown action, got nil")
+	}
+}
+
+func TestWorkflowExportCommand_UnknownWorkflow(t *testing.T) {
+	cmd := newWorkflowExportCommand()
+	cmd.SetArgs([]string{"unknown", "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for an unknown workflow, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %q, want it to mention the workflow was not found", err.Error())
+	}
+}
+
+func newWorkflowListOutput(t *testing.T, dataDir string) (string, error) {
+	t.Helper()
+	cmd := newWorkflowListCommand()
+	cmd.SetArgs([]string{"--data-dir", dataDir})
+	cmd.SetContext(context.Background())
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	err := cmd.Execute()
+	return out.String(), err
 }
 
 // TestWorkflowLifecycle_HelloPatchcordEndToEnd reproduces the vision
@@ -140,6 +226,58 @@ func TestWorkflowLifecycle_HelloPatchcordEndToEnd(t *testing.T) {
 	inspectOutput := inspectOut.String()
 	if !strings.Contains(inspectOutput, "transform: succeeded") {
 		t.Fatalf("inspect output = %q, want it to show the transform step as succeeded", inspectOutput)
+	}
+
+	listOutput, err := newWorkflowListOutput(t, dataDir)
+	if err != nil {
+		t.Fatalf("workflow list error = %v", err)
+	}
+	if !strings.Contains(listOutput, "hello_patchcord") {
+		t.Fatalf("workflow list output = %q, want it to mention hello_patchcord", listOutput)
+	}
+
+	exportCmd := newWorkflowExportCommand()
+	exportCmd.SetArgs([]string{"hello_patchcord", "--data-dir", dataDir})
+	exportCmd.SetContext(context.Background())
+	var exportOut bytes.Buffer
+	exportCmd.SetOut(&exportOut)
+	if err := exportCmd.Execute(); err != nil {
+		t.Fatalf("workflow export error = %v", err)
+	}
+	if exportOut.String() != helloPatchcordYAML {
+		t.Fatalf("exported source = %q, want the original source back verbatim", exportOut.String())
+	}
+
+	runList := newRunListCommand()
+	runList.SetArgs([]string{"--data-dir", dataDir})
+	runList.SetContext(context.Background())
+	var runListOut bytes.Buffer
+	runList.SetOut(&runListOut)
+	if err := runList.Execute(); err != nil {
+		t.Fatalf("run list error = %v", err)
+	}
+	if !strings.Contains(runListOut.String(), runID) {
+		t.Fatalf("run list output = %q, want it to contain %q", runListOut.String(), runID)
+	}
+
+	runLogs := newRunLogsCommand()
+	runLogs.SetArgs([]string{runID, "--data-dir", dataDir})
+	runLogs.SetContext(context.Background())
+	var runLogsOut bytes.Buffer
+	runLogs.SetOut(&runLogsOut)
+	if err := runLogs.Execute(); err != nil {
+		t.Fatalf("run logs error = %v", err)
+	}
+	if !strings.Contains(runLogsOut.String(), "transform") || !strings.Contains(runLogsOut.String(), "succeeded") {
+		t.Fatalf("run logs output = %q, want it to mention the transform step succeeding", runLogsOut.String())
+	}
+
+	// The run already finished, so cancelling it now must fail.
+	runCancel := newRunCancelCommand()
+	runCancel.SetArgs([]string{runID, "--data-dir", dataDir})
+	runCancel.SetContext(context.Background())
+	if err := runCancel.Execute(); err == nil {
+		t.Fatal("expected an error cancelling an already-finished run, got nil")
 	}
 }
 
