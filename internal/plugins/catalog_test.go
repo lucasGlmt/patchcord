@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/persistence"
@@ -48,8 +49,9 @@ func TestInstall_LaunchesHandshakesAndRecordsTheManifest(t *testing.T) {
 	if entry.ExecutablePath != examplePluginPath {
 		t.Fatalf("ExecutablePath = %q, want %q", entry.ExecutablePath, examplePluginPath)
 	}
-	if len(entry.Actions) != 1 || entry.Actions[0] != "text.uppercase@1" {
-		t.Fatalf("Actions = %v, want [text.uppercase@1]", entry.Actions)
+	wantActions := []string{"text.uppercase@1", "text.lowercase@1", "text.join@1"}
+	if !slices.Equal(entry.Actions, wantActions) {
+		t.Fatalf("Actions = %v, want %v", entry.Actions, wantActions)
 	}
 
 	got, err := Get(context.Background(), db, entry.PluginID)

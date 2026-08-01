@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// examplePluginPath is built once for this package's tests: the real
-// text-uppercase example plugin, so the plugin command group can be proven
-// against an actual binary, not just its fail-fast paths.
+// examplePluginPath is built once for this package's tests: the real text
+// example plugin, so the plugin command group can be proven against an
+// actual binary, not just its fail-fast paths.
 var examplePluginPath string
 
 func TestMain(m *testing.M) {
@@ -22,8 +22,8 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
-	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase")
+	examplePluginPath = filepath.Join(tmpDir, "text")
+	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("build example plugin: " + err.Error() + "\n" + string(out))
 	}

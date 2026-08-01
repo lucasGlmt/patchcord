@@ -1,0 +1,18 @@
+schema_version: 1
+
+id: greet_twice
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    with:
+      value: "${{ workflow.inputs.name }}"
+
+  - id: shout_again
+    uses: text.uppercase@1
+    with:
+      value: "${{ steps.shout.outputs.value }}"

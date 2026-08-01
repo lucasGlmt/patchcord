@@ -33,8 +33,8 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
-	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase")
+	examplePluginPath = filepath.Join(tmpDir, "text")
+	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("build example plugin: " + err.Error() + "\n" + string(out))
 	}

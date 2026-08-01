@@ -12,8 +12,8 @@ import (
 // fakePluginPath and examplePluginPath are built once in TestMain and
 // reused by every test in this package, so Launch, Handshake and
 // ExecuteAction can be exercised against real processes: a minimal fixture
-// for edge cases, and the actual text-uppercase example plugin (built on
-// the real SDK) for an end-to-end proof of the protocol.
+// for edge cases, and the actual text example plugin (built on the real
+// SDK) for an end-to-end proof of the protocol.
 var (
 	fakePluginPath    string
 	examplePluginPath string
@@ -31,8 +31,8 @@ func TestMain(m *testing.M) {
 		panic("build fake plugin: " + err.Error() + "\n" + string(out))
 	}
 
-	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
-	if out, err := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase").CombinedOutput(); err != nil {
+	examplePluginPath = filepath.Join(tmpDir, "text")
+	if out, err := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text").CombinedOutput(); err != nil {
 		panic("build example plugin: " + err.Error() + "\n" + string(out))
 	}
 
