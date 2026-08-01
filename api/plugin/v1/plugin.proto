@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package plugin.v1;
+
+option go_package = "github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1";
+
+// PluginService is implemented by every Patchcord plugin process. The agent
+// dials it right after launching the plugin and must complete the handshake
+// before using any of its contributions.
+service PluginService {
+  // Handshake negotiates the protocol version and returns the plugin's
+  // manifest: its identity, version, and the connectors/actions it
+  // contributes to the agent.
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
+}
+
+// HandshakeRequest is sent once, immediately after the agent connects to a
+// freshly launched plugin process.
+message HandshakeRequest {
+  // Highest plugin protocol version the calling agent supports.
+  uint32 protocol_version = 1;
+}
+
+// HandshakeResponse carries the plugin's manifest, as introduced in the
+// vision document (section 8.3).
+message HandshakeResponse {
+  // Protocol version the plugin will speak for the rest of this session.
+  // Must not exceed HandshakeRequest.protocol_version; the agent rejects the
+  // plugin if it does.
+  uint32 protocol_version = 1;
+
+  string plugin_id = 2;
+  string plugin_version = 3;
+
+  Contributions contributes = 4;
+  repeated string permissions = 5;
+}
+
+// Contributions lists the identifiers a plugin adds to the agent's
+// registries once installed. Every entry is a stable, versioned identifier
+// such as "postgresql.query@1".
+message Contributions {
+  repeated string connectors = 1;
+  repeated string actions = 2;
+}
