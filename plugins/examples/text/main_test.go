@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	patchcord "github.com/lucasglmt/patchcord/sdk/go-plugin"
@@ -149,6 +150,78 @@ func TestJoinAction_Run(t *testing.T) {
 			}
 			if output["value"] != tt.want {
 				t.Fatalf("output[value] = %v, want %q", output["value"], tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitAction_Run(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   patchcord.ActionInput
+		want    []string
+		wantErr bool
+	}{
+		{
+			name:  "splits on the separator",
+			input: patchcord.ActionInput{"value": "welcome to patchcord", "separator": " "},
+			want:  []string{"welcome", "to", "patchcord"},
+		},
+		{
+			name:  "splits on a multi-character separator",
+			input: patchcord.ActionInput{"value": "a, b, c", "separator": ", "},
+			want:  []string{"a", "b", "c"},
+		},
+		{
+			name:  "returns the whole value when the separator never occurs",
+			input: patchcord.ActionInput{"value": "solo", "separator": ","},
+			want:  []string{"solo"},
+		},
+		{
+			name:    "rejects a missing value",
+			input:   patchcord.ActionInput{"separator": " "},
+			wantErr: true,
+		},
+		{
+			name:    "rejects a non-string value",
+			input:   patchcord.ActionInput{"value": 42, "separator": " "},
+			wantErr: true,
+		},
+		{
+			name:    "rejects a missing separator",
+			input:   patchcord.ActionInput{"value": "welcome to patchcord"},
+			wantErr: true,
+		},
+		{
+			name:    "rejects a non-string separator",
+			input:   patchcord.ActionInput{"value": "welcome to patchcord", "separator": 42},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := splitAction{}.Run(context.Background(), tt.input)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			got, ok := output["values"].([]any)
+			if !ok {
+				t.Fatalf("output[values] = %#v, want []any", output["values"])
+			}
+			want := make([]any, len(tt.want))
+			for i, v := range tt.want {
+				want[i] = v
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("output[values] = %v, want %v", got, want)
 			}
 		})
 	}

@@ -37,7 +37,7 @@ func TestExamplePlugin_EndToEnd(t *testing.T) {
 	if manifest.PluginID != "io.patchcord.example-text" {
 		t.Fatalf("PluginID = %q, want %q", manifest.PluginID, "io.patchcord.example-text")
 	}
-	for _, action := range []string{"text.uppercase@1", "text.lowercase@1", "text.join@1"} {
+	for _, action := range []string{"text.uppercase@1", "text.lowercase@1", "text.join@1", "text.split@1"} {
 		if !slices.Contains(manifest.Actions, action) {
 			t.Fatalf("Actions = %v, want it to contain %q", manifest.Actions, action)
 		}
@@ -72,5 +72,17 @@ func TestExamplePlugin_EndToEnd(t *testing.T) {
 	}
 	if joined["value"] != "welcome to patchcord" {
 		t.Fatalf(`ExecuteAction(text.join@1)["value"] = %v, want %q`, joined["value"], "welcome to patchcord")
+	}
+
+	split, err := ExecuteAction(ctx, proc.Client, "text.split@1", map[string]any{
+		"value":     "welcome to patchcord",
+		"separator": " ",
+	})
+	if err != nil {
+		t.Fatalf("ExecuteAction(text.split@1) error = %v", err)
+	}
+	wantSplit := []any{"welcome", "to", "patchcord"}
+	if !slices.Equal(split["values"].([]any), wantSplit) {
+		t.Fatalf("ExecuteAction(text.split@1)[\"values\"] = %v, want %v", split["values"], wantSplit)
 	}
 }
