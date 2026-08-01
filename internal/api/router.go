@@ -14,5 +14,6 @@ type Deps struct {
 func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
+	mux.HandleFunc("GET /v1/runs/{id}/events", handleRunEvents(deps))
 	return mux
 }
