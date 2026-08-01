@@ -1,0 +1,159 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// examplePluginPath is built once for this package's tests: the real
+// text-uppercase example plugin, so the plugin command group can be proven
+// against an actual binary, not just its fail-fast paths.
+var examplePluginPath string
+
+func TestMain(m *testing.M) {
+	tmpDir, err := os.MkdirTemp("", "patchcord-cli-fixtures")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
+	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase")
+	if out, err := build.CombinedOutput(); err != nil {
+		panic("build example plugin: " + err.Error() + "\n" + string(out))
+	}
+
+	os.Exit(m.Run())
+}
+
+func TestNewRootCommand_HasPluginSubcommands(t *testing.T) {
+	root := NewRootCommand()
+
+	for _, name := range []string{"install", "list", "inspect", "uninstall"} {
+		t.Run(name, func(t *testing.T) {
+			cmd, _, err := root.Find([]string{"plugin", name})
+			if err != nil {
+				t.Fatalf("Find(plugin %s) error = %v", name, err)
+			}
+			if cmd.Name() != name {
+				t.Fatalf("found command %q, want %q", cmd.Name(), name)
+			}
+		})
+	}
+}
+
+func TestPluginInstallCommand_FailsForAMissingBinary(t *testing.T) {
+	cmd := newPluginInstallCommand()
+	cmd.SetArgs([]string{filepath.Join(t.TempDir(), "does-not-exist"), "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected an error for a missing plugin binary, got nil")
+	}
+}
+
+func TestPluginListCommand_EmptyCatalog(t *testing.T) {
+	cmd := newPluginListCommand()
+	cmd.SetArgs([]string{"--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(out.String(), "No plugin installed.") {
+		t.Fatalf("output = %q, want it to mention an empty catalog", out.String())
+	}
+}
+
+func TestPluginInspectCommand_UnknownPlugin(t *testing.T) {
+	cmd := newPluginInspectCommand()
+	cmd.SetArgs([]string{"io.patchcord.unknown", "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for an unknown plugin id, got nil")
+	}
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("error = %q, want it to mention the plugin is not installed", err.Error())
+	}
+}
+
+func TestPluginUninstallCommand_UnknownPlugin(t *testing.T) {
+	cmd := newPluginUninstallCommand()
+	cmd.SetArgs([]string{"io.patchcord.unknown", "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for an unknown plugin id, got nil")
+	}
+	if !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("error = %q, want it to mention the plugin is not installed", err.Error())
+	}
+}
+
+// TestPluginCommands_FullLifecycle exercises install, list, inspect and
+// uninstall against the real example plugin binary, in sequence, exactly
+// as a user would type them on the command line.
+func TestPluginCommands_FullLifecycle(t *testing.T) {
+	dataDir := t.TempDir()
+
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	var installOut bytes.Buffer
+	install.SetOut(&installOut)
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+	if !strings.Contains(installOut.String(), "io.patchcord.example-text") {
+		t.Fatalf("install output = %q, want it to mention the installed plugin id", installOut.String())
+	}
+
+	list := newPluginListCommand()
+	list.SetArgs([]string{"--data-dir", dataDir})
+	list.SetContext(context.Background())
+	var listOut bytes.Buffer
+	list.SetOut(&listOut)
+	if err := list.Execute(); err != nil {
+		t.Fatalf("plugin list error = %v", err)
+	}
+	if !strings.Contains(listOut.String(), "io.patchcord.example-text") {
+		t.Fatalf("list output = %q, want it to mention the installed plugin id", listOut.String())
+	}
+
+	inspect := newPluginInspectCommand()
+	inspect.SetArgs([]string{"io.patchcord.example-text", "--data-dir", dataDir})
+	inspect.SetContext(context.Background())
+	var inspectOut bytes.Buffer
+	inspect.SetOut(&inspectOut)
+	if err := inspect.Execute(); err != nil {
+		t.Fatalf("plugin inspect error = %v", err)
+	}
+	if !strings.Contains(inspectOut.String(), "text.uppercase@1") {
+		t.Fatalf("inspect output = %q, want it to mention the plugin's action", inspectOut.String())
+	}
+
+	uninstall := newPluginUninstallCommand()
+	uninstall.SetArgs([]string{"io.patchcord.example-text", "--data-dir", dataDir})
+	uninstall.SetContext(context.Background())
+	if err := uninstall.Execute(); err != nil {
+		t.Fatalf("plugin uninstall error = %v", err)
+	}
+
+	inspectAgain := newPluginInspectCommand()
+	inspectAgain.SetArgs([]string{"io.patchcord.example-text", "--data-dir", dataDir})
+	inspectAgain.SetContext(context.Background())
+	if err := inspectAgain.Execute(); err == nil {
+		t.Fatal("expected plugin inspect to fail after uninstall, got nil error")
+	}
+}

@@ -1,15 +1,45 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/lucasglmt/patchcord/internal/persistence"
+	"github.com/lucasglmt/patchcord/internal/plugins"
+	"github.com/lucasglmt/patchcord/migrations"
 )
+
+// examplePluginPath is built once in TestMain: the real text-uppercase
+// example plugin, used to prove the agent actually launches and stops
+// plugins recorded in its catalog, not just a hand-rolled fixture.
+var examplePluginPath string
+
+func TestMain(m *testing.M) {
+	tmpDir, err := os.MkdirTemp("", "patchcord-runtime-fixtures")
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	examplePluginPath = filepath.Join(tmpDir, "text-uppercase")
+	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text-uppercase")
+	if out, err := build.CombinedOutput(); err != nil {
+		panic("build example plugin: " + err.Error() + "\n" + string(out))
+	}
+
+	os.Exit(m.Run())
+}
 
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -77,5 +107,56 @@ func TestAgent_RunServesHealthAndShutsDownOnCancel(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run() did not return within the shutdown timeout")
+	}
+}
+
+func TestAgent_LaunchesInstalledPluginsAndStopsThemOnShutdown(t *testing.T) {
+	dataDir := t.TempDir()
+
+	// Install the plugin into the catalog before the agent starts, exactly
+	// like `patchcord plugin install` followed by `patchcord serve` would.
+	db, err := persistence.Open(dataDir)
+	if err != nil {
+		t.Fatalf("persistence.Open() error = %v", err)
+	}
+	if err := persistence.Migrate(context.Background(), db, migrations.FS, testLogger()); err != nil {
+		t.Fatalf("persistence.Migrate() error = %v", err)
+	}
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("plugins.Install() error = %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close setup database: %v", err)
+	}
+
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	cfg := Config{ListenAddr: "127.0.0.1:0", DataDir: dataDir}
+	agent, err := NewAgent(cfg, logger)
+	if err != nil {
+		t.Fatalf("NewAgent() error = %v", err)
+	}
+
+	if logs := logBuf.String(); !strings.Contains(logs, "plugin launched") || !strings.Contains(logs, "io.patchcord.example-text") {
+		t.Fatalf("expected a \"plugin launched\" log entry for io.patchcord.example-text, got:\n%s", logs)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runErr := make(chan error, 1)
+	go func() { runErr <- agent.Run(ctx) }()
+
+	// Give the server a brief moment to actually start serving before
+	// tearing it down, so shutdown exercises the real running path.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil after clean shutdown", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run() did not return within the shutdown timeout (plugin process may not have been terminated)")
 	}
 }

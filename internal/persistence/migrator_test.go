@@ -37,8 +37,8 @@ func TestLoadMigrations(t *testing.T) {
 		{
 			name: "rejects duplicate versions",
 			fsys: fstest.MapFS{
-				"0001_first.sql":  {Data: []byte("SELECT 1;")},
-				"0001_again.sql":  {Data: []byte("SELECT 1;")},
+				"0001_first.sql": {Data: []byte("SELECT 1;")},
+				"0001_again.sql": {Data: []byte("SELECT 1;")},
 			},
 			wantErr: true,
 		},

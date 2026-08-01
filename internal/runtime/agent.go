@@ -1,6 +1,6 @@
 // Package runtime manages the Patchcord agent's lifecycle: opening its
-// database, binding its local HTTP API, and shutting both down cleanly on
-// cancellation.
+// database, launching its installed plugins, binding its local HTTP API,
+// and shutting everything down cleanly on cancellation.
 package runtime
 
 import (
@@ -15,6 +15,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/api"
 	"github.com/lucasglmt/patchcord/internal/persistence"
+	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -31,14 +32,22 @@ type Config struct {
 	ShutdownTimeout time.Duration
 }
 
-// Agent supervises the agent's database and HTTP API for the duration of
-// one run.
+// Agent supervises the agent's database, HTTP API and installed plugins for
+// the duration of one run.
 type Agent struct {
 	cfg      Config
 	logger   *slog.Logger
 	server   *http.Server
 	listener net.Listener
 	db       *sql.DB
+	plugins  []runningPlugin
+}
+
+// runningPlugin pairs a launched plugin process with the catalog id it was
+// launched for, so shutdown can log which plugin failed to stop cleanly.
+type runningPlugin struct {
+	id   string
+	proc *plugins.Process
 }
 
 // NewAgent opens and migrates the agent's database, then binds its listen
@@ -68,13 +77,50 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("bind listen address %q: %w", cfg.ListenAddr, err)
 	}
 
+	running := launchInstalledPlugins(context.Background(), db, logger)
+
 	return &Agent{
 		cfg:      cfg,
 		logger:   logger,
 		server:   &http.Server{Handler: api.NewRouter(api.Deps{DB: db})},
 		listener: listener,
 		db:       db,
+		plugins:  running,
 	}, nil
+}
+
+// launchInstalledPlugins launches every plugin recorded in the catalog and
+// completes its handshake. A plugin that fails to launch or handshake is
+// logged and skipped: per the non-negotiable that a plugin failure must
+// never take the agent down, this never fails agent startup.
+func launchInstalledPlugins(ctx context.Context, db *sql.DB, logger *slog.Logger) []runningPlugin {
+	entries, err := plugins.List(ctx, db)
+	if err != nil {
+		logger.Error("list installed plugins", slog.String("error", err.Error()))
+		return nil
+	}
+
+	running := make([]runningPlugin, 0, len(entries))
+	for _, entry := range entries {
+		proc, err := plugins.Launch(ctx, entry.ExecutablePath, plugins.DefaultReadyTimeout)
+		if err != nil {
+			logger.Error("launch plugin", slog.String("plugin_id", entry.PluginID), slog.String("error", err.Error()))
+			continue
+		}
+
+		if _, err := plugins.Handshake(ctx, proc.Client); err != nil {
+			logger.Error("handshake plugin", slog.String("plugin_id", entry.PluginID), slog.String("error", err.Error()))
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_ = proc.Close(closeCtx)
+			cancel()
+			continue
+		}
+
+		logger.Info("plugin launched", slog.String("plugin_id", entry.PluginID))
+		running = append(running, runningPlugin{id: entry.PluginID, proc: proc})
+	}
+
+	return running
 }
 
 // Addr returns the actual address the agent is listening on. It is only
@@ -84,10 +130,19 @@ func (a *Agent) Addr() string {
 }
 
 // Run serves the agent's HTTP API until ctx is cancelled, then shuts it down
-// gracefully within the configured shutdown timeout before closing the
-// database. It blocks until the agent has fully stopped.
+// gracefully within the configured shutdown timeout before terminating its
+// installed plugins and closing the database. It blocks until the agent has
+// fully stopped.
 func (a *Agent) Run(ctx context.Context) error {
 	defer func() {
+		for _, rp := range a.plugins {
+			closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := rp.proc.Close(closeCtx); err != nil {
+				a.logger.Error("close plugin", slog.String("plugin_id", rp.id), slog.String("error", err.Error()))
+			}
+			cancel()
+		}
+
 		if err := a.db.Close(); err != nil {
 			a.logger.Error("close database", slog.String("error", err.Error()))
 		}
