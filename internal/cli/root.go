@@ -16,6 +16,8 @@ func NewRootCommand() *cobra.Command {
 
 	root.AddCommand(newServeCommand())
 	root.AddCommand(newPluginCommand())
+	root.AddCommand(newWorkflowCommand())
+	root.AddCommand(newRunCommand())
 
 	return root
 }

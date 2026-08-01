@@ -1,0 +1,17 @@
+# The reference vertical slice from the vision document (section 20):
+# install the io.patchcord.example-text plugin, then this workflow, then
+# run it. It proves the full chain — protocol, plugin, workflow engine,
+# runner — without recompiling the agent.
+schema_version: 1
+
+id: hello_patchcord
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: transform
+    uses: text.uppercase@1
+    with:
+      value: "Welcome Patchcord"

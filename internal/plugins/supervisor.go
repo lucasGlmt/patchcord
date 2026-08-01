@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -55,7 +56,9 @@ func (c SupervisorConfig) withDefaults() SupervisorConfig {
 // running for as long as the agent does: it detects crashes and
 // unresponsive plugins via periodic health checks, restarts them up to a
 // bounded number of attempts, and quarantines (stops retrying) a plugin
-// that keeps failing.
+// that keeps failing. Once started, it also serves as the agent's entry
+// point for actually invoking an action (ExecuteAction), routing the call
+// to whichever running plugin currently contributes it.
 //
 // A plugin failure — however it manifests — is always contained here and
 // never propagated to the agent: the non-negotiable that a crashed plugin
@@ -68,7 +71,15 @@ type Supervisor struct {
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc
 	mu      sync.Mutex
-	running map[string]*Process // keyed by plugin id; nil while quarantined
+	running map[string]*runningPlugin // keyed by plugin id; absent while quarantined
+}
+
+// runningPlugin pairs a launched process with the catalog entry it was
+// launched from, so ExecuteAction can find which running plugin currently
+// contributes a given action.
+type runningPlugin struct {
+	entry CatalogEntry
+	proc  *Process
 }
 
 // NewSupervisor creates a Supervisor. Call Start to launch the catalog's
@@ -80,7 +91,7 @@ func NewSupervisor(cfg SupervisorConfig, logger *slog.Logger) *Supervisor {
 	return &Supervisor{
 		cfg:     cfg.withDefaults(),
 		logger:  logger,
-		running: make(map[string]*Process),
+		running: make(map[string]*runningPlugin),
 	}
 }
 
@@ -104,7 +115,7 @@ func (s *Supervisor) Start(ctx context.Context, db *sql.DB) error {
 		}
 
 		s.mu.Lock()
-		s.running[entry.PluginID] = proc
+		s.running[entry.PluginID] = &runningPlugin{entry: entry, proc: proc}
 		s.mu.Unlock()
 
 		s.wg.Add(1)
@@ -124,15 +135,39 @@ func (s *Supervisor) Stop(ctx context.Context) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, proc := range s.running {
-		if proc == nil {
-			continue
-		}
-		if err := proc.Close(ctx); err != nil {
+	for id, rp := range s.running {
+		if err := rp.proc.Close(ctx); err != nil {
 			s.logger.Error("close plugin", slog.String("plugin_id", id), slog.String("error", err.Error()))
 		}
 	}
-	s.running = make(map[string]*Process)
+	s.running = make(map[string]*runningPlugin)
+}
+
+// ExecuteAction runs actionID on whichever currently running plugin
+// contributes it. It implements internal/runs's ActionExecutor interface,
+// letting the workflow runner invoke actions without knowing anything
+// about plugin processes, transport, or supervision.
+func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input map[string]any) (map[string]any, error) {
+	s.mu.Lock()
+	var rp *runningPlugin
+	for _, candidate := range s.running {
+		for _, action := range candidate.entry.Actions {
+			if action == actionID {
+				rp = candidate
+				break
+			}
+		}
+		if rp != nil {
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if rp == nil {
+		return nil, fmt.Errorf("action %q is not currently available (no running plugin contributes it)", actionID)
+	}
+
+	return ExecuteAction(ctx, rp.proc.Client, actionID, input)
 }
 
 // launchAndHandshake launches entry's executable and validates it with a
@@ -170,12 +205,13 @@ func (s *Supervisor) watch(ctx context.Context, entry CatalogEntry) {
 
 	for {
 		s.mu.Lock()
-		proc := s.running[entry.PluginID]
+		rp := s.running[entry.PluginID]
 		s.mu.Unlock()
-		if proc == nil {
+		if rp == nil {
 			// Quarantined by a previous iteration.
 			return
 		}
+		proc := rp.proc
 
 		select {
 		case <-ctx.Done():
@@ -250,7 +286,7 @@ func (s *Supervisor) restart(ctx context.Context, entry CatalogEntry, restarts *
 		}
 
 		s.mu.Lock()
-		s.running[entry.PluginID] = proc
+		s.running[entry.PluginID] = &runningPlugin{entry: entry, proc: proc}
 		s.mu.Unlock()
 		return true
 	}

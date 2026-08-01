@@ -105,14 +105,14 @@ func TestSupervisor_StartLaunchesAndStopsAHealthyPlugin(t *testing.T) {
 	}
 
 	sup.mu.Lock()
-	proc := sup.running["io.patchcord.fake"]
+	rp := sup.running["io.patchcord.fake"]
 	sup.mu.Unlock()
-	if proc == nil {
+	if rp == nil {
 		t.Fatal("expected the plugin to be running after Start()")
 	}
 
 	healthCtx, cancel := context.WithTimeout(context.Background(), time.Second)
-	resp, err := proc.HealthClient.Check(healthCtx, &grpc_health_v1.HealthCheckRequest{})
+	resp, err := rp.proc.HealthClient.Check(healthCtx, &grpc_health_v1.HealthCheckRequest{})
 	cancel()
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
@@ -128,6 +128,32 @@ func TestSupervisor_StartLaunchesAndStopsAHealthyPlugin(t *testing.T) {
 	sup.mu.Unlock()
 	if remaining != 0 {
 		t.Fatalf("running plugins after Stop() = %d, want 0", remaining)
+	}
+}
+
+func TestSupervisor_ExecuteAction(t *testing.T) {
+	db := openCatalogTestDB(t)
+	if _, err := Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+	sup := NewSupervisor(testSupervisorConfig(), logger)
+	if err := sup.Start(context.Background(), db); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer stopSupervisor(t, sup)
+
+	output, err := sup.ExecuteAction(context.Background(), "text.uppercase@1", map[string]any{"value": "hello"})
+	if err != nil {
+		t.Fatalf("ExecuteAction() error = %v", err)
+	}
+	if output["value"] != "HELLO" {
+		t.Fatalf(`output["value"] = %v, want %q`, output["value"], "HELLO")
+	}
+
+	if _, err := sup.ExecuteAction(context.Background(), "unknown.action@1", nil); err == nil {
+		t.Fatal("expected an error for an action no running plugin contributes, got nil")
 	}
 }
 

@@ -155,3 +155,34 @@ func TestUninstall_ReturnsErrNotInstalledForAnUnknownID(t *testing.T) {
 		t.Fatalf("Uninstall() error = %v, want ErrNotInstalled", err)
 	}
 }
+
+func TestKnownActions(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
+		Actions: []string{"a.one@1", "a.two@1"},
+	}); err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.b", Version: "1.0.0", ExecutablePath: "/bin/b", ProtocolVersion: 1,
+		Actions: []string{"b.one@1"},
+	}); err != nil {
+		t.Fatalf("seed b: %v", err)
+	}
+
+	actions, err := KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	for _, want := range []string{"a.one@1", "a.two@1", "b.one@1"} {
+		if _, ok := actions[want]; !ok {
+			t.Fatalf("KnownActions() = %v, want it to contain %q", actions, want)
+		}
+	}
+	if len(actions) != 3 {
+		t.Fatalf("len(KnownActions()) = %d, want 3", len(actions))
+	}
+}

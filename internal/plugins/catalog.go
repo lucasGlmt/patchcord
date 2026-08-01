@@ -121,6 +121,25 @@ func List(ctx context.Context, db *sql.DB) ([]CatalogEntry, error) {
 	return entries, nil
 }
 
+// KnownActions returns the set of action identifiers contributed by every
+// installed plugin, for the workflow compiler (internal/workflow.Validate)
+// to check a workflow's steps against.
+func KnownActions(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
+	entries, err := List(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	actions := make(map[string]struct{})
+	for _, entry := range entries {
+		for _, action := range entry.Actions {
+			actions[action] = struct{}{}
+		}
+	}
+
+	return actions, nil
+}
+
 // Get returns one installed plugin by id. It returns ErrNotInstalled if no
 // plugin with that id is in the catalog.
 func Get(ctx context.Context, db *sql.DB, id string) (*CatalogEntry, error) {
