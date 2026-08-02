@@ -103,6 +103,39 @@ test("PatchcordClient triggers a run, streams its events, and fetches its result
   }
 });
 
+// Node's own global fetch (undici) doesn't enforce that it's called with
+// the global object as its receiver, so a test built directly against it
+// can't catch a real regression here: `this.#fetch = options.fetch ??
+// fetch` (the bare reference, unbound) passes every test above just fine
+// under Node, yet throws "Illegal invocation" in an actual browser, where
+// fetch — like many Web APIs — checks its receiver. This test stands in
+// for that stricter browser behavior by wrapping the real fetch with the
+// same receiver check, so a regression (removing the `.bind(globalThis)`
+// in client.ts) fails here instead of only being caught by a user
+// clicking "Run" in the example app.
+test("PatchcordClient's default fetch does not rely on being called as a method (mirrors a real browser's receiver check on fetch)", async () => {
+  const agent = await startFakeAgent();
+  const realFetch = globalThis.fetch;
+  const strictFetch = function (this: unknown, ...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
+    if (this !== globalThis) {
+      throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    }
+    return realFetch(...args);
+  };
+  globalThis.fetch = strictFetch as typeof fetch;
+
+  try {
+    // No `fetch` override passed here on purpose: this must exercise
+    // PatchcordClient's own default, not a test-supplied stand-in.
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const run = await client.workflows.run("demo");
+    assert.equal(run.id, "run-1");
+  } finally {
+    globalThis.fetch = realFetch;
+    await agent.close();
+  }
+});
+
 test("PatchcordClient.workflows.run rejects a non-2xx response", async () => {
   const server = http.createServer((_req, res) => {
     res.writeHead(404, { "Content-Type": "text/plain" });

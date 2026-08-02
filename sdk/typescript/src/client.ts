@@ -34,7 +34,13 @@ export class PatchcordClient {
 
   constructor(options: PatchcordClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
-    this.#fetch = options.fetch ?? fetch;
+    // fetch is a Web API method: it checks that its receiver (`this`) is
+    // the global object, so storing the bare reference and later calling
+    // it as `this.#fetch(...)` (where `this` is the PatchcordClient
+    // instance, not window) throws "Illegal invocation" in a real browser.
+    // Node's fetch doesn't enforce this, which is why it never showed up
+    // in this SDK's own (Node-based) test suite. Bind it explicitly.
+    this.#fetch = options.fetch ?? fetch.bind(globalThis);
 
     this.workflows = {
       run: (workflowId, runOptions) => this.#runWorkflow(workflowId, runOptions),
