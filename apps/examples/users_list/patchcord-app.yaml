@@ -1,0 +1,6 @@
+id: userlist
+version: "0.1.0"
+permissions:
+  workflows:
+    run:
+      - http_api_task

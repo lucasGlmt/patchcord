@@ -20,11 +20,14 @@ A plugin contributes:
 | `postgresql` | `postgresql.query@1`, `postgresql.execute@1` | Connector: `postgresql.connection@1`. Implements `ConnectorTester` (opens a connection and pings it). |
 | `mysql` | Same shape as `postgresql` | Connector: `mysql.connection@1`. Implements `ConnectorTester`. |
 
+See [Example Plugins](example-plugins.md) for every action's inputs/outputs and a runnable workflow snippet for each.
+
 ## Where to go next
 
 - [Concepts](concepts.md) — process isolation and the plugin/action/connector distinction.
 - [Protocol](protocol.md) — the gRPC/Protobuf contract and the handshake.
 - [Manifest & Actions](manifest-and-actions.md) — how a plugin declares what it contributes.
 - [Writing a Plugin in Go](writing-a-plugin-go.md) — build one with `sdk/go-plugin`.
+- [Example Plugins](example-plugins.md) — a full action reference and usage example for each example plugin.
 - [Supervision & Lifecycle](supervision.md) — health checks, restarts, quarantine.
 - [Connectors](connectors/index.md) — the connector model plugins expose.

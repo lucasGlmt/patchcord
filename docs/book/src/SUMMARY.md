@@ -22,6 +22,7 @@
 - [Protocol](plugins/protocol.md)
 - [Manifest & Actions](plugins/manifest-and-actions.md)
 - [Writing a Plugin in Go](plugins/writing-a-plugin-go.md)
+- [Example Plugins](plugins/example-plugins.md)
 - [Supervision & Lifecycle](plugins/supervision.md)
 - [Connectors](plugins/connectors/index.md)
     - [Connector Model](plugins/connectors/model.md)

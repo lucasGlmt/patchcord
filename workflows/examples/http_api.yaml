@@ -1,14 +1,25 @@
 schema_version: 1
 
 id: http_api_task
-version: 1
+version: 5
 
 trigger:
   type: manual
 
 steps:
-  - id: get_todo_1
+  - id: get_all_users
     uses: http.request@1
     connector: "${{ bindings.api }}"
     with:
-      path: "/todos/1"
+      path: "/users"
+  
+  - id: parse_to_json
+    uses: json.parse@1
+    with:
+      value: "${{ steps.get_all_users.outputs.body }}"
+
+  - id: extract_username
+    uses: json.jsonpath@1
+    with:
+      value: "${{ steps.parse_to_json.outputs.value }}"
+      path: "$[*].username"
