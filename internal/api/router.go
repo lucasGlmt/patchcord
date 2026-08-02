@@ -62,6 +62,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
 	mux.HandleFunc("GET /v1/workflows", handleListWorkflows(deps))
+	mux.HandleFunc("GET /v1/workflows/{id}", handleGetWorkflow(deps))
 	mux.HandleFunc("POST /v1/workflows/{id}/run", withOptionalAppSession(deps, handleRunWorkflow(deps)))
 	mux.HandleFunc("GET /v1/runs", handleListRuns(deps))
 	mux.HandleFunc("GET /v1/runs/{id}", handleGetRun(deps))

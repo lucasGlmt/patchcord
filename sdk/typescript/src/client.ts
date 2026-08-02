@@ -1,15 +1,26 @@
 import { Run } from "./run.js";
-import type { AppSession, AppSummary, HealthStatus, ListRunsOptions, RunWorkflowOptions, WorkflowSummary } from "./types.js";
+import type {
+  AppSession,
+  AppSummary,
+  GetWorkflowOptions,
+  HealthStatus,
+  ListRunsOptions,
+  RunWorkflowOptions,
+  WorkflowDetail,
+  WorkflowSummary,
+} from "./types.js";
 import {
   appSessionFromWire,
   appSummaryFromWire,
   healthStatusFromWire,
   runSummaryFromWire,
+  workflowDetailFromWire,
   workflowSummaryFromWire,
   type WireAppSession,
   type WireAppSummary,
   type WireHealthStatus,
   type WireRunSummary,
+  type WireWorkflowDetail,
   type WireWorkflowSummary,
 } from "./wire.js";
 
@@ -58,6 +69,12 @@ export class PatchcordClient {
      * once — workflows are immutable once published (ADR-0008).
      */
     list(): Promise<WorkflowSummary[]>;
+    /**
+     * Returns one workflow version's full definition — its steps and raw
+     * YAML source (GET /v1/workflows/{id}). Defaults to the latest
+     * installed version; pass `{ version }` for a specific one.
+     */
+    get(workflowId: string, options?: GetWorkflowOptions): Promise<WorkflowDetail>;
     /**
      * Starts a new run of the latest installed version of workflowId and
      * returns immediately with a Run handle — it does not wait for any
@@ -111,6 +128,7 @@ export class PatchcordClient {
     };
     this.workflows = {
       list: () => this.#listWorkflows(),
+      get: (workflowId, getOptions) => this.#getWorkflow(workflowId, getOptions),
       run: (workflowId, runOptions) => this.#runWorkflow(workflowId, runOptions),
     };
     this.runs = {
@@ -160,6 +178,12 @@ export class PatchcordClient {
   async #listWorkflows(): Promise<WorkflowSummary[]> {
     const wire = await this.#request<WireWorkflowSummary[]>("GET", "/v1/workflows");
     return wire.map(workflowSummaryFromWire);
+  }
+
+  async #getWorkflow(workflowId: string, options?: GetWorkflowOptions): Promise<WorkflowDetail> {
+    const query = options?.version ? `?version=${options.version}` : "";
+    const wire = await this.#request<WireWorkflowDetail>("GET", `/v1/workflows/${encodeURIComponent(workflowId)}${query}`);
+    return workflowDetailFromWire(wire);
   }
 
   async #runWorkflow(workflowId: string, options?: RunWorkflowOptions): Promise<Run> {

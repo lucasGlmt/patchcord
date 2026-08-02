@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -15,32 +16,50 @@ func TestResolveInputs(t *testing.T) {
 	tests := []struct {
 		name    string
 		with    map[string]any
+		key     string
 		want    any
 		wantErr bool
 	}{
 		{
 			name: "resolves a workflow input expression",
 			with: map[string]any{"value": "${{ workflow.inputs.value }}"},
+			key:  "value",
 			want: "hello",
 		},
 		{
 			name: "resolves a step output expression",
 			with: map[string]any{"value": "${{ steps.first.outputs.value }}"},
+			key:  "value",
 			want: "HELLO",
 		},
 		{
 			name: "passes through a literal value unchanged",
 			with: map[string]any{"value": "literal"},
+			key:  "value",
 			want: "literal",
 		},
 		{
 			name: "passes through a non-string value unchanged",
 			with: map[string]any{"value": 42},
+			key:  "value",
 			want: 42,
+		},
+		{
+			name: "resolves a step output expression nested inside a list value",
+			with: map[string]any{"values": []any{"Salut, ", "${{ steps.first.outputs.value }}"}},
+			key:  "values",
+			want: []any{"Salut, ", "HELLO"},
+		},
+		{
+			name: "resolves a step output expression nested inside a map value",
+			with: map[string]any{"headers": map[string]any{"Authorization": "${{ steps.first.outputs.value }}"}},
+			key:  "headers",
+			want: map[string]any{"Authorization": "HELLO"},
 		},
 		{
 			name: "leaves a value with embedded (non-whole) syntax unresolved",
 			with: map[string]any{"value": "prefix-${{ workflow.inputs.value }}"},
+			key:  "value",
 			want: "prefix-${{ workflow.inputs.value }}",
 		},
 		{
@@ -58,6 +77,11 @@ func TestResolveInputs(t *testing.T) {
 			with:    map[string]any{"value": "${{ steps.first.outputs.missing }}"},
 			wantErr: true,
 		},
+		{
+			name:    "fails when an expression nested inside a list value is unresolvable",
+			with:    map[string]any{"values": []any{"${{ steps.first.outputs.missing }}"}},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,8 +97,8 @@ func TestResolveInputs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ResolveInputs() error = %v", err)
 			}
-			if got["value"] != tt.want {
-				t.Fatalf("value = %v, want %v", got["value"], tt.want)
+			if !reflect.DeepEqual(got[tt.key], tt.want) {
+				t.Fatalf("%s = %v, want %v", tt.key, got[tt.key], tt.want)
 			}
 		})
 	}

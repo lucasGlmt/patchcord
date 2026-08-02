@@ -257,6 +257,53 @@
                 }
             }
         },
+        "/workflows/{id}": {
+            "get": {
+                "description": "Returns one workflow version's full definition: its steps and raw YAML source. Defaults to the latest installed version.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workflows"
+                ],
+                "summary": "Get a workflow version's definition",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workflow id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Workflow version (defaults to the latest installed one)",
+                        "name": "version",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.workflowDetail"
+                        }
+                    },
+                    "400": {
+                        "description": "version is not a valid integer",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "workflow not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/workflows/{id}/run": {
             "post": {
                 "description": "Starts a new run of the latest installed version of the named workflow and returns immediately with its id and initial status — it does not wait for any step to execute. Watch GET /runs/{id}/events or poll GET /runs/{id} for progress and the final result.",
@@ -295,7 +342,7 @@
                         }
                     },
                     "400": {
-                        "description": "malformed request body",
+                        "description": "malformed request body, or inputs don't satisfy the workflow's declared schema",
                         "schema": {
                             "type": "string"
                         }
@@ -446,6 +493,80 @@
                     }
                 },
                 "inputs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "api.workflowDetail": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.workflowInputDetail"
+                    }
+                },
+                "schema_version": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.workflowStepDetail"
+                    }
+                },
+                "trigger_type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.workflowInputDetail": {
+            "type": "object",
+            "properties": {
+                "default": {},
+                "description": {
+                    "type": "string"
+                },
+                "enum": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "required": {
+                    "type": "boolean"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.workflowStepDetail": {
+            "type": "object",
+            "properties": {
+                "connector": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "uses": {
+                    "type": "string"
+                },
+                "with": {
                     "type": "object",
                     "additionalProperties": {}
                 }

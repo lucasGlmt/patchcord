@@ -77,6 +77,26 @@ function startFakeAgent(): Promise<{ baseUrl: string; close: () => Promise<void>
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/v1/workflows/demo") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "demo",
+          version: 1,
+          schema_version: 1,
+          trigger_type: "manual",
+          inputs: [
+            { name: "value", type: "string", required: true, description: "Value to uppercase." },
+            { name: "shout", type: "boolean", required: false, default: false },
+            { name: "greeting", type: "enum", required: false, enum: ["hi", "hello"] },
+          ],
+          steps: [{ id: "transform", uses: "text.uppercase@1", with: { value: "hi" } }],
+          source: "schema_version: 1\nid: demo\n",
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/v1/runs") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
@@ -214,6 +234,27 @@ test("PatchcordClient.workflows.list returns every installed workflow version", 
     const client = new PatchcordClient({ baseUrl: agent.baseUrl });
     const workflows = await client.workflows.list();
     assert.deepEqual(workflows, [{ id: "demo", version: 1, installedAt: "2026-01-01T00:00:00Z" }]);
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.workflows.get returns one workflow version's steps and source", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const detail = await client.workflows.get("demo");
+    assert.equal(detail.id, "demo");
+    assert.equal(detail.version, 1);
+    assert.equal(detail.schemaVersion, 1);
+    assert.equal(detail.triggerType, "manual");
+    assert.deepEqual(detail.inputs, [
+      { name: "value", type: "string", required: true, description: "Value to uppercase.", default: undefined, enum: undefined },
+      { name: "shout", type: "boolean", required: false, description: undefined, default: false, enum: undefined },
+      { name: "greeting", type: "enum", required: false, description: undefined, default: undefined, enum: ["hi", "hello"] },
+    ]);
+    assert.deepEqual(detail.steps, [{ id: "transform", uses: "text.uppercase@1", with: { value: "hi" }, connector: undefined }]);
+    assert.match(detail.source, /id: demo/);
   } finally {
     await agent.close();
   }

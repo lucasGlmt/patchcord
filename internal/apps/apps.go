@@ -73,6 +73,47 @@ func Install(ctx context.Context, db *sql.DB, sourceDir string) (*App, error) {
 	return Get(ctx, db, manifest.ID)
 }
 
+// InstallOrUpdate is Install, except that installing over an application
+// whose id is already recorded updates it in place (new version,
+// static_dir, permissions) instead of returning ErrAlreadyExists. It backs
+// `patchcord app dev`: since handleServeApp reads static_dir straight off
+// disk on every request (no copy, no cache), an application registered
+// this way is already "hot reloaded" for free — rebuilding it in place
+// (e.g. `vite build --watch`) is visible on the next browser refresh with
+// no further agent involvement. What InstallOrUpdate removes is the
+// friction Install has for this loop: without it, iterating would require
+// `app remove` before every `app install`.
+func InstallOrUpdate(ctx context.Context, db *sql.DB, sourceDir string) (*App, error) {
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
+		return nil, err
+	}
+
+	staticDir, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve app directory %q: %w", sourceDir, err)
+	}
+
+	permissionsJSON, err := json.Marshal(manifest.Permissions)
+	if err != nil {
+		return nil, fmt.Errorf("encode app permissions: %w", err)
+	}
+
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO apps (id, version, static_dir, permissions)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			version = excluded.version,
+			static_dir = excluded.static_dir,
+			permissions = excluded.permissions
+	`, manifest.ID, manifest.Version, staticDir, string(permissionsJSON))
+	if err != nil {
+		return nil, fmt.Errorf("install or update app %q: %w", manifest.ID, err)
+	}
+
+	return Get(ctx, db, manifest.ID)
+}
+
 // Get returns one installed application by id. It returns ErrNotFound if
 // no application with that id has been recorded.
 func Get(ctx context.Context, db *sql.DB, id string) (*App, error) {

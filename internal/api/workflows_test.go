@@ -77,6 +77,124 @@ func TestHandleListWorkflows_ReturnsInstalledVersions(t *testing.T) {
 	}
 }
 
+func TestHandleGetWorkflow_ReturnsStepsAndSource(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db})
+	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/hello_patchcord", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got workflowDetail
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if got.ID != "hello_patchcord" || got.Version != 1 {
+		t.Fatalf("got = %+v, want id=hello_patchcord version=1", got)
+	}
+	if got.TriggerType != "manual" {
+		t.Fatalf("TriggerType = %q, want %q", got.TriggerType, "manual")
+	}
+	if len(got.Steps) != 1 || got.Steps[0].Uses != "text.uppercase@1" {
+		t.Fatalf("Steps = %+v, want one text.uppercase@1 step", got.Steps)
+	}
+	if !strings.Contains(got.Source, "hello_patchcord") {
+		t.Fatalf("Source = %q, want it to contain the raw YAML", got.Source)
+	}
+}
+
+func TestHandleGetWorkflow_ReturnsDeclaredInputs(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	source := `
+schema_version: 1
+id: greet
+version: 1
+trigger:
+  type: manual
+inputs:
+  - name: name
+    type: string
+    required: true
+    description: Name to greet.
+  - name: shout
+    type: boolean
+    default: false
+steps:
+  - id: transform
+    uses: text.uppercase@1
+    with:
+      value: "${{ workflow.inputs.name }}"
+`
+	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(source), knownActions); err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db})
+	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/greet", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got workflowDetail
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if len(got.Inputs) != 2 {
+		t.Fatalf("Inputs = %+v, want 2 declared inputs", got.Inputs)
+	}
+	if got.Inputs[0].Name != "name" || got.Inputs[0].Type != "string" || !got.Inputs[0].Required {
+		t.Fatalf("Inputs[0] = %+v, want name=name type=string required=true", got.Inputs[0])
+	}
+	if got.Inputs[0].Description != "Name to greet." {
+		t.Fatalf("Inputs[0].Description = %q, want %q", got.Inputs[0].Description, "Name to greet.")
+	}
+	if got.Inputs[1].Name != "shout" || got.Inputs[1].Type != "boolean" || got.Inputs[1].Default != false {
+		t.Fatalf("Inputs[1] = %+v, want name=shout type=boolean default=false", got.Inputs[1])
+	}
+}
+
+func TestHandleGetWorkflow_UnknownWorkflowReturnsNotFound(t *testing.T) {
+	db := openMigratedTestDB(t)
+	router := NewRouter(Deps{DB: db})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/does-not-exist", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandleGetWorkflow_RejectsANonIntegerVersion(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db})
+	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/hello_patchcord?version=not-a-number", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleRunWorkflow_UnknownWorkflowReturnsNotFound(t *testing.T) {
 	db := openMigratedTestDB(t)
 	router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}})
@@ -105,6 +223,68 @@ func TestHandleRunWorkflow_NoExecutorConfiguredReturnsInternalError(t *testing.T
 
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+const inputsTestWorkflow = `
+schema_version: 1
+id: greet
+version: 1
+trigger:
+  type: manual
+inputs:
+  - name: name
+    type: string
+    required: true
+  - name: shout
+    type: boolean
+    default: true
+steps:
+  - id: transform
+    uses: text.uppercase@1
+    with:
+      value: "${{ workflow.inputs.name }}"
+`
+
+func TestHandleRunWorkflow_RejectsMissingRequiredInputWith400(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(inputsTestWorkflow), knownActions); err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/workflows/greet/run", strings.NewReader(`{"inputs":{}}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestHandleRunWorkflow_AppliesDeclaredDefault(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(inputsTestWorkflow), knownActions); err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}})
+	req := httptest.NewRequest(http.MethodPost, "/v1/workflows/greet/run", strings.NewReader(`{"inputs":{"name":"world"}}`))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+
+	var got runSummary
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if got.Inputs["shout"] != true {
+		t.Fatalf(`Inputs["shout"] = %v, want true (the declared default)`, got.Inputs["shout"])
 	}
 }
 

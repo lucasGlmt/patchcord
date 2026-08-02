@@ -89,6 +89,55 @@ definitions:
         additionalProperties: {}
         type: object
     type: object
+  api.workflowDetail:
+    properties:
+      id:
+        type: string
+      inputs:
+        items:
+          $ref: '#/definitions/api.workflowInputDetail'
+        type: array
+      schema_version:
+        type: integer
+      source:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/api.workflowStepDetail'
+        type: array
+      trigger_type:
+        type: string
+      version:
+        type: integer
+    type: object
+  api.workflowInputDetail:
+    properties:
+      default: {}
+      description:
+        type: string
+      enum:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      required:
+        type: boolean
+      type:
+        type: string
+    type: object
+  api.workflowStepDetail:
+    properties:
+      connector:
+        type: string
+      id:
+        type: string
+      uses:
+        type: string
+      with:
+        additionalProperties: {}
+        type: object
+    type: object
   api.workflowSummary:
     properties:
       id:
@@ -283,6 +332,38 @@ paths:
       summary: List installed workflows
       tags:
       - workflows
+  /workflows/{id}:
+    get:
+      description: 'Returns one workflow version''s full definition: its steps and
+        raw YAML source. Defaults to the latest installed version.'
+      parameters:
+      - description: Workflow id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Workflow version (defaults to the latest installed one)
+        in: query
+        name: version
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.workflowDetail'
+        "400":
+          description: version is not a valid integer
+          schema:
+            type: string
+        "404":
+          description: workflow not found
+          schema:
+            type: string
+      summary: Get a workflow version's definition
+      tags:
+      - workflows
   /workflows/{id}/run:
     post:
       consumes:
@@ -310,7 +391,8 @@ paths:
           schema:
             $ref: '#/definitions/api.runSummary'
         "400":
-          description: malformed request body
+          description: malformed request body, or inputs don't satisfy the workflow's
+            declared schema
           schema:
             type: string
         "404":

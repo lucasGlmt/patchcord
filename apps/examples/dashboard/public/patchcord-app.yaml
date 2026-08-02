@@ -5,12 +5,16 @@
 #   npm run build
 #   patchcord app install apps/examples/dashboard/dist
 #
-# Once installed, the agent serves it at /apps/dashboard/ and issues it
-# sessions limited to running exactly the workflow listed below — see
-# ADR-0026.
+# permissions.workflows.run is intentionally empty: this dashboard is an
+# operator's tool meant to list and run *any* installed workflow, which an
+# app-session's fixed allow-list (ADR-0026) cannot express — so it never
+# requests one, and calls the API with the same unrestricted access a
+# plain browser tab hitting the agent directly already has today. Installing
+# it only changes where it's served from (/apps/dashboard/), not what it's
+# allowed to do. Still required: `id`/`version`/`permissions` are the
+# manifest's mandatory fields regardless of whether any permission is used.
 id: dashboard
-version: "0.1.0"
+version: "0.2.0"
 permissions:
   workflows:
-    run:
-      - hello_patchcord
+    run: []

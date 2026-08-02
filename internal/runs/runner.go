@@ -64,6 +64,16 @@ func stepFailureStatus(err error) workflow.StepStatus {
 // transitions it straight to Running, then returns immediately — it does
 // not execute any step. Call Continue next to actually run them.
 //
+// inputs is resolved against def.Inputs (workflow.PrepareInputs) before
+// anything is persisted: defaults are filled in, values coming from a
+// string-only source (the CLI's --input flags) are coerced to their
+// declared type, and a missing required input or an undeclared key fails
+// fast, before a run row even exists. The returned map is this resolved
+// result, not the caller's original inputs — callers must pass it, not
+// their own inputs, to Continue, so step expression resolution
+// (${{ workflow.inputs.<key> }}) sees the same coerced/defaulted values
+// that were persisted as the run's inputs.
+//
 // Split from the step-running loop (Continue) so a caller that must not
 // block for the run's entire duration — the HTTP API's
 // POST /v1/workflows/{id}/run, which needs to answer with the new run's id
@@ -78,25 +88,30 @@ func stepFailureStatus(err error) workflow.StepStatus {
 // disconnects immediately) still gets a consistently created, Running run
 // row rather than an ambiguous half-created one — the step loop in Continue
 // is what turns a cancelled ctx into a properly recorded RunCancelled.
-func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string]any) (*workflow.Definition, *Run, error) {
+func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string]any) (*workflow.Definition, *Run, map[string]any, error) {
 	pctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
 	defer cancel()
 
 	def, err := LatestWorkflow(pctx, db, workflowID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	run, err := createRun(pctx, db, def, inputs)
+	preparedInputs, err := workflow.PrepareInputs(def.Inputs, inputs)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	run, err := createRun(pctx, db, def, preparedInputs)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	if err := updateRunStatus(pctx, db, run, workflow.RunRunning, nil, nil); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
-	return def, run, nil
+	return def, run, preparedInputs, nil
 }
 
 // Continue runs def's steps for run — already created and transitioned to
@@ -228,12 +243,12 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 // what each half does; most callers (the CLI's `workflow run`, most tests)
 // want this blocking, all-in-one behavior.
 func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowID string, inputs map[string]any, bindings map[string]string, opts ExecuteOptions) (*Run, error) {
-	def, run, err := Start(ctx, db, workflowID, inputs)
+	def, run, preparedInputs, err := Start(ctx, db, workflowID, inputs)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := Continue(ctx, db, executor, def, run, inputs, bindings, opts); err != nil {
+	if err := Continue(ctx, db, executor, def, run, preparedInputs, bindings, opts); err != nil {
 		return nil, err
 	}
 

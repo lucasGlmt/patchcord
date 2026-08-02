@@ -93,6 +93,19 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "rejects an expression nested inside a list value referencing a step defined later",
+			mutate: func(d *Definition) {
+				d.Steps[0].With["value"] = []any{"prefix", "${{ steps.second.outputs.value }}"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a well-formed expression nested inside a list value",
+			mutate: func(d *Definition) {
+				d.Steps[1].With["value"] = []any{"prefix", "${{ steps.first.outputs.value }}"}
+			},
+		},
+		{
 			name: "accepts a connector bound via a bindings expression",
 			mutate: func(d *Definition) {
 				d.Steps[0].Connector = "${{ bindings.ai_provider }}"
@@ -109,6 +122,37 @@ func TestValidate(t *testing.T) {
 			name: "rejects a malformed connector expression shape",
 			mutate: func(d *Definition) {
 				d.Steps[0].Connector = "${{ nonsense }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a well-formed input schema",
+			mutate: func(d *Definition) {
+				d.Inputs = []InputDef{
+					{Name: "name", Type: "string", Required: true},
+					{Name: "shout", Type: "boolean", Default: false},
+					{Name: "greeting", Type: "enum", Enum: []string{"hi", "hello"}, Default: "hi"},
+				}
+			},
+		},
+		{
+			name: "rejects a duplicate input name",
+			mutate: func(d *Definition) {
+				d.Inputs = []InputDef{{Name: "name"}, {Name: "name"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects an input with an unsupported type",
+			mutate: func(d *Definition) {
+				d.Inputs = []InputDef{{Name: "name", Type: "array"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects an input declaring both required and default",
+			mutate: func(d *Definition) {
+				d.Inputs = []InputDef{{Name: "name", Required: true, Default: "world"}}
 			},
 			wantErr: true,
 		},

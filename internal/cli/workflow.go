@@ -16,6 +16,17 @@ import (
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
+// inputCountSuffix returns ", N input(s)" when def declares an input
+// schema, or "" otherwise — so `workflow install`/`workflow validate`
+// surface it without duplicating any parsing logic (def is already parsed
+// and validated by the caller).
+func inputCountSuffix(def *workflow.Definition) string {
+	if len(def.Inputs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(", %d input(s)", len(def.Inputs))
+}
+
 func newWorkflowCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow",
@@ -60,7 +71,7 @@ func newWorkflowInstallCommand() *cobra.Command {
 				return fmt.Errorf("install workflow: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed %s version %d (%d step(s))\n", def.ID, def.Version, len(def.Steps))
+			fmt.Fprintf(cmd.OutOrStdout(), "Installed %s version %d (%d step(s)%s)\n", def.ID, def.Version, len(def.Steps), inputCountSuffix(def))
 
 			return nil
 		},
@@ -141,7 +152,7 @@ func newWorkflowValidateCommand() *cobra.Command {
 				return fmt.Errorf("validate workflow: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "%s version %d is valid (%d step(s))\n", def.ID, def.Version, len(def.Steps))
+			fmt.Fprintf(cmd.OutOrStdout(), "%s version %d is valid (%d step(s)%s)\n", def.ID, def.Version, len(def.Steps), inputCountSuffix(def))
 
 			return nil
 		},

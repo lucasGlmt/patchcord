@@ -12,6 +12,10 @@ import type {
   RunStep,
   RunSummary,
   StepStatus,
+  WorkflowDetail,
+  WorkflowInputDetail,
+  WorkflowInputType,
+  WorkflowStepDetail,
   WorkflowSummary,
 } from "./types.js";
 
@@ -96,6 +100,64 @@ export function workflowSummaryFromWire(wire: WireWorkflowSummary): WorkflowSumm
     id: wire.id,
     version: wire.version,
     installedAt: wire.installed_at,
+  };
+}
+
+export interface WireWorkflowStepDetail {
+  id: string;
+  uses: string;
+  with?: Record<string, unknown>;
+  connector?: string;
+}
+
+export interface WireWorkflowInputDetail {
+  name: string;
+  type: WorkflowInputType;
+  required: boolean;
+  description?: string;
+  default?: unknown;
+  enum?: string[];
+}
+
+export interface WireWorkflowDetail {
+  id: string;
+  version: number;
+  schema_version: number;
+  trigger_type: string;
+  inputs?: WireWorkflowInputDetail[];
+  steps: WireWorkflowStepDetail[];
+  source: string;
+}
+
+export function workflowStepDetailFromWire(wire: WireWorkflowStepDetail): WorkflowStepDetail {
+  return {
+    id: wire.id,
+    uses: wire.uses,
+    with: wire.with,
+    connector: wire.connector,
+  };
+}
+
+export function workflowInputDetailFromWire(wire: WireWorkflowInputDetail): WorkflowInputDetail {
+  return {
+    name: wire.name,
+    type: wire.type,
+    required: wire.required,
+    description: wire.description,
+    default: wire.default,
+    enum: wire.enum,
+  };
+}
+
+export function workflowDetailFromWire(wire: WireWorkflowDetail): WorkflowDetail {
+  return {
+    id: wire.id,
+    version: wire.version,
+    schemaVersion: wire.schema_version,
+    triggerType: wire.trigger_type,
+    inputs: (wire.inputs ?? []).map(workflowInputDetailFromWire),
+    steps: wire.steps.map(workflowStepDetailFromWire),
+    source: wire.source,
   };
 }
 

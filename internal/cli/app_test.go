@@ -30,7 +30,7 @@ func newTestAppDir(t *testing.T, id string, workflowsRun ...string) string {
 func TestNewRootCommand_HasAppSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
-	for _, name := range []string{"install", "list", "remove"} {
+	for _, name := range []string{"install", "dev", "pack", "list", "remove"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := root.Find([]string{"app", name})
 			if err != nil {
@@ -132,5 +132,76 @@ func TestAppCommands_FullLifecycle(t *testing.T) {
 	removeAgain.SetContext(context.Background())
 	if err := removeAgain.Execute(); err == nil {
 		t.Fatal("expected app remove to fail for an already-removed app, got nil error")
+	}
+}
+
+// TestAppDevCommand_UpdatesInPlace exercises the `app dev` loop: install,
+// then reinstall from a changed directory, and confirm it succeeds where
+// `app install` would fail with a duplicate id.
+func TestAppDevCommand_UpdatesInPlace(t *testing.T) {
+	dataDir := t.TempDir()
+	appDir := newTestAppDir(t, "dashboard", "hello_patchcord")
+
+	dev := newAppDevCommand()
+	dev.SetArgs([]string{appDir, "--data-dir", dataDir})
+	dev.SetContext(context.Background())
+	var devOut bytes.Buffer
+	dev.SetOut(&devOut)
+	if err := dev.Execute(); err != nil {
+		t.Fatalf("app dev error = %v", err)
+	}
+	if !strings.Contains(devOut.String(), "dashboard") {
+		t.Fatalf("dev output = %q, want it to mention the app id", devOut.String())
+	}
+
+	devAgain := newAppDevCommand()
+	devAgain.SetArgs([]string{appDir, "--data-dir", dataDir})
+	devAgain.SetContext(context.Background())
+	if err := devAgain.Execute(); err != nil {
+		t.Fatalf("second app dev error = %v, want it to update in place instead of failing", err)
+	}
+}
+
+// TestAppPackAndInstallCommands packs an application directory and
+// installs the resulting archive, exactly as a user would type it.
+func TestAppPackAndInstallCommands(t *testing.T) {
+	appDir := newTestAppDir(t, "dashboard", "hello_patchcord")
+	packagePath := filepath.Join(t.TempDir(), "dashboard.patchcord-app")
+
+	pack := newAppPackCommand()
+	pack.SetArgs([]string{appDir, "-o", packagePath})
+	pack.SetContext(context.Background())
+	var packOut bytes.Buffer
+	pack.SetOut(&packOut)
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("app pack error = %v", err)
+	}
+	if !strings.Contains(packOut.String(), packagePath) {
+		t.Fatalf("pack output = %q, want it to mention %q", packOut.String(), packagePath)
+	}
+
+	dataDir := t.TempDir()
+	install := newAppInstallCommand()
+	install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	var installOut bytes.Buffer
+	install.SetOut(&installOut)
+	if err := install.Execute(); err != nil {
+		t.Fatalf("app install (package) error = %v", err)
+	}
+	if !strings.Contains(installOut.String(), "dashboard") {
+		t.Fatalf("install output = %q, want it to mention the installed app id", installOut.String())
+	}
+
+	list := newAppListCommand()
+	list.SetArgs([]string{"--data-dir", dataDir})
+	list.SetContext(context.Background())
+	var listOut bytes.Buffer
+	list.SetOut(&listOut)
+	if err := list.Execute(); err != nil {
+		t.Fatalf("app list error = %v", err)
+	}
+	if !strings.Contains(listOut.String(), "dashboard") {
+		t.Fatalf("list output = %q, want it to mention the app installed from a package", listOut.String())
 	}
 }

@@ -4,6 +4,7 @@ export { Run } from "./run.js";
 export type {
   AppSession,
   AppSummary,
+  GetWorkflowOptions,
   HealthStatus,
   ListRunsOptions,
   RunEvent,
@@ -12,5 +13,9 @@ export type {
   RunSummary,
   RunWorkflowOptions,
   StepStatus,
+  WorkflowDetail,
+  WorkflowInputDetail,
+  WorkflowInputType,
+  WorkflowStepDetail,
   WorkflowSummary,
 } from "./types.js";

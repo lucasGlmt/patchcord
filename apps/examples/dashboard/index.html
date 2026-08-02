@@ -1,46 +1,44 @@
 <!doctype html>
 <!--
-  Reference example application (vision document, section 10.3): a minimal
-  Vite + vanilla TypeScript app that drives a real Patchcord agent through
-  @patchcord/sdk — the counterpart, on the applications side, to the
-  workflow demo YAMLs under workflows/examples/.
+  Reference application (vision document, section 10.3): a React + MUI
+  admin dashboard driving a real Patchcord agent through @patchcord/sdk —
+  installed workflows and their steps, installed applications, and
+  triggering a run with a live, step-by-step view of its progress.
 
   Run it with:
     patchcord serve
     patchcord plugin install ./bin/plugins/text
     patchcord workflow install workflows/examples/hello_patchcord.yaml
+    patchcord workflow install workflows/examples/greet_twice.yaml
     cd apps/examples/dashboard
     npm install
     npm run dev
 
-  Then open the printed local URL, enter a workflow id (try
-  "hello_patchcord" — its one step needs no inputs), optional JSON inputs/
-  bindings, and press Run. The event log streams the run live via
-  GET /v1/runs/{id}/events, and the result panel fills in once it finishes.
+  Then open the printed local URL. This talks to the agent across origins
+  (Vite's dev server on its own port, the agent on 127.0.0.1:7331) — the
+  agent's permissive CORS is explicitly provisional (ADR-0024), meant to
+  unblock exactly this kind of local development, not a production
+  posture.
 
-  This talks to the agent across origins (Vite's dev server on its own
-  port, the agent on 127.0.0.1:7331) — the agent's permissive CORS is
-  explicitly provisional (ADR-0024), meant to unblock exactly this kind of
-  local development, not a production posture.
-
-  Optionally, install this page as a real application first (public/
-  patchcord-app.yaml, copied into dist/ by Vite's build — ADR-0026) to
-  exercise the limited-session path instead of the agent's unrestricted
-  default:
+  Unlike apps/examples/greeter (deliberately limited, by an app session, to
+  running exactly one workflow), this dashboard is an operator's tool: it
+  lists and runs *any* installed workflow, so it calls the API without an
+  app session — the same unrestricted access a plain browser tab hitting
+  the agent's API already has today (see src/apiClient.ts). Installing it
+  as a real application only gets it served at /apps/dashboard/, it does
+  not change what it's allowed to do:
     npm run build
     patchcord app install apps/examples/dashboard/dist
-  then open http://127.0.0.1:7331/apps/dashboard/ instead of the Vite dev
-  URL — main.ts detects the installed app and fetches it a session
-  automatically, restricted to running "hello_patchcord" only.
+  then open http://127.0.0.1:7331/apps/dashboard/ instead of the Vite dev URL.
 -->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Patchcord Dashboard (example)</title>
+    <title>Patchcord Dashboard</title>
   </head>
   <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

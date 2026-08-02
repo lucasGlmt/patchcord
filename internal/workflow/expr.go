@@ -63,6 +63,31 @@ func validateExpression(path string, seenSteps map[string]struct{}) error {
 	}
 }
 
+// validateValueExpressions recursively validates every ${{ ... }} expression
+// found in value, including those nested inside []any or map[string]any
+// input values (e.g. text.join@1's "values" array). Non-expression values,
+// at any nesting depth, are not validated — they are literals.
+func validateValueExpressions(value any, seenSteps map[string]struct{}) error {
+	if expr, ok := asExpression(value); ok {
+		return validateExpression(expr, seenSteps)
+	}
+	switch v := value.(type) {
+	case []any:
+		for _, item := range v {
+			if err := validateValueExpressions(item, seenSteps); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, item := range v {
+			if err := validateValueExpressions(item, seenSteps); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // resolveExpression evaluates path against ctx.
 func resolveExpression(path string, ctx ExprContext) (any, error) {
 	segments := strings.Split(path, ".")
@@ -132,18 +157,50 @@ func ResolveConnector(connector string, ctx ExprContext) (string, error) {
 	return id, nil
 }
 
+// resolveValue resolves value against ctx, recursing into []any and
+// map[string]any so a ${{ ... }} expression nested inside a list or object
+// input — e.g. one of text.join@1's "values" entries — is substituted the
+// same way a top-level string input is. Each individual string is still
+// either entirely one expression or left untouched; this only changes where
+// asExpression is applied, not the "no partial interpolation" rule.
+func resolveValue(value any, ctx ExprContext) (any, error) {
+	if expr, ok := asExpression(value); ok {
+		return resolveExpression(expr, ctx)
+	}
+	switch v := value.(type) {
+	case []any:
+		resolved := make([]any, len(v))
+		for i, item := range v {
+			r, err := resolveValue(item, ctx)
+			if err != nil {
+				return nil, err
+			}
+			resolved[i] = r
+		}
+		return resolved, nil
+	case map[string]any:
+		resolved := make(map[string]any, len(v))
+		for k, item := range v {
+			r, err := resolveValue(item, ctx)
+			if err != nil {
+				return nil, err
+			}
+			resolved[k] = r
+		}
+		return resolved, nil
+	default:
+		return value, nil
+	}
+}
+
 // ResolveInputs evaluates every ${{ ... }} expression in with against ctx,
-// returning a new map with expressions replaced by their resolved values.
-// Non-expression values are copied through unchanged.
+// including expressions nested inside list or object values, returning a
+// new map with expressions replaced by their resolved values. Non-expression
+// values are copied through unchanged.
 func ResolveInputs(with map[string]any, ctx ExprContext) (map[string]any, error) {
 	resolved := make(map[string]any, len(with))
 	for key, value := range with {
-		expr, ok := asExpression(value)
-		if !ok {
-			resolved[key] = value
-			continue
-		}
-		v, err := resolveExpression(expr, ctx)
+		v, err := resolveValue(value, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("input %q: %w", key, err)
 		}

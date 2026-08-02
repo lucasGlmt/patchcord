@@ -78,6 +78,55 @@ export interface WorkflowSummary {
   installedAt: string;
 }
 
+/** One step within a WorkflowDetail. */
+export interface WorkflowStepDetail {
+  id: string;
+  uses: string;
+  with?: Record<string, unknown>;
+  connector?: string;
+}
+
+/** The type a WorkflowInputDetail declares — see internal/workflow/inputs.go. */
+export type WorkflowInputType = "string" | "number" | "boolean" | "enum";
+
+/**
+ * One declared input within a WorkflowDetail — enough to render a typed
+ * form field (a text input, a number input, a switch, a select) instead of
+ * a free-form JSON blob. See docs/book/src/workflows/format.md#declared-inputs.
+ */
+export interface WorkflowInputDetail {
+  name: string;
+  type: WorkflowInputType;
+  required: boolean;
+  description?: string;
+  default?: unknown;
+  /** The values a "enum"-typed input may take. Only set when type is "enum". */
+  enum?: string[];
+}
+
+/**
+ * One workflow version's full definition, as returned by
+ * PatchcordClient.workflows.get — unlike WorkflowSummary, this carries the
+ * parsed steps needed to render the workflow's structure, plus its raw
+ * YAML source (the same text `patchcord workflow export` prints).
+ */
+export interface WorkflowDetail {
+  id: string;
+  version: number;
+  schemaVersion: number;
+  triggerType: string;
+  /** The workflow's declared input schema. Empty when it declares none. */
+  inputs: WorkflowInputDetail[];
+  steps: WorkflowStepDetail[];
+  source: string;
+}
+
+/** Options accepted by PatchcordClient.workflows.get. */
+export interface GetWorkflowOptions {
+  /** Workflow version to fetch. Defaults to the latest installed one. */
+  version?: number;
+}
+
 /** Options accepted by PatchcordClient.runs.list. */
 export interface ListRunsOptions {
   /** Restrict the result to runs of this workflow id. */

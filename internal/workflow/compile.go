@@ -39,6 +39,9 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 	if len(def.Steps) == 0 {
 		return fmt.Errorf("workflow must declare at least one step")
 	}
+	if err := validateInputDefs(def.Inputs); err != nil {
+		return err
+	}
 
 	seenSteps := make(map[string]struct{}, len(def.Steps))
 	for i, step := range def.Steps {
@@ -56,11 +59,7 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 		}
 
 		for key, value := range step.With {
-			expr, ok := asExpression(value)
-			if !ok {
-				continue
-			}
-			if err := validateExpression(expr, seenSteps); err != nil {
+			if err := validateValueExpressions(value, seenSteps); err != nil {
 				return fmt.Errorf("step %q: input %q: %w", step.ID, key, err)
 			}
 		}
