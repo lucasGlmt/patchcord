@@ -12,7 +12,14 @@ import (
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file::memory:")
+	// cache=shared: some tests (e.g. handleRunWorkflow's background
+	// runs.Continue goroutine) touch the database from more than one
+	// goroutine concurrently, which can each get a different pooled
+	// connection — an unshared ":memory:" database is private per
+	// connection, so a second connection would see an empty schema. A real,
+	// file-backed database (as persistence.Open uses in production) doesn't
+	// have this problem: the file itself is what's shared.
+	db, err := sql.Open("sqlite", "file::memory:?cache=shared&_busy_timeout=5000")
 	if err != nil {
 		t.Fatalf("open in-memory database: %v", err)
 	}
@@ -93,5 +100,36 @@ func TestRouter_Health(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRouter_OpenAPISpec(t *testing.T) {
+	router := NewRouter(Deps{DB: openTestDB(t)})
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/openapi.json", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", ct, "application/json")
+	}
+
+	var spec struct {
+		Swagger string         `json:"swagger"`
+		Paths   map[string]any `json:"paths"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&spec); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if spec.Swagger != "2.0" {
+		t.Fatalf("swagger version = %q, want %q", spec.Swagger, "2.0")
+	}
+	for _, path := range []string{"/system/health", "/workflows/{id}/run", "/runs/{id}", "/runs/{id}/events"} {
+		if _, ok := spec.Paths[path]; !ok {
+			t.Fatalf("spec paths = %v, want it to contain %q", spec.Paths, path)
+		}
 	}
 }

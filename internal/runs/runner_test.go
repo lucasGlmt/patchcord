@@ -380,3 +380,109 @@ steps:
 		t.Fatalf(`steps[0].Input["value"] = %v, want %q (resolved input must survive a later connector failure)`, steps[0].Input["value"], "hello")
 	}
 }
+
+func TestStart_CreatesARunningRunWithoutExecutingAnyStep(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, helloWorkflow)
+
+	def, run, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	if def.ID != "hello_patchcord" {
+		t.Fatalf("def.ID = %q, want %q", def.ID, "hello_patchcord")
+	}
+	if run.Status != workflow.RunRunning {
+		t.Fatalf("run.Status = %s, want %s", run.Status, workflow.RunRunning)
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if len(steps) != 1 || steps[0].Status != workflow.StepPending {
+		t.Fatalf("steps = %+v, want a single pending step (Start must not run any step)", steps)
+	}
+}
+
+func TestStart_UnknownWorkflowFailsFast(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, _, err := Start(context.Background(), db, "unknown", nil); !errors.Is(err, ErrWorkflowNotFound) {
+		t.Fatalf("Start() error = %v, want ErrWorkflowNotFound", err)
+	}
+}
+
+func TestContinue_DrivesAnAlreadyStartedRunToCompletion(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, helloWorkflow)
+
+	def, run, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HI"}},
+	}
+
+	if err := Continue(context.Background(), db, executor, def, run, map[string]any{"value": "hi"}, nil, ExecuteOptions{}); err != nil {
+		t.Fatalf("Continue() error = %v", err)
+	}
+
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run.Status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+	if run.Outputs["value"] != "HI" {
+		t.Fatalf(`run.Outputs["value"] = %v, want "HI"`, run.Outputs["value"])
+	}
+}
+
+// TestStartThenBackgroundContinue rehearses exactly what internal/api's
+// async workflow-run handler does: call Start synchronously to get a run id
+// right away, then run Continue in a background goroutine while a
+// concurrent WatchRun observes its progress — proving the split is safe to
+// use that way before internal/api builds on top of it.
+func TestStartThenBackgroundContinue(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, helloWorkflow)
+
+	def, run, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	events, err := WatchRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("WatchRun() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HI"}},
+	}
+	go func() {
+		if err := Continue(context.Background(), db, executor, def, run, map[string]any{"value": "hi"}, nil, ExecuteOptions{}); err != nil {
+			t.Errorf("Continue() error = %v", err)
+		}
+	}()
+
+	var sawTerminalRunEvent bool
+	timeout := time.After(3 * time.Second)
+	for {
+		select {
+		case e, ok := <-events:
+			if !ok {
+				if !sawTerminalRunEvent {
+					t.Fatal("events channel closed before observing a terminal run event")
+				}
+				return
+			}
+			if e.StepID == "" && e.Status == string(workflow.RunSucceeded) {
+				sawTerminalRunEvent = true
+			}
+		case <-timeout:
+			t.Fatal("did not observe the run reach a terminal status in time")
+		}
+	}
+}

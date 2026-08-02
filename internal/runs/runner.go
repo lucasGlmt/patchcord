@@ -60,35 +60,64 @@ func stepFailureStatus(err error) workflow.StepStatus {
 	return workflow.StepFailed
 }
 
-// Execute runs the latest installed version of workflowID with the given
-// inputs and connector bindings against executor, persisting the run and
-// every step's progress as it happens, and returns the completed run.
-// bindings maps a logical binding name (as referenced by a step's
-// ${{ bindings.<name> }} connector expression) to the id of the connector
-// to use — see workflow.ResolveConnector.
+// Start creates a new run of workflowID's latest installed version and
+// transitions it straight to Running, then returns immediately — it does
+// not execute any step. Call Continue next to actually run them.
 //
-// Steps run sequentially; the first one to fail — including timing out, or
-// ctx being cancelled — stops the run. Every step that never got a chance
-// to run is recorded as skipped, so no step is left dangling in "pending".
-func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowID string, inputs map[string]any, bindings map[string]string, opts ExecuteOptions) (*Run, error) {
-	opts = opts.withDefaults()
-
-	pctx, cancelPersist := context.WithTimeout(context.Background(), persistTimeout)
-	defer cancelPersist()
+// Split from the step-running loop (Continue) so a caller that must not
+// block for the run's entire duration — the HTTP API's
+// POST /v1/workflows/{id}/run, which needs to answer with the new run's id
+// right away so a client can start watching /v1/runs/{id}/events — can call
+// Start synchronously and Continue in a background goroutine (see
+// internal/api's handleRunWorkflow). Execute composes both for callers (the
+// CLI, most tests) that do want to block until completion.
+//
+// Like Continue's own bookkeeping writes, Start's persistence is bounded by
+// persistTimeout but deliberately not derived from ctx: a caller whose ctx
+// is cancelled the instant it calls Start (e.g. an HTTP client that
+// disconnects immediately) still gets a consistently created, Running run
+// row rather than an ambiguous half-created one — the step loop in Continue
+// is what turns a cancelled ctx into a properly recorded RunCancelled.
+func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string]any) (*workflow.Definition, *Run, error) {
+	pctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
+	defer cancel()
 
 	def, err := LatestWorkflow(pctx, db, workflowID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	run, err := createRun(pctx, db, def, inputs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err := updateRunStatus(pctx, db, run, workflow.RunRunning, nil, nil); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	return def, run, nil
+}
+
+// Continue runs def's steps for run — already created and transitioned to
+// Running by Start — against executor, persisting progress and the final
+// status as it happens. inputs and bindings are the same values passed to
+// Start (bindings maps a logical binding name, as referenced by a step's
+// ${{ bindings.<name> }} connector expression, to the id of the connector
+// to use — see workflow.ResolveConnector).
+//
+// Steps run sequentially; the first one to fail — including timing out, or
+// ctx being cancelled — stops the run. Every step that never got a chance
+// to run is recorded as skipped, so no step is left dangling in "pending".
+// Continue only returns a non-nil error for a genuine persistence failure —
+// a step's own failure (or the run's ctx being cancelled) is captured in
+// the run's final status instead, never returned as an error here, exactly
+// as Execute's callers already expect.
+func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *workflow.Definition, run *Run, inputs map[string]any, bindings map[string]string, opts ExecuteOptions) error {
+	opts = opts.withDefaults()
+
+	pctx, cancelPersist := context.WithTimeout(context.Background(), persistTimeout)
+	defer cancelPersist()
 
 	stepOutputs := make(map[string]map[string]any, len(def.Steps))
 	var runOutputs map[string]any
@@ -131,10 +160,10 @@ func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowI
 			// discarding data that was actually computed.
 			runErr = fmt.Errorf("step %q: %w", step.ID, resolveErr)
 			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil); err != nil {
-				return nil, err
+				return err
 			}
 			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, runErr); err != nil {
-				return nil, err
+				return err
 			}
 			nextPending = i + 1
 			break
@@ -142,7 +171,7 @@ func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowI
 
 		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil); err != nil {
 			cancel()
-			return nil, err
+			return err
 		}
 
 		output, execErr := executor.ExecuteAction(stepCtx, step.Uses, resolvedInput, resolvedConnector)
@@ -151,14 +180,14 @@ func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowI
 		if execErr != nil {
 			runErr = fmt.Errorf("step %q: %w", step.ID, execErr)
 			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, execErr); err != nil {
-				return nil, err
+				return err
 			}
 			nextPending = i + 1
 			break
 		}
 
 		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, resolvedInput, output, nil); err != nil {
-			return nil, err
+			return err
 		}
 
 		stepOutputs[step.ID] = output
@@ -181,12 +210,30 @@ func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowI
 
 		for _, step := range def.Steps[nextPending:] {
 			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, skippedStatus, nil, nil, nil); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
 	if err := updateRunStatus(pctx, db, run, finalStatus, runOutputs, runErr); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Execute runs the latest installed version of workflowID to completion —
+// Start followed by Continue — persisting the run and every step's progress
+// as it happens, and returns the completed run. See Start and Continue for
+// what each half does; most callers (the CLI's `workflow run`, most tests)
+// want this blocking, all-in-one behavior.
+func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowID string, inputs map[string]any, bindings map[string]string, opts ExecuteOptions) (*Run, error) {
+	def, run, err := Start(ctx, db, workflowID, inputs)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := Continue(ctx, db, executor, def, run, inputs, bindings, opts); err != nil {
 		return nil, err
 	}
 

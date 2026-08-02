@@ -1,0 +1,374 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability; the rest of the vision document's API surface (plugins, connectors, actions, apps) is not implemented yet.",
+        "title": "Patchcord Agent API",
+        "contact": {},
+        "version": "1"
+    },
+    "basePath": "/v1",
+    "paths": {
+        "/runs": {
+            "get": {
+                "description": "Returns every recorded run, most recently created first.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "List runs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Restrict to runs of this workflow id",
+                        "name": "workflow_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.runSummary"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{id}": {
+            "get": {
+                "description": "Returns one run's current status, outputs and steps — the counterpart to POST /workflows/{id}/run's immediate response, letting a client poll a run or fetch its final result once GET /runs/{id}/events has closed.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Get a run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runSummary"
+                        }
+                    },
+                    "404": {
+                        "description": "run not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{id}/cancel": {
+            "post": {
+                "description": "Marks a run still queued or running as cancelled. Does not interrupt a run actively executing within this same process — it only flips its recorded status; an in-flight step keeps running until its next persistence checkpoint, where it then stops cleanly.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Cancel a run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.runSummary"
+                        }
+                    },
+                    "404": {
+                        "description": "run not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "run has already finished",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/runs/{id}/events": {
+            "get": {
+                "description": "Streams a run's status changes, and its steps', as Server-Sent Events until the run reaches a terminal status or the client disconnects. The \"event:\" field is \"run.\u003cstatus\u003e\" or \"step.\u003cstatus\u003e\"; \"data:\" is a JSON-encoded event payload.",
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "runs"
+                ],
+                "summary": "Stream a run's events",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Run id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "text/event-stream",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "run not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/health": {
+            "get": {
+                "description": "Reports whether the agent's database is reachable.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Check agent health",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.healthResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/api.healthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/workflows": {
+            "get": {
+                "description": "Returns every installed workflow version, most recently installed first. The same workflow id can appear more than once if multiple versions are installed (workflows are immutable once published — installing a new version never replaces an old one).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workflows"
+                ],
+                "summary": "List installed workflows",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.workflowSummary"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/workflows/{id}/run": {
+            "post": {
+                "description": "Starts a new run of the latest installed version of the named workflow and returns immediately with its id and initial status — it does not wait for any step to execute. Watch GET /runs/{id}/events or poll GET /runs/{id} for progress and the final result.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "workflows"
+                ],
+                "summary": "Trigger a workflow run",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workflow id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Inputs and connector bindings (both optional, default to none)",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/api.runWorkflowRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/api.runSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "malformed request body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "workflow not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "no action executor configured, or a persistence failure",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "api.healthResponse": {
+            "type": "object",
+            "properties": {
+                "database": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.runStep": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "output": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.runSummary": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "finished_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "outputs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.runStep"
+                    }
+                },
+                "workflow_id": {
+                    "type": "string"
+                },
+                "workflow_version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "api.runWorkflowRequest": {
+            "type": "object",
+            "properties": {
+                "bindings": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "api.workflowSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "installed_at": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        }
+    }
+}

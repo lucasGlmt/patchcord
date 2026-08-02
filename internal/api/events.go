@@ -24,6 +24,14 @@ type runEventPayload struct {
 // disconnects (vision document, section 10.1, "/v1/events", and section
 // 14, "diffusion en temps réel"; see ADR-0019 for why this is polling-based
 // rather than a push from the runner).
+// @Summary      Stream a run's events
+// @Description  Streams a run's status changes, and its steps', as Server-Sent Events until the run reaches a terminal status or the client disconnects. The "event:" field is "run.<status>" or "step.<status>"; "data:" is a JSON-encoded event payload.
+// @Tags         runs
+// @Produce      text/event-stream
+// @Param        id   path  string  true  "Run id"
+// @Success      200  {string}  string  "text/event-stream"
+// @Failure      404  {string}  string  "run not found"
+// @Router       /runs/{id}/events [get]
 func handleRunEvents(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		runID := r.PathValue("id")

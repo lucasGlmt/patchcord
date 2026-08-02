@@ -41,6 +41,7 @@ type Agent struct {
 	listener   net.Listener
 	db         *sql.DB
 	supervisor *plugins.Supervisor
+	cancelRuns context.CancelFunc
 }
 
 // NewAgent opens and migrates the agent's database, launches and starts
@@ -79,13 +80,27 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("start plugin supervisor: %w", err)
 	}
 
+	// runCtx is the base context every HTTP-triggered background run
+	// (see internal/api's handleRunWorkflow) derives from — never a single
+	// request's own context, which is gone the moment its response is
+	// written. Cancelled during Run's shutdown sequence so an in-flight
+	// background run is recorded Cancelled instead of left running against
+	// plugins that are about to be torn down by supervisor.Stop.
+	runCtx, cancelRuns := context.WithCancel(context.Background())
+
 	return &Agent{
-		cfg:        cfg,
-		logger:     logger,
-		server:     &http.Server{Handler: api.NewRouter(api.Deps{DB: db})},
+		cfg:    cfg,
+		logger: logger,
+		server: &http.Server{Handler: api.NewRouter(api.Deps{
+			DB:       db,
+			Executor: supervisor,
+			RunCtx:   runCtx,
+			Logger:   logger,
+		})},
 		listener:   listener,
 		db:         db,
 		supervisor: supervisor,
+		cancelRuns: cancelRuns,
 	}, nil
 }
 
@@ -101,6 +116,12 @@ func (a *Agent) Addr() string {
 // fully stopped.
 func (a *Agent) Run(ctx context.Context) error {
 	defer func() {
+		// Cancel any HTTP-triggered background run (internal/api's
+		// handleRunWorkflow) before tearing down the plugins it depends on,
+		// so it is recorded Cancelled rather than failing loudly against
+		// processes that are mid-shutdown, or left as an orphaned goroutine.
+		a.cancelRuns()
+
 		stopCtx, cancel := context.WithTimeout(context.Background(), a.cfg.ShutdownTimeout)
 		a.supervisor.Stop(stopCtx)
 		cancel()

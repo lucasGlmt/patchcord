@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+  Reference example application (vision document, section 10.3): a minimal
+  Vite + vanilla TypeScript app that drives a real Patchcord agent through
+  @patchcord/sdk — the counterpart, on the applications side, to the
+  workflow demo YAMLs under workflows/examples/.
+
+  Run it with:
+    patchcord serve
+    patchcord plugin install ./bin/plugins/text
+    patchcord workflow install workflows/examples/hello_patchcord.yaml
+    cd apps/examples/dashboard
+    npm install
+    npm run dev
+
+  Then open the printed local URL, enter a workflow id (try
+  "hello_patchcord" — its one step needs no inputs), optional JSON inputs/
+  bindings, and press Run. The event log streams the run live via
+  GET /v1/runs/{id}/events, and the result panel fills in once it finishes.
+
+  This talks to the agent across origins (Vite's dev server on its own
+  port, the agent on 127.0.0.1:7331) — the agent's permissive CORS is
+  explicitly provisional (ADR-0024), meant to unblock exactly this kind of
+  local development, not a production posture.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Patchcord Dashboard (example)</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

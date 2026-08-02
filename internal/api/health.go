@@ -15,6 +15,13 @@ type healthResponse struct {
 	Database string `json:"database"`
 }
 
+// @Summary      Check agent health
+// @Description  Reports whether the agent's database is reachable.
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  healthResponse
+// @Failure      503  {object}  healthResponse
+// @Router       /system/health [get]
 func handleHealth(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		body := healthResponse{Status: "ok", Database: "ok"}

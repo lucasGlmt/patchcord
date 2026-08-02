@@ -1,0 +1,262 @@
+basePath: /v1
+definitions:
+  api.healthResponse:
+    properties:
+      database:
+        type: string
+      status:
+        type: string
+    type: object
+  api.runStep:
+    properties:
+      error:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      input:
+        additionalProperties: {}
+        type: object
+      output:
+        additionalProperties: {}
+        type: object
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
+  api.runSummary:
+    properties:
+      created_at:
+        type: string
+      error:
+        type: string
+      finished_at:
+        type: string
+      id:
+        type: string
+      inputs:
+        additionalProperties: {}
+        type: object
+      outputs:
+        additionalProperties: {}
+        type: object
+      started_at:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/api.runStep'
+        type: array
+      workflow_id:
+        type: string
+      workflow_version:
+        type: integer
+    type: object
+  api.runWorkflowRequest:
+    properties:
+      bindings:
+        additionalProperties:
+          type: string
+        type: object
+      inputs:
+        additionalProperties: {}
+        type: object
+    type: object
+  api.workflowSummary:
+    properties:
+      id:
+        type: string
+      installed_at:
+        type: string
+      version:
+        type: integer
+    type: object
+info:
+  contact: {}
+  description: Public HTTP API for the Patchcord agent (vision document, section 10.1).
+    Covers workflow triggering and run observability; the rest of the vision document's
+    API surface (plugins, connectors, actions, apps) is not implemented yet.
+  title: Patchcord Agent API
+  version: "1"
+paths:
+  /runs:
+    get:
+      description: Returns every recorded run, most recently created first.
+      parameters:
+      - description: Restrict to runs of this workflow id
+        in: query
+        name: workflow_id
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.runSummary'
+            type: array
+      summary: List runs
+      tags:
+      - runs
+  /runs/{id}:
+    get:
+      description: Returns one run's current status, outputs and steps — the counterpart
+        to POST /workflows/{id}/run's immediate response, letting a client poll a
+        run or fetch its final result once GET /runs/{id}/events has closed.
+      parameters:
+      - description: Run id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.runSummary'
+        "404":
+          description: run not found
+          schema:
+            type: string
+      summary: Get a run
+      tags:
+      - runs
+  /runs/{id}/cancel:
+    post:
+      description: Marks a run still queued or running as cancelled. Does not interrupt
+        a run actively executing within this same process — it only flips its recorded
+        status; an in-flight step keeps running until its next persistence checkpoint,
+        where it then stops cleanly.
+      parameters:
+      - description: Run id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.runSummary'
+        "404":
+          description: run not found
+          schema:
+            type: string
+        "409":
+          description: run has already finished
+          schema:
+            type: string
+      summary: Cancel a run
+      tags:
+      - runs
+  /runs/{id}/events:
+    get:
+      description: Streams a run's status changes, and its steps', as Server-Sent
+        Events until the run reaches a terminal status or the client disconnects.
+        The "event:" field is "run.<status>" or "step.<status>"; "data:" is a JSON-encoded
+        event payload.
+      parameters:
+      - description: Run id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/event-stream
+      responses:
+        "200":
+          description: text/event-stream
+          schema:
+            type: string
+        "404":
+          description: run not found
+          schema:
+            type: string
+      summary: Stream a run's events
+      tags:
+      - runs
+  /system/health:
+    get:
+      description: Reports whether the agent's database is reachable.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.healthResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.healthResponse'
+      summary: Check agent health
+      tags:
+      - system
+  /workflows:
+    get:
+      description: Returns every installed workflow version, most recently installed
+        first. The same workflow id can appear more than once if multiple versions
+        are installed (workflows are immutable once published — installing a new version
+        never replaces an old one).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.workflowSummary'
+            type: array
+      summary: List installed workflows
+      tags:
+      - workflows
+  /workflows/{id}/run:
+    post:
+      consumes:
+      - application/json
+      description: Starts a new run of the latest installed version of the named workflow
+        and returns immediately with its id and initial status — it does not wait
+        for any step to execute. Watch GET /runs/{id}/events or poll GET /runs/{id}
+        for progress and the final result.
+      parameters:
+      - description: Workflow id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Inputs and connector bindings (both optional, default to none)
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.runWorkflowRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.runSummary'
+        "400":
+          description: malformed request body
+          schema:
+            type: string
+        "404":
+          description: workflow not found
+          schema:
+            type: string
+        "500":
+          description: no action executor configured, or a persistence failure
+          schema:
+            type: string
+      summary: Trigger a workflow run
+      tags:
+      - workflows
+swagger: "2.0"
