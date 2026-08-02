@@ -1,5 +1,29 @@
 basePath: /v1
 definitions:
+  api.appSessionResponse:
+    properties:
+      app_id:
+        type: string
+      issued_at:
+        type: string
+      token:
+        type: string
+      workflows_run:
+        items:
+          type: string
+        type: array
+    type: object
+  api.appSummary:
+    properties:
+      id:
+        type: string
+      version:
+        type: string
+      workflows_run:
+        items:
+          type: string
+        type: array
+    type: object
   api.healthResponse:
     properties:
       database:
@@ -82,6 +106,47 @@ info:
   title: Patchcord Agent API
   version: "1"
 paths:
+  /apps:
+    get:
+      description: Returns every installed application and the permissions its sessions
+        are limited to.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.appSummary'
+            type: array
+      summary: List installed applications
+      tags:
+      - apps
+  /apps/{id}/sessions:
+    post:
+      description: 'Issues a new session for the named application, limited to its
+        manifest''s declared permissions. The token is a bearer credential: pass it
+        as "Authorization: Bearer <token>" to POST /workflows/{id}/run.'
+      parameters:
+      - description: App id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.appSessionResponse'
+        "404":
+          description: app not found
+          schema:
+            type: string
+      summary: Issue an application session
+      tags:
+      - apps
   /runs:
     get:
       description: Returns every recorded run, most recently created first.

@@ -1,0 +1,14 @@
+schema_version: 1
+
+id: http_api_task
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: get_todo_1
+    uses: http.request@1
+    connector: "${{ bindings.api }}"
+    with:
+      path: "/todos/1"

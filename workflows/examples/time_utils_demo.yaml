@@ -1,0 +1,33 @@
+# Reference example for the time plugin (plugins/examples/time): gets the
+# current time, adds 24 hours to it, then formats the result. Every step
+# passes its "value" output straight into the next step's "value" input
+# since every time action agrees on RFC3339 UTC as the wire format.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/time
+#   patchcord workflow install workflows/examples/time_utils_demo.yaml
+#   patchcord workflow run time_utils_demo
+schema_version: 1
+
+id: time_utils_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: now
+    uses: time.now@1
+    with: {}
+
+  - id: tomorrow
+    uses: time.add@1
+    with:
+      value: "${{ steps.now.outputs.value }}"
+      duration: "24h"
+
+  - id: formatted
+    uses: time.format@1
+    with:
+      value: "${{ steps.tomorrow.outputs.value }}"
+      layout: "2006-01-02"

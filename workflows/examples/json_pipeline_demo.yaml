@@ -1,0 +1,41 @@
+# Reference example for the json plugin (plugins/examples/json): parses a
+# JSON string, extracts a field from it with json.jsonpath@1, merges in an
+# extra field, then serializes the result back to a pretty-printed string.
+# No connector needed — everything here is pure computation.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/json
+#   patchcord workflow install workflows/examples/json_pipeline_demo.yaml
+#   patchcord workflow run json_pipeline_demo
+schema_version: 1
+
+id: json_pipeline_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: parse
+    uses: json.parse@1
+    with:
+      value: '{"name": "Patchcord", "tags": ["core", "plugin"]}'
+
+  - id: extract_name
+    uses: json.jsonpath@1
+    with:
+      value: "${{ steps.parse.outputs.value }}"
+      path: "$.name"
+
+  - id: merge_greeting
+    uses: json.merge@1
+    with:
+      base: "${{ steps.parse.outputs.value }}"
+      patch:
+        greeting: "hello"
+
+  - id: stringify
+    uses: json.stringify@1
+    with:
+      value: "${{ steps.merge_greeting.outputs.value }}"
+      pretty: true

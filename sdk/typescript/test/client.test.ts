@@ -151,3 +151,62 @@ test("PatchcordClient.workflows.run rejects a non-2xx response", async () => {
     await new Promise((r) => server.close(() => r(undefined)));
   }
 });
+
+// recordingServer stands in for an agent that hasn't been given an app
+// session's token: it just echoes back whether one arrived, letting these
+// tests assert on client.ts's own request-building logic without needing
+// the full run/events lifecycle startFakeAgent sets up.
+function startRecordingServer(): Promise<{
+  baseUrl: string;
+  lastAuthorization: () => string | undefined;
+  close: () => Promise<void>;
+}> {
+  let lastAuthorization: string | undefined;
+  const server = http.createServer((req, res) => {
+    lastAuthorization = req.headers.authorization;
+    res.writeHead(202, { "Content-Type": "application/json" });
+    res.end(
+      JSON.stringify({
+        id: "run-1",
+        workflow_id: "demo",
+        workflow_version: 1,
+        status: "running",
+        created_at: "2026-01-01T00:00:00Z",
+      }),
+    );
+  });
+
+  return new Promise((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const addr = server.address() as AddressInfo;
+      resolve({
+        baseUrl: `http://127.0.0.1:${addr.port}`,
+        lastAuthorization: () => lastAuthorization,
+        close: () => new Promise((r) => server.close(() => r())),
+      });
+    });
+  });
+}
+
+test("PatchcordClient sends 'Authorization: Bearer <token>' when constructed with a token", async () => {
+  const server = await startRecordingServer();
+  try {
+    const client = new PatchcordClient({ baseUrl: server.baseUrl, token: "app-session-token" });
+    await client.workflows.run("demo");
+    assert.equal(server.lastAuthorization(), "Bearer app-session-token");
+  } finally {
+    await server.close();
+  }
+});
+
+test("PatchcordClient sends no Authorization header when constructed without a token", async () => {
+  const server = await startRecordingServer();
+  try {
+    const client = new PatchcordClient({ baseUrl: server.baseUrl });
+    await client.workflows.run("demo");
+    assert.equal(server.lastAuthorization(), undefined);
+  } finally {
+    await server.close();
+  }
+});

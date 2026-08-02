@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchcord.dev/schemas/app/v1/manifest.schema.json",
+  "title": "Patchcord application manifest (v1)",
+  "description": "The patchcord-app.yaml manifest an installed application declares (vision doc §7.6, §9.3, §15.4). This is the minimal, versioned slice of the eventual permission model: it only covers workflows.run today. connectors.use and capabilities are deliberately not part of v1 — see ADR-0026 — and will land in a later, additive schema revision once the agent has an enforcement point for them.",
+  "type": "object",
+  "required": ["id", "version", "permissions"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of the application, used in its serving URL (/apps/{id}/) and in the sessions it issues."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application version, free-form (e.g. semantic version)."
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["workflows"],
+      "additionalProperties": false,
+      "properties": {
+        "workflows": {
+          "type": "object",
+          "required": ["run"],
+          "additionalProperties": false,
+          "properties": {
+            "run": {
+              "type": "array",
+              "description": "Workflow ids this application's sessions are allowed to run. A session issued for this application can never run a workflow outside this list.",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

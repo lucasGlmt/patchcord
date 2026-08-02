@@ -8,6 +8,64 @@
     },
     "basePath": "/v1",
     "paths": {
+        "/apps": {
+            "get": {
+                "description": "Returns every installed application and the permissions its sessions are limited to.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apps"
+                ],
+                "summary": "List installed applications",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.appSummary"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{id}/sessions": {
+            "post": {
+                "description": "Issues a new session for the named application, limited to its manifest's declared permissions. The token is a bearer credential: pass it as \"Authorization: Bearer \u003ctoken\u003e\" to POST /workflows/{id}/run.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "apps"
+                ],
+                "summary": "Issue an application session",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "App id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.appSessionResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "app not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/runs": {
             "get": {
                 "description": "Returns every recorded run, most recently created first.",
@@ -259,6 +317,43 @@
         }
     },
     "definitions": {
+        "api.appSessionResponse": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "string"
+                },
+                "issued_at": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "workflows_run": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "api.appSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "workflows_run": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "api.healthResponse": {
             "type": "object",
             "properties": {

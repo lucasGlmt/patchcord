@@ -1,0 +1,30 @@
+# Reference example for the encoding plugin (plugins/examples/encoding):
+# generates a UUID, base64-encodes it, then hashes the encoded form. No
+# connector needed — everything here is pure computation.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/encoding
+#   patchcord workflow install workflows/examples/encoding_utils_demo.yaml
+#   patchcord workflow run encoding_utils_demo
+schema_version: 1
+
+id: encoding_utils_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: id
+    uses: uuid.generate@1
+    with: {}
+
+  - id: encoded
+    uses: base64.encode@1
+    with:
+      value: "${{ steps.id.outputs.value }}"
+
+  - id: hashed
+    uses: hash.sha256@1
+    with:
+      value: "${{ steps.encoded.outputs.value }}"

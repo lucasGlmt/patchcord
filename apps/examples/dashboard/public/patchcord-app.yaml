@@ -1,0 +1,16 @@
+# Manifest for this reference application (vision document, section 7.6,
+# 9.3, 15.4; schema: api/app/v1/manifest.schema.json). Lives under public/
+# so Vite's build copies it into dist/ alongside the built static files.
+# Installed with:
+#   npm run build
+#   patchcord app install apps/examples/dashboard/dist
+#
+# Once installed, the agent serves it at /apps/dashboard/ and issues it
+# sessions limited to running exactly the workflow listed below — see
+# ADR-0026.
+id: dashboard
+version: "0.1.0"
+permissions:
+  workflows:
+    run:
+      - hello_patchcord

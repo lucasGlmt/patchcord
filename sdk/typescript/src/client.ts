@@ -6,6 +6,15 @@ export interface PatchcordClientOptions {
   /** The agent's base URL, e.g. "http://127.0.0.1:7331". */
   baseUrl: string;
   /**
+   * An application session token (vision document, section 15.4), as
+   * issued by POST /v1/apps/{id}/sessions. When set, every request sends
+   * it as "Authorization: Bearer <token>" — the agent then limits what
+   * this client may do to that session's application's declared
+   * permissions instead of its unrestricted default (ADR-0026). Omit it
+   * to call the API exactly as before this option existed.
+   */
+  token?: string;
+  /**
    * Override for the fetch implementation used for every request —
    * mainly for tests. Defaults to the global fetch, present in both
    * browsers and Node >=18.
@@ -22,6 +31,7 @@ export interface PatchcordClientOptions {
 export class PatchcordClient {
   #baseUrl: string;
   #fetch: typeof fetch;
+  #token?: string;
 
   readonly workflows: {
     /**
@@ -41,6 +51,7 @@ export class PatchcordClient {
     // Node's fetch doesn't enforce this, which is why it never showed up
     // in this SDK's own (Node-based) test suite. Bind it explicitly.
     this.#fetch = options.fetch ?? fetch.bind(globalThis);
+    this.#token = options.token;
 
     this.workflows = {
       run: (workflowId, runOptions) => this.#runWorkflow(workflowId, runOptions),
@@ -48,9 +59,14 @@ export class PatchcordClient {
   }
 
   async #runWorkflow(workflowId: string, options?: RunWorkflowOptions): Promise<Run> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (this.#token) {
+      headers.Authorization = `Bearer ${this.#token}`;
+    }
+
     const response = await this.#fetch(`${this.#baseUrl}/v1/workflows/${encodeURIComponent(workflowId)}/run`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         inputs: options?.inputs ?? {},
         bindings: options?.bindings ?? {},

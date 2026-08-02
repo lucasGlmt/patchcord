@@ -22,6 +22,16 @@
   port, the agent on 127.0.0.1:7331) — the agent's permissive CORS is
   explicitly provisional (ADR-0024), meant to unblock exactly this kind of
   local development, not a production posture.
+
+  Optionally, install this page as a real application first (public/
+  patchcord-app.yaml, copied into dist/ by Vite's build — ADR-0026) to
+  exercise the limited-session path instead of the agent's unrestricted
+  default:
+    npm run build
+    patchcord app install apps/examples/dashboard/dist
+  then open http://127.0.0.1:7331/apps/dashboard/ instead of the Vite dev
+  URL — main.ts detects the installed app and fetches it a session
+  automatically, restricted to running "hello_patchcord" only.
 -->
 <html lang="en">
   <head>

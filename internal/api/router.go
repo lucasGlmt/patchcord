@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/lucasglmt/patchcord/api/agent"
+	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/runs"
 )
 
@@ -33,6 +34,13 @@ type Deps struct {
 	// no way to report back (its response was already sent). Defaults to
 	// slog.Default() when nil.
 	Logger *slog.Logger
+	// Sessions issues and validates the limited sessions installed
+	// applications use (vision document, section 15.4). Only dereferenced
+	// when a request actually presents an "Authorization: Bearer" header
+	// (withOptionalAppSession) or calls POST /apps/{id}/sessions — left nil,
+	// every other existing route keeps working exactly as before this
+	// package existed.
+	Sessions *auth.Store
 }
 
 func (d Deps) runCtx() context.Context {
@@ -54,12 +62,15 @@ func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
 	mux.HandleFunc("GET /v1/workflows", handleListWorkflows(deps))
-	mux.HandleFunc("POST /v1/workflows/{id}/run", handleRunWorkflow(deps))
+	mux.HandleFunc("POST /v1/workflows/{id}/run", withOptionalAppSession(deps, handleRunWorkflow(deps)))
 	mux.HandleFunc("GET /v1/runs", handleListRuns(deps))
 	mux.HandleFunc("GET /v1/runs/{id}", handleGetRun(deps))
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", handleCancelRun(deps))
 	mux.HandleFunc("GET /v1/runs/{id}/events", handleRunEvents(deps))
 	mux.HandleFunc("GET /v1/openapi.json", handleOpenAPISpec())
+	mux.HandleFunc("GET /v1/apps", handleListApps(deps))
+	mux.HandleFunc("POST /v1/apps/{id}/sessions", handleCreateAppSession(deps))
+	mux.HandleFunc("GET /apps/{id}/", handleServeApp(deps))
 	return withCORS(mux)
 }
 
@@ -84,7 +95,7 @@ func withCORS(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

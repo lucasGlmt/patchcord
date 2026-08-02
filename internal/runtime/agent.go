@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/lucasglmt/patchcord/internal/api"
+	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/migrations"
@@ -96,6 +97,7 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 			Executor: supervisor,
 			RunCtx:   runCtx,
 			Logger:   logger,
+			Sessions: auth.NewStore(),
 		})},
 		listener:   listener,
 		db:         db,

@@ -19,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newConnectorCommand())
 	root.AddCommand(newWorkflowCommand())
 	root.AddCommand(newRunCommand())
+	root.AddCommand(newAppCommand())
 
 	return root
 }
