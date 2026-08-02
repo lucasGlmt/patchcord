@@ -65,3 +65,47 @@ export interface RunWorkflowOptions {
    */
   bindings?: Record<string, string>;
 }
+
+/**
+ * One installed workflow version, as returned by PatchcordClient.workflows.
+ * list. The same workflow id can appear more than once — workflows are
+ * immutable once published (ADR-0008), so installing a new version never
+ * replaces an older one.
+ */
+export interface WorkflowSummary {
+  id: string;
+  version: number;
+  installedAt: string;
+}
+
+/** Options accepted by PatchcordClient.runs.list. */
+export interface ListRunsOptions {
+  /** Restrict the result to runs of this workflow id. */
+  workflowId?: string;
+}
+
+/** One installed application, as returned by PatchcordClient.apps.list. */
+export interface AppSummary {
+  id: string;
+  version: string;
+  /** Workflow ids a session for this app is permitted to run. */
+  workflowsRun: string[];
+}
+
+/**
+ * A newly issued application session, as returned by
+ * PatchcordClient.apps.createSession — pass `token` as the `token` option to
+ * a new PatchcordClient to act within this session's permissions.
+ */
+export interface AppSession {
+  token: string;
+  appId: string;
+  workflowsRun: string[];
+  issuedAt: string;
+}
+
+/** The agent's health, as returned by PatchcordClient.system.health. */
+export interface HealthStatus {
+  status: "ok" | "degraded";
+  database: string;
+}

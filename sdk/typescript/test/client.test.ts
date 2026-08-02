@@ -65,6 +65,68 @@ function startFakeAgent(): Promise<{ baseUrl: string; close: () => Promise<void>
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/v1/system/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ status: "ok", database: "ok" }));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1/workflows") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify([{ id: "demo", version: 1, installed_at: "2026-01-01T00:00:00Z" }]));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1/runs") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify([
+          {
+            id: "run-1",
+            workflow_id: "demo",
+            workflow_version: 1,
+            status: "succeeded",
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ]),
+      );
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/runs/run-1/cancel") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "run-1",
+          workflow_id: "demo",
+          workflow_version: 1,
+          status: "cancelled",
+          created_at: "2026-01-01T00:00:00Z",
+          finished_at: "2026-01-01T00:00:02Z",
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1/apps") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify([{ id: "dashboard", version: "1.0.0", workflows_run: ["demo"] }]));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/apps/dashboard/sessions") {
+      res.writeHead(201, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          token: "app-session-token",
+          app_id: "dashboard",
+          workflows_run: ["demo"],
+          issued_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+      return;
+    }
+
     res.writeHead(404).end();
   });
 
@@ -132,6 +194,99 @@ test("PatchcordClient's default fetch does not rely on being called as a method 
     assert.equal(run.id, "run-1");
   } finally {
     globalThis.fetch = realFetch;
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.system.health reports the agent's database status", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    assert.deepEqual(await client.system.health(), { status: "ok", database: "ok" });
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.workflows.list returns every installed workflow version", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const workflows = await client.workflows.list();
+    assert.deepEqual(workflows, [{ id: "demo", version: 1, installedAt: "2026-01-01T00:00:00Z" }]);
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.runs.list returns Run handles that can be fetched and awaited", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const runs = await client.runs.list({ workflowId: "demo" });
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0].id, "run-1");
+
+    const summary = await runs[0].fetch();
+    assert.equal(summary.status, "succeeded");
+    assert.equal(summary.outputs?.value, "HI");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.runs.get fetches a single run by id", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const run = await client.runs.get("run-1");
+    assert.equal(run.id, "run-1");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.runs.cancel marks a run cancelled", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const run = await client.runs.cancel("run-1");
+    assert.equal(run.id, "run-1");
+
+    const summary = await run.fetch();
+    assert.equal(summary.status, "succeeded"); // GET /v1/runs/run-1 is fixed in the fake agent
+  } finally {
+    await agent.close();
+  }
+});
+
+test("Run.cancel marks a run cancelled without going through PatchcordClient.runs.cancel", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const run = await client.workflows.run("demo");
+    const summary = await run.cancel();
+    assert.equal(summary.status, "cancelled");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.apps.list and apps.createSession round-trip an application session", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const apps = await client.apps.list();
+    assert.deepEqual(apps, [{ id: "dashboard", version: "1.0.0", workflowsRun: ["demo"] }]);
+
+    const session = await client.apps.createSession("dashboard");
+    assert.deepEqual(session, {
+      token: "app-session-token",
+      appId: "dashboard",
+      workflowsRun: ["demo"],
+      issuedAt: "2026-01-01T00:00:00Z",
+    });
+  } finally {
     await agent.close();
   }
 });

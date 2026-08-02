@@ -3,7 +3,17 @@
 // mapping functions between them. Kept separate so a transport-shape
 // change (a renamed JSON field) touches only this file.
 
-import type { RunEvent, RunStatus, RunStep, RunSummary, StepStatus } from "./types.js";
+import type {
+  AppSession,
+  AppSummary,
+  HealthStatus,
+  RunEvent,
+  RunStatus,
+  RunStep,
+  RunSummary,
+  StepStatus,
+  WorkflowSummary,
+} from "./types.js";
 
 export interface WireRunStep {
   id: string;
@@ -73,4 +83,57 @@ export function runEventFromWire(wire: WireRunEvent): RunEvent {
     error: wire.error,
     time: wire.time,
   };
+}
+
+export interface WireWorkflowSummary {
+  id: string;
+  version: number;
+  installed_at: string;
+}
+
+export function workflowSummaryFromWire(wire: WireWorkflowSummary): WorkflowSummary {
+  return {
+    id: wire.id,
+    version: wire.version,
+    installedAt: wire.installed_at,
+  };
+}
+
+export interface WireAppSummary {
+  id: string;
+  version: string;
+  workflows_run: string[];
+}
+
+export function appSummaryFromWire(wire: WireAppSummary): AppSummary {
+  return {
+    id: wire.id,
+    version: wire.version,
+    workflowsRun: wire.workflows_run,
+  };
+}
+
+export interface WireAppSession {
+  token: string;
+  app_id: string;
+  workflows_run: string[];
+  issued_at: string;
+}
+
+export function appSessionFromWire(wire: WireAppSession): AppSession {
+  return {
+    token: wire.token,
+    appId: wire.app_id,
+    workflowsRun: wire.workflows_run,
+    issuedAt: wire.issued_at,
+  };
+}
+
+export interface WireHealthStatus {
+  status: "ok" | "degraded";
+  database: string;
+}
+
+export function healthStatusFromWire(wire: WireHealthStatus): HealthStatus {
+  return { status: wire.status, database: wire.database };
 }

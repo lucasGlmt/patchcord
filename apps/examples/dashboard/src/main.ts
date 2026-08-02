@@ -48,7 +48,7 @@ function parseJSONField(id: string): Record<string, unknown> {
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
-// fetchAppSession asks the agent for a session limited to this
+// fetchAppSessionToken asks the agent for a session limited to this
 // application's own declared permissions (patchcord-app.yaml,
 // POST /v1/apps/dashboard/sessions — vision document, section 15.4;
 // ADR-0026), so this page runs the workflow through the same restricted
@@ -57,14 +57,10 @@ function parseJSONField(id: string): Record<string, unknown> {
 // isn't installed under that id yet (e.g. this page opened straight from
 // `npm run dev` without `patchcord app install` first), so local
 // development keeps working exactly as it did before app sessions existed.
-async function fetchAppSession(baseUrl: string): Promise<string | undefined> {
+async function fetchAppSessionToken(baseUrl: string): Promise<string | undefined> {
   try {
-    const response = await fetch(`${baseUrl}/v1/apps/dashboard/sessions`, { method: "POST" });
-    if (!response.ok) {
-      return undefined;
-    }
-    const body = (await response.json()) as { token: string };
-    return body.token;
+    const session = await new PatchcordClient({ baseUrl }).apps.createSession("dashboard");
+    return session.token;
   } catch {
     return undefined;
   }
@@ -95,7 +91,7 @@ async function runWorkflow(): Promise<void> {
     return;
   }
 
-  const token = await fetchAppSession(baseUrl);
+  const token = await fetchAppSessionToken(baseUrl);
   if (token) {
     appendLog(`Using a limited app session (installed as "dashboard").`);
   }

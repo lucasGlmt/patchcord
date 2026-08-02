@@ -4,9 +4,10 @@ import { runEventFromWire, runSummaryFromWire, type WireRunEvent, type WireRunSu
 
 /**
  * One triggered execution of a workflow, as returned by
- * PatchcordClient.workflows.run. Mirrors the vision document's SDK example
- * (section 10.2): call .events() to observe it live, or .result() to wait
- * for it to finish and get its final summary.
+ * PatchcordClient.workflows.run, PatchcordClient.runs.get, and
+ * PatchcordClient.runs.list. Mirrors the vision document's SDK example
+ * (section 10.2): call .events() to observe it live, .result() to wait for
+ * it to finish and get its final summary, or .cancel() to stop it early.
  */
 export class Run {
   readonly id: string;
@@ -58,6 +59,25 @@ export class Run {
     const response = await this.#fetch(`${this.#baseUrl}/v1/runs/${this.id}`);
     if (!response.ok) {
       throw new Error(`GET /v1/runs/${this.id}: ${response.status} ${response.statusText}`);
+    }
+    this.#summary = runSummaryFromWire((await response.json()) as WireRunSummary);
+    return this.#summary;
+  }
+
+  /**
+   * Marks this run cancelled, if it is still queued or running
+   * (POST /v1/runs/{id}/cancel). Does not interrupt a step already
+   * executing in-process — it only flips the recorded status; an in-flight
+   * step stops at its next persistence checkpoint. Throws if the run has
+   * already reached a terminal status (409).
+   */
+  async cancel(): Promise<RunSummary> {
+    const response = await this.#fetch(`${this.#baseUrl}/v1/runs/${this.id}/cancel`, { method: "POST" });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(
+        `POST /v1/runs/${this.id}/cancel: ${response.status} ${response.statusText}${text ? ` — ${text}` : ""}`,
+      );
     }
     this.#summary = runSummaryFromWire((await response.json()) as WireRunSummary);
     return this.#summary;
