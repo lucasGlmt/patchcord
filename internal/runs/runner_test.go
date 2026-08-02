@@ -294,7 +294,8 @@ steps:
 	t.Setenv("PATCHCORD_RUNNER_TEST_SECRET", "s3cr3t")
 	config := map[string]any{"host": "db.internal"}
 	secretRefs := map[string]secrets.Reference{"password": {Type: "env", Key: "PATCHCORD_RUNNER_TEST_SECRET"}}
-	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", config, secretRefs); err != nil {
+	knownConnectorTypes := map[string]struct{}{"postgresql.connection@1": {}}
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", config, secretRefs, knownConnectorTypes); err != nil {
 		t.Fatalf("connectors.Create() error = %v", err)
 	}
 

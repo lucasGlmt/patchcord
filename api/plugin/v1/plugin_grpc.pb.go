@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	PluginService_Handshake_FullMethodName     = "/plugin.v1.PluginService/Handshake"
 	PluginService_ExecuteAction_FullMethodName = "/plugin.v1.PluginService/ExecuteAction"
+	PluginService_TestConnector_FullMethodName = "/plugin.v1.PluginService/TestConnector"
 )
 
 // PluginServiceClient is the client API for PluginService service.
@@ -39,6 +40,14 @@ type PluginServiceClient interface {
 	// its output. The agent only calls this for actions listed in the
 	// manifest's Contributions returned by Handshake.
 	ExecuteAction(ctx context.Context, in *ExecuteActionRequest, opts ...grpc.CallOption) (*ExecuteActionResponse, error)
+	// TestConnector attempts to use a connector's resolved configuration and
+	// secrets to reach the external system it describes, without running any
+	// action. A plugin that does not support connector testing returns
+	// UNIMPLEMENTED; the agent surfaces that as "this plugin does not support
+	// connection testing", distinct from a test that ran and failed (Ok =
+	// false). The agent only calls this for a connector whose type is listed
+	// in the manifest's Contributions returned by Handshake.
+	TestConnector(ctx context.Context, in *TestConnectorRequest, opts ...grpc.CallOption) (*TestConnectorResponse, error)
 }
 
 type pluginServiceClient struct {
@@ -69,6 +78,16 @@ func (c *pluginServiceClient) ExecuteAction(ctx context.Context, in *ExecuteActi
 	return out, nil
 }
 
+func (c *pluginServiceClient) TestConnector(ctx context.Context, in *TestConnectorRequest, opts ...grpc.CallOption) (*TestConnectorResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestConnectorResponse)
+	err := c.cc.Invoke(ctx, PluginService_TestConnector_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PluginServiceServer is the server API for PluginService service.
 // All implementations must embed UnimplementedPluginServiceServer
 // for forward compatibility.
@@ -85,6 +104,14 @@ type PluginServiceServer interface {
 	// its output. The agent only calls this for actions listed in the
 	// manifest's Contributions returned by Handshake.
 	ExecuteAction(context.Context, *ExecuteActionRequest) (*ExecuteActionResponse, error)
+	// TestConnector attempts to use a connector's resolved configuration and
+	// secrets to reach the external system it describes, without running any
+	// action. A plugin that does not support connector testing returns
+	// UNIMPLEMENTED; the agent surfaces that as "this plugin does not support
+	// connection testing", distinct from a test that ran and failed (Ok =
+	// false). The agent only calls this for a connector whose type is listed
+	// in the manifest's Contributions returned by Handshake.
+	TestConnector(context.Context, *TestConnectorRequest) (*TestConnectorResponse, error)
 	mustEmbedUnimplementedPluginServiceServer()
 }
 
@@ -100,6 +127,9 @@ func (UnimplementedPluginServiceServer) Handshake(context.Context, *HandshakeReq
 }
 func (UnimplementedPluginServiceServer) ExecuteAction(context.Context, *ExecuteActionRequest) (*ExecuteActionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExecuteAction not implemented")
+}
+func (UnimplementedPluginServiceServer) TestConnector(context.Context, *TestConnectorRequest) (*TestConnectorResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestConnector not implemented")
 }
 func (UnimplementedPluginServiceServer) mustEmbedUnimplementedPluginServiceServer() {}
 func (UnimplementedPluginServiceServer) testEmbeddedByValue()                       {}
@@ -158,6 +188,24 @@ func _PluginService_ExecuteAction_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PluginService_TestConnector_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestConnectorRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PluginServiceServer).TestConnector(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PluginService_TestConnector_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PluginServiceServer).TestConnector(ctx, req.(*TestConnectorRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PluginService_ServiceDesc is the grpc.ServiceDesc for PluginService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -172,6 +220,10 @@ var PluginService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExecuteAction",
 			Handler:    _PluginService_ExecuteAction_Handler,
+		},
+		{
+			MethodName: "TestConnector",
+			Handler:    _PluginService_TestConnector_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

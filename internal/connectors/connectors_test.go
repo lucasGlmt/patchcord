@@ -13,6 +13,15 @@ import (
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
+// testKnownTypes is the knownTypes set most tests pass to Create — as if a
+// plugin declaring "http.request@1" and "postgresql.connection@1" were
+// installed.
+var testKnownTypes = map[string]struct{}{
+	"http.request@1":          {},
+	"http.request@2":          {},
+	"postgresql.connection@1": {},
+}
+
 // openTestDB returns a freshly migrated, empty database.
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
@@ -37,7 +46,7 @@ func TestCreate_RecordsAConnector(t *testing.T) {
 	config := map[string]any{"base_url": "https://api.example.com"}
 	secretRefs := map[string]secrets.Reference{"api_key": {Type: "env", Key: "DEMO_API_KEY"}}
 
-	conn, err := Create(context.Background(), db, "my_api", "http.request@1", config, secretRefs)
+	conn, err := Create(context.Background(), db, "my_api", "http.request@1", config, secretRefs, testKnownTypes)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -62,11 +71,35 @@ func TestCreate_RecordsAConnector(t *testing.T) {
 func TestCreate_RejectsAnEmptyIDOrType(t *testing.T) {
 	db := openTestDB(t)
 
-	if _, err := Create(context.Background(), db, "", "http.request@1", nil, nil); err == nil {
+	if _, err := Create(context.Background(), db, "", "http.request@1", nil, nil, testKnownTypes); err == nil {
 		t.Fatal("expected an error for an empty id, got nil")
 	}
-	if _, err := Create(context.Background(), db, "my_api", "", nil, nil); err == nil {
+	if _, err := Create(context.Background(), db, "my_api", "", nil, nil, testKnownTypes); err == nil {
 		t.Fatal("expected an error for an empty type, got nil")
+	}
+}
+
+func TestCreate_RejectsAnUnknownConnectorType(t *testing.T) {
+	db := openTestDB(t)
+
+	_, err := Create(context.Background(), db, "my_api", "smtp.connection@1", nil, nil, testKnownTypes)
+	if err == nil {
+		t.Fatal("expected an error for a type no installed plugin declares, got nil")
+	}
+
+	if _, err := Get(context.Background(), db, "my_api"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound (rejected creation must not leave a row behind)", err)
+	}
+}
+
+func TestCreate_RejectsEverythingWhenKnownTypesIsEmpty(t *testing.T) {
+	db := openTestDB(t)
+
+	// Mirrors workflow.Validate's knownActions semantics: an empty set
+	// means no plugin declares anything yet, so every type is rejected —
+	// not treated as "validation disabled".
+	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, nil, nil); err == nil {
+		t.Fatal("expected an error when knownTypes is empty, got nil")
 	}
 }
 
@@ -74,7 +107,7 @@ func TestCreate_RejectsAnUnsupportedSecretReferenceType(t *testing.T) {
 	db := openTestDB(t)
 
 	secretRefs := map[string]secrets.Reference{"api_key": {Type: "vault", Key: "DEMO_API_KEY"}}
-	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs); err == nil {
+	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs, testKnownTypes); err == nil {
 		t.Fatal("expected an error for an unsupported secret reference type, got nil")
 	}
 
@@ -86,11 +119,11 @@ func TestCreate_RejectsAnUnsupportedSecretReferenceType(t *testing.T) {
 func TestCreate_RejectsADuplicateID(t *testing.T) {
 	db := openTestDB(t)
 
-	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, nil); err != nil {
+	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, nil, testKnownTypes); err != nil {
 		t.Fatalf("first Create() error = %v", err)
 	}
 
-	_, err := Create(context.Background(), db, "my_api", "http.request@2", nil, nil)
+	_, err := Create(context.Background(), db, "my_api", "http.request@2", nil, nil, testKnownTypes)
 	if !errors.Is(err, ErrAlreadyExists) {
 		t.Fatalf("second Create() error = %v, want ErrAlreadyExists", err)
 	}
@@ -117,7 +150,7 @@ func TestList_OrdersByID(t *testing.T) {
 	db := openTestDB(t)
 
 	for _, id := range []string{"charlie", "alpha", "bravo"} {
-		if _, err := Create(context.Background(), db, id, "http.request@1", nil, nil); err != nil {
+		if _, err := Create(context.Background(), db, id, "http.request@1", nil, nil, testKnownTypes); err != nil {
 			t.Fatalf("Create(%q) error = %v", id, err)
 		}
 	}
@@ -157,7 +190,7 @@ func TestResolve(t *testing.T) {
 
 		config := map[string]any{"base_url": "https://api.example.com"}
 		secretRefs := map[string]secrets.Reference{"api_key": {Type: "env", Key: "PATCHCORD_CONNECTORS_TEST_SECRET"}}
-		if _, err := Create(context.Background(), db, "my_api", "http.request@1", config, secretRefs); err != nil {
+		if _, err := Create(context.Background(), db, "my_api", "http.request@1", config, secretRefs, testKnownTypes); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 
@@ -188,7 +221,7 @@ func TestResolve(t *testing.T) {
 	t.Run("fails when a secret cannot be resolved", func(t *testing.T) {
 		db := openTestDB(t)
 		secretRefs := map[string]secrets.Reference{"api_key": {Type: "env", Key: "PATCHCORD_CONNECTORS_TEST_SECRET_UNSET"}}
-		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs); err != nil {
+		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs, testKnownTypes); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 
@@ -200,7 +233,7 @@ func TestResolve(t *testing.T) {
 	t.Run("wraps the store's error", func(t *testing.T) {
 		db := openTestDB(t)
 		secretRefs := map[string]secrets.Reference{"api_key": {Type: "env", Key: "X"}}
-		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs); err != nil {
+		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs, testKnownTypes); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 
@@ -215,7 +248,7 @@ func TestResolve(t *testing.T) {
 func TestDelete(t *testing.T) {
 	t.Run("removes an existing connector", func(t *testing.T) {
 		db := openTestDB(t)
-		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, nil); err != nil {
+		if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, nil, testKnownTypes); err != nil {
 			t.Fatalf("Create() error = %v", err)
 		}
 

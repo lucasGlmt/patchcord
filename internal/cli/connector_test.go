@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+// installHTTPPlugin installs the real http example plugin into dataDir, so
+// tests can create connectors of type "http.connection@1" — the connector
+// type it declares — against a real, validated catalog entry.
+func installHTTPPlugin(t *testing.T, dataDir string) {
+	t.Helper()
+
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{exampleHTTPPluginPath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+}
+
 func TestNewRootCommand_HasConnectorSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
@@ -23,12 +37,35 @@ func TestNewRootCommand_HasConnectorSubcommands(t *testing.T) {
 	}
 }
 
-func TestConnectorCreateCommand_RejectsAnInvalidSecretReference(t *testing.T) {
+func TestConnectorCreateCommand_RejectsAnUnknownConnectorType(t *testing.T) {
+	dataDir := t.TempDir()
+	installHTTPPlugin(t, dataDir)
+
 	cmd := newConnectorCreateCommand()
 	cmd.SetArgs([]string{
-		"my_api", "--type", "http.request@1",
+		"my_api", "--type", "smtp.connection@1",
+		"--data-dir", dataDir,
+	})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for a connector type no installed plugin declares, got nil")
+	}
+	if !strings.Contains(err.Error(), "not declared by any installed plugin") {
+		t.Fatalf("error = %q, want it to explain the type isn't declared by any installed plugin", err.Error())
+	}
+}
+
+func TestConnectorCreateCommand_RejectsAnInvalidSecretReference(t *testing.T) {
+	dataDir := t.TempDir()
+	installHTTPPlugin(t, dataDir)
+
+	cmd := newConnectorCreateCommand()
+	cmd.SetArgs([]string{
+		"my_api", "--type", "http.connection@1",
 		"--secret", "api_key=not-a-valid-reference",
-		"--data-dir", t.TempDir(),
+		"--data-dir", dataDir,
 	})
 	cmd.SetContext(context.Background())
 
@@ -38,6 +75,93 @@ func TestConnectorCreateCommand_RejectsAnInvalidSecretReference(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "type:key") {
 		t.Fatalf("error = %q, want it to explain the expected type:key format", err.Error())
+	}
+}
+
+func TestConnectorTestCommand_UnknownConnector(t *testing.T) {
+	cmd := newConnectorTestCommand()
+	cmd.SetArgs([]string{"does-not-exist", "--data-dir", t.TempDir()})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for an unknown connector id, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %q, want it to mention the connector was not found", err.Error())
+	}
+}
+
+func TestConnectorTestCommand_PluginDoesNotSupportTesting(t *testing.T) {
+	dataDir := t.TempDir()
+	installHTTPPlugin(t, dataDir)
+
+	create := newConnectorCreateCommand()
+	create.SetArgs([]string{"my_api", "--type", "http.connection@1", "--data-dir", dataDir})
+	create.SetContext(context.Background())
+	if err := create.Execute(); err != nil {
+		t.Fatalf("connector create error = %v", err)
+	}
+
+	cmd := newConnectorTestCommand()
+	cmd.SetArgs([]string{"my_api", "--data-dir", dataDir})
+	cmd.SetContext(context.Background())
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected an error for a plugin that does not support connector testing, got nil")
+	}
+}
+
+// TestConnectorTestCommand_ReportsTheOutcome exercises `connector test`
+// against internal/plugins' fake plugin fixture, whose TestConnector
+// response is controlled by FAKE_PLUGIN_CONNECTOR_TEST_MODE — the only
+// installed plugin in this test suite whose connector test outcome can be
+// forced both ways.
+func TestConnectorTestCommand_ReportsTheOutcome(t *testing.T) {
+	tests := []struct {
+		name       string
+		testMode   string
+		wantOutput string
+	}{
+		{name: "reports a successful test", testMode: "ok", wantOutput: "OK"},
+		{name: "reports a failed test without a command error", testMode: "fail", wantOutput: "FAILED: boom"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("FAKE_PLUGIN_CONNECTOR_TYPE", "fake.connection@1")
+			t.Setenv("FAKE_PLUGIN_CONNECTOR_TEST_MODE", tt.testMode)
+
+			dataDir := t.TempDir()
+
+			install := newPluginInstallCommand()
+			install.SetArgs([]string{fakeConnectorPluginPath, "--data-dir", dataDir})
+			install.SetContext(context.Background())
+			if err := install.Execute(); err != nil {
+				t.Fatalf("plugin install error = %v", err)
+			}
+
+			create := newConnectorCreateCommand()
+			create.SetArgs([]string{"fake_conn", "--type", "fake.connection@1", "--data-dir", dataDir})
+			create.SetContext(context.Background())
+			if err := create.Execute(); err != nil {
+				t.Fatalf("connector create error = %v", err)
+			}
+
+			cmd := newConnectorTestCommand()
+			cmd.SetArgs([]string{"fake_conn", "--data-dir", dataDir})
+			cmd.SetContext(context.Background())
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("connector test error = %v", err)
+			}
+			if !strings.Contains(out.String(), tt.wantOutput) {
+				t.Fatalf("output = %q, want it to contain %q", out.String(), tt.wantOutput)
+			}
+		})
 	}
 }
 
@@ -91,10 +215,11 @@ func TestConnectorRemoveCommand_UnknownConnector(t *testing.T) {
 // isn't set, to prove inspect reports it as unresolved without failing.
 func TestConnectorCommands_FullLifecycle(t *testing.T) {
 	dataDir := t.TempDir()
+	installHTTPPlugin(t, dataDir)
 
 	create := newConnectorCreateCommand()
 	create.SetArgs([]string{
-		"my_api", "--type", "http.request@1",
+		"my_api", "--type", "http.connection@1",
 		"--config", "base_url=https://api.example.com",
 		"--secret", "api_key=env:PATCHCORD_CLI_TEST_SECRET",
 		"--data-dir", dataDir,
@@ -155,7 +280,7 @@ func TestConnectorCommands_FullLifecycle(t *testing.T) {
 	}
 
 	createDuplicate := newConnectorCreateCommand()
-	createDuplicate.SetArgs([]string{"my_api", "--type", "http.request@1", "--data-dir", dataDir})
+	createDuplicate.SetArgs([]string{"my_api", "--type", "http.connection@1", "--data-dir", dataDir})
 	createDuplicate.SetContext(context.Background())
 	if err := createDuplicate.Execute(); err == nil {
 		t.Fatal("expected an error creating a connector with a duplicate id, got nil")

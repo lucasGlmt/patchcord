@@ -144,7 +144,7 @@ func TestNormalizeValue(t *testing.T) {
 
 func withMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	t.Helper()
-	db, mock, err := sqlmock.New()
+	db, mock, err := sqlmock.New(sqlmock.MonitorPingsOption(true))
 	if err != nil {
 		t.Fatalf("sqlmock.New() error = %v", err)
 	}
@@ -279,6 +279,38 @@ func TestExecuteAction_Run(t *testing.T) {
 
 		_, err := executeAction{}.Run(context.Background(), patchcord.ActionInput{"sql": "DELETE FROM users"}, validConnector())
 		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+	})
+}
+
+func TestConnectorTester_TestConnector(t *testing.T) {
+	t.Run("rejects an invalid connector config before opening a connection", func(t *testing.T) {
+		connector := patchcord.ConnectorConfig{Config: map[string]any{}}
+		if err := (connectorTester{}).TestConnector(context.Background(), connector); err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+	})
+
+	t.Run("succeeds when the connection pings", func(t *testing.T) {
+		_, mock := withMockDB(t)
+		mock.ExpectPing()
+
+		connector := *validConnector()
+		if err := (connectorTester{}).TestConnector(context.Background(), connector); err != nil {
+			t.Fatalf("TestConnector() error = %v", err)
+		}
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Fatalf("unmet expectations: %v", err)
+		}
+	})
+
+	t.Run("fails when the ping fails", func(t *testing.T) {
+		_, mock := withMockDB(t)
+		mock.ExpectPing().WillReturnError(errors.New("connection refused"))
+
+		connector := *validConnector()
+		if err := (connectorTester{}).TestConnector(context.Background(), connector); err == nil {
 			t.Fatal("expected an error, got nil")
 		}
 	})

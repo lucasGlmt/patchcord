@@ -32,6 +32,17 @@ func (failingAction) Run(context.Context, ActionInput, *ConnectorConfig) (Action
 	return nil, errors.New("boom")
 }
 
+// stubTester is a ConnectorTester whose outcome is fixed per test.
+type stubTester struct {
+	err error
+	got ConnectorConfig
+}
+
+func (s *stubTester) TestConnector(_ context.Context, connector ConnectorConfig) error {
+	s.got = connector
+	return s.err
+}
+
 func TestNewServer(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -229,6 +240,93 @@ func TestServer_ExecuteAction(t *testing.T) {
 		})
 		if status.Code(err) != codes.Internal {
 			t.Fatalf("status code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+}
+
+func TestServer_TestConnector(t *testing.T) {
+	connectorProto := func(t *testing.T) *pluginv1.ConnectorConfig {
+		t.Helper()
+		configStruct, err := structpb.NewStruct(map[string]any{"host": "db.internal"})
+		if err != nil {
+			t.Fatalf("build config struct: %v", err)
+		}
+		return &pluginv1.ConnectorConfig{Type: "postgresql.connection@1", Config: configStruct}
+	}
+
+	t.Run("returns Unimplemented when the plugin sets no Tester", func(t *testing.T) {
+		srv, err := newServer(Plugin{
+			Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
+		})
+		if err != nil {
+			t.Fatalf("newServer() error = %v", err)
+		}
+		client := dialServer(t, srv)
+
+		_, err = client.TestConnector(context.Background(), &pluginv1.TestConnectorRequest{Connector: connectorProto(t)})
+		if status.Code(err) != codes.Unimplemented {
+			t.Fatalf("status code = %v, want %v", status.Code(err), codes.Unimplemented)
+		}
+	})
+
+	t.Run("returns InvalidArgument when no connector is given", func(t *testing.T) {
+		srv, err := newServer(Plugin{
+			Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
+			Tester:   &stubTester{},
+		})
+		if err != nil {
+			t.Fatalf("newServer() error = %v", err)
+		}
+		client := dialServer(t, srv)
+
+		_, err = client.TestConnector(context.Background(), &pluginv1.TestConnectorRequest{})
+		if status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("status code = %v, want %v", status.Code(err), codes.InvalidArgument)
+		}
+	})
+
+	t.Run("reports Ok=true on success and forwards the connector", func(t *testing.T) {
+		tester := &stubTester{}
+		srv, err := newServer(Plugin{
+			Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
+			Tester:   tester,
+		})
+		if err != nil {
+			t.Fatalf("newServer() error = %v", err)
+		}
+		client := dialServer(t, srv)
+
+		resp, err := client.TestConnector(context.Background(), &pluginv1.TestConnectorRequest{Connector: connectorProto(t)})
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v", err)
+		}
+		if !resp.GetOk() {
+			t.Fatalf("Ok = %v, want true", resp.GetOk())
+		}
+		if tester.got.Type != "postgresql.connection@1" || tester.got.Config["host"] != "db.internal" {
+			t.Fatalf("tester received %+v, want the decoded connector", tester.got)
+		}
+	})
+
+	t.Run("reports Ok=false and the error message on failure, without an RPC error", func(t *testing.T) {
+		srv, err := newServer(Plugin{
+			Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
+			Tester:   &stubTester{err: errors.New("connection refused")},
+		})
+		if err != nil {
+			t.Fatalf("newServer() error = %v", err)
+		}
+		client := dialServer(t, srv)
+
+		resp, err := client.TestConnector(context.Background(), &pluginv1.TestConnectorRequest{Connector: connectorProto(t)})
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v, want nil (a failed test is a legitimate result)", err)
+		}
+		if resp.GetOk() {
+			t.Fatal("Ok = true, want false")
+		}
+		if resp.GetMessage() != "connection refused" {
+			t.Fatalf("Message = %q, want %q", resp.GetMessage(), "connection refused")
 		}
 	})
 }

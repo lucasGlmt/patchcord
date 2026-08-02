@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/lucasglmt/patchcord/internal/connectors"
 )
 
 // testSupervisorConfig keeps timings short so crash/health-check/restart
@@ -155,6 +157,113 @@ func TestSupervisor_ExecuteAction(t *testing.T) {
 	if _, err := sup.ExecuteAction(context.Background(), "unknown.action@1", nil, nil); err == nil {
 		t.Fatal("expected an error for an action no running plugin contributes, got nil")
 	}
+}
+
+func TestSupervisor_TestConnector(t *testing.T) {
+	t.Run("returns an error when no running plugin declares the connector's type", func(t *testing.T) {
+		db := openCatalogTestDB(t)
+		seedCatalog(t, db, "io.patchcord.fake", fakePluginPath)
+
+		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+		sup := NewSupervisor(testSupervisorConfig(), logger)
+		if err := sup.Start(context.Background(), db); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+		defer stopSupervisor(t, sup)
+
+		_, _, err := sup.TestConnector(context.Background(), &connectors.ResolvedConnector{Type: "unknown.connection@1"})
+		if err == nil {
+			t.Fatal("expected an error for a connector type no running plugin declares, got nil")
+		}
+	})
+
+	t.Run("requires a connector", func(t *testing.T) {
+		db := openCatalogTestDB(t)
+
+		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+		sup := NewSupervisor(testSupervisorConfig(), logger)
+		if err := sup.Start(context.Background(), db); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+		defer stopSupervisor(t, sup)
+
+		if _, _, err := sup.TestConnector(context.Background(), nil); err == nil {
+			t.Fatal("expected an error for a nil connector, got nil")
+		}
+	})
+
+	t.Run("routes to the plugin that declares the connector's type", func(t *testing.T) {
+		t.Setenv("FAKE_PLUGIN_CONNECTOR_TYPE", "fake.connection@1")
+		t.Setenv("FAKE_PLUGIN_CONNECTOR_TEST_MODE", "ok")
+
+		db := openCatalogTestDB(t)
+		if _, err := Install(context.Background(), db, fakePluginPath); err != nil {
+			t.Fatalf("Install() error = %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+		sup := NewSupervisor(testSupervisorConfig(), logger)
+		if err := sup.Start(context.Background(), db); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+		defer stopSupervisor(t, sup)
+
+		ok, _, err := sup.TestConnector(context.Background(), &connectors.ResolvedConnector{Type: "fake.connection@1"})
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v", err)
+		}
+		if !ok {
+			t.Fatal("ok = false, want true")
+		}
+	})
+
+	t.Run("surfaces a failed test without an error", func(t *testing.T) {
+		t.Setenv("FAKE_PLUGIN_CONNECTOR_TYPE", "fake.connection@1")
+		t.Setenv("FAKE_PLUGIN_CONNECTOR_TEST_MODE", "fail")
+
+		db := openCatalogTestDB(t)
+		if _, err := Install(context.Background(), db, fakePluginPath); err != nil {
+			t.Fatalf("Install() error = %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+		sup := NewSupervisor(testSupervisorConfig(), logger)
+		if err := sup.Start(context.Background(), db); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+		defer stopSupervisor(t, sup)
+
+		ok, message, err := sup.TestConnector(context.Background(), &connectors.ResolvedConnector{Type: "fake.connection@1"})
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v, want nil (a failed test is a legitimate result)", err)
+		}
+		if ok {
+			t.Fatal("ok = true, want false")
+		}
+		if message != "boom" {
+			t.Fatalf("message = %q, want %q", message, "boom")
+		}
+	})
+
+	t.Run("surfaces Unimplemented as an error for a plugin that doesn't support testing", func(t *testing.T) {
+		t.Setenv("FAKE_PLUGIN_CONNECTOR_TYPE", "fake.connection@1")
+
+		db := openCatalogTestDB(t)
+		if _, err := Install(context.Background(), db, fakePluginPath); err != nil {
+			t.Fatalf("Install() error = %v", err)
+		}
+
+		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
+		sup := NewSupervisor(testSupervisorConfig(), logger)
+		if err := sup.Start(context.Background(), db); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+		defer stopSupervisor(t, sup)
+
+		if _, _, err := sup.TestConnector(context.Background(), &connectors.ResolvedConnector{Type: "fake.connection@1"}); err == nil {
+			t.Fatal("expected an error for a plugin that does not support connector testing, got nil")
+		}
+	})
 }
 
 func TestSupervisor_RestartsACrashedPluginThenStaysUp(t *testing.T) {

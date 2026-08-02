@@ -19,6 +19,15 @@ service PluginService {
   // its output. The agent only calls this for actions listed in the
   // manifest's Contributions returned by Handshake.
   rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse);
+
+  // TestConnector attempts to use a connector's resolved configuration and
+  // secrets to reach the external system it describes, without running any
+  // action. A plugin that does not support connector testing returns
+  // UNIMPLEMENTED; the agent surfaces that as "this plugin does not support
+  // connection testing", distinct from a test that ran and failed (Ok =
+  // false). The agent only calls this for a connector whose type is listed
+  // in the manifest's Contributions returned by Handshake.
+  rpc TestConnector(TestConnectorRequest) returns (TestConnectorResponse);
 }
 
 // HandshakeRequest is sent once, immediately after the agent connects to a
@@ -74,4 +83,21 @@ message ConnectorConfig {
 // ExecuteActionResponse carries the action's output.
 message ExecuteActionResponse {
   google.protobuf.Struct output = 1;
+}
+
+// TestConnectorRequest asks the plugin to attempt a connection using one
+// connector's resolved configuration and secrets.
+message TestConnectorRequest {
+  ConnectorConfig connector = 1;
+}
+
+// TestConnectorResponse reports the outcome of a connector test. A failed
+// attempt (Ok = false) is a legitimate result, not an RPC error — the same
+// distinction ExecuteActionResponse's callers already make between a
+// business-level failure and a transport-level one.
+message TestConnectorResponse {
+  bool ok = 1;
+  // Human-readable detail: the error message on failure, or empty/a short
+  // confirmation on success.
+  string message = 2;
 }

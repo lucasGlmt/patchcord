@@ -36,6 +36,26 @@ func ExecuteAction(ctx context.Context, client pluginv1.PluginServiceClient, act
 	return resp.GetOutput().AsMap(), nil
 }
 
+// TestConnector calls the plugin's TestConnector RPC for connector and
+// reports whether it succeeded. ok/message is the connector test's own
+// outcome (a failed attempt is a legitimate result); the returned error is
+// reserved for a real RPC-level failure — the plugin not supporting
+// connector testing (codes.Unimplemented), a transport error, or ctx being
+// cancelled.
+func TestConnector(ctx context.Context, client pluginv1.PluginServiceClient, connector *connectors.ResolvedConnector) (ok bool, message string, err error) {
+	connectorConfig, err := connectorConfigToProto(connector)
+	if err != nil {
+		return false, "", fmt.Errorf("encode connector: %w", err)
+	}
+
+	resp, err := client.TestConnector(ctx, &pluginv1.TestConnectorRequest{Connector: connectorConfig})
+	if err != nil {
+		return false, "", fmt.Errorf("call test connector: %w", err)
+	}
+
+	return resp.GetOk(), resp.GetMessage(), nil
+}
+
 // connectorConfigToProto encodes a resolved connector for the wire, or
 // returns nil unchanged when the calling step bound no connector.
 func connectorConfigToProto(rc *connectors.ResolvedConnector) (*pluginv1.ConnectorConfig, error) {

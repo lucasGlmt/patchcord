@@ -13,6 +13,7 @@
 #       --config host=localhost --config port=5432 \
 #       --config database=app --config user=admin \
 #       --secret password=env:PG_PASSWORD
+#   patchcord connector test pg   # optional: verify the connection first
 #   patchcord workflow install workflows/examples/postgresql_query_demo.yaml
 #   patchcord workflow run postgresql_query_demo --binding db=pg
 schema_version: 1

@@ -84,3 +84,54 @@ func TestExecuteAction_EncodesABoundConnector(t *testing.T) {
 		t.Fatalf("output = %v, want bound=true", got)
 	}
 }
+
+func TestTestConnector(t *testing.T) {
+	connector := &connectors.ResolvedConnector{
+		Type:    "postgresql.connection@1",
+		Config:  map[string]any{"host": "db.internal"},
+		Secrets: map[string]any{"password": "s3cr3t"},
+	}
+
+	t.Run("reports a successful test", func(t *testing.T) {
+		client := dialFakePlugin(t, &fakePluginServer{
+			testConnectorResponse: &pluginv1.TestConnectorResponse{Ok: true},
+		})
+
+		ok, message, err := TestConnector(context.Background(), client, connector)
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v", err)
+		}
+		if !ok {
+			t.Fatalf("ok = %v, want true", ok)
+		}
+		if message != "" {
+			t.Fatalf("message = %q, want empty", message)
+		}
+	})
+
+	t.Run("reports a failed test without an error", func(t *testing.T) {
+		client := dialFakePlugin(t, &fakePluginServer{
+			testConnectorResponse: &pluginv1.TestConnectorResponse{Ok: false, Message: "connection refused"},
+		})
+
+		ok, message, err := TestConnector(context.Background(), client, connector)
+		if err != nil {
+			t.Fatalf("TestConnector() error = %v, want nil (a failed test is a legitimate result)", err)
+		}
+		if ok {
+			t.Fatal("ok = true, want false")
+		}
+		if message != "connection refused" {
+			t.Fatalf("message = %q, want %q", message, "connection refused")
+		}
+	})
+
+	t.Run("propagates an RPC error", func(t *testing.T) {
+		client := dialFakePlugin(t, &fakePluginServer{testConnectorErr: errors.New("boom")})
+
+		_, _, err := TestConnector(context.Background(), client, connector)
+		if err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+	})
+}

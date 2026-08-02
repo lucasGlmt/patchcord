@@ -45,12 +45,21 @@ type Connector struct {
 // already in use, and an error if any of secretRefs uses an unsupported
 // reference type (see secrets.ValidateType) — caught here rather than only
 // the first time something tries to resolve it.
-func Create(ctx context.Context, db *sql.DB, id, connectorType string, config map[string]any, secretRefs map[string]secrets.Reference) (*Connector, error) {
+//
+// knownTypes is the set of connector type identifiers currently installed
+// plugins contribute; the caller (internal/cli, internal/api) is
+// responsible for fetching it from the plugin catalog
+// (plugins.KnownConnectorTypes), keeping this package free of any process
+// dependency — the same split workflow.Validate uses for knownActions.
+func Create(ctx context.Context, db *sql.DB, id, connectorType string, config map[string]any, secretRefs map[string]secrets.Reference, knownTypes map[string]struct{}) (*Connector, error) {
 	if id == "" {
 		return nil, fmt.Errorf("connector id must not be empty")
 	}
 	if connectorType == "" {
 		return nil, fmt.Errorf("connector type must not be empty")
+	}
+	if _, ok := knownTypes[connectorType]; !ok {
+		return nil, fmt.Errorf("connector type %q is not declared by any installed plugin", connectorType)
 	}
 	for name, ref := range secretRefs {
 		if err := secrets.ValidateType(ref.Type); err != nil {

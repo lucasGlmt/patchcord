@@ -188,3 +188,42 @@ func TestKnownActions(t *testing.T) {
 		t.Fatalf("len(KnownActions()) = %d, want 3", len(actions))
 	}
 }
+
+func TestKnownConnectorTypes(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
+		Connectors: []string{"a.connection@1"},
+	}); err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.b", Version: "1.0.0", ExecutablePath: "/bin/b", ProtocolVersion: 1,
+		Connectors: []string{"b.connection@1"},
+	}); err != nil {
+		t.Fatalf("seed b: %v", err)
+	}
+	// A plugin that contributes actions but no connector, like text, must
+	// not blow up KnownConnectorTypes.
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.c", Version: "1.0.0", ExecutablePath: "/bin/c", ProtocolVersion: 1,
+		Actions: []string{"c.one@1"},
+	}); err != nil {
+		t.Fatalf("seed c: %v", err)
+	}
+
+	types, err := KnownConnectorTypes(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownConnectorTypes() error = %v", err)
+	}
+
+	for _, want := range []string{"a.connection@1", "b.connection@1"} {
+		if _, ok := types[want]; !ok {
+			t.Fatalf("KnownConnectorTypes() = %v, want it to contain %q", types, want)
+		}
+	}
+	if len(types) != 2 {
+		t.Fatalf("len(KnownConnectorTypes()) = %d, want 2", len(types))
+	}
+}

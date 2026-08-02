@@ -3,13 +3,18 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/secrets"
 )
 
@@ -22,6 +27,7 @@ func newConnectorCommand() *cobra.Command {
 	cmd.AddCommand(newConnectorCreateCommand())
 	cmd.AddCommand(newConnectorListCommand())
 	cmd.AddCommand(newConnectorInspectCommand())
+	cmd.AddCommand(newConnectorTestCommand())
 	cmd.AddCommand(newConnectorRemoveCommand())
 
 	return cmd
@@ -53,10 +59,9 @@ func newConnectorCreateCommand() *cobra.Command {
 		Use:   "create <id>",
 		Short: "Create a new connector",
 		Long: "Creates a new connector: a persistent, named configuration for accessing an\n" +
-			"external system. --type should follow the same convention as action ids\n" +
-			"(<name>.<subtype>@<version>, e.g. \"postgresql.connection@1\") so it can later be\n" +
-			"matched against the connector types a plugin declares — nothing enforces this\n" +
-			"yet, but it avoids having to rename connectors once that validation exists.",
+			"external system. --type must match a connector type declared by an installed\n" +
+			"plugin's manifest (<name>.<subtype>@<version>, e.g. \"postgresql.connection@1\") —\n" +
+			"install the plugin first with `patchcord plugin install`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
@@ -75,7 +80,12 @@ func newConnectorCreateCommand() *cobra.Command {
 				config[k] = v
 			}
 
-			conn, err := connectors.Create(cmd.Context(), db, args[0], connectorType, config, secretRefs)
+			knownTypes, err := plugins.KnownConnectorTypes(cmd.Context(), db)
+			if err != nil {
+				return fmt.Errorf("create connector: %w", err)
+			}
+
+			conn, err := connectors.Create(cmd.Context(), db, args[0], connectorType, config, secretRefs, knownTypes)
 			if errors.Is(err, connectors.ErrAlreadyExists) {
 				return fmt.Errorf("create connector: %q already exists", args[0])
 			}
@@ -143,8 +153,8 @@ func newConnectorInspectCommand() *cobra.Command {
 		Short: "Show details about one connector",
 		Long: "Shows a connector's configuration and, for each of its secret references,\n" +
 			"whether it currently resolves — never the resolved value itself. This is not a\n" +
-			"real connectivity test (that requires a plugin able to attempt the connection,\n" +
-			"see ADR-0020); it only checks that each reference can be resolved.",
+			"real connectivity test; it only checks that each reference can be resolved.\n" +
+			"Use `connector test` to actually attempt a connection through its plugin.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
@@ -187,6 +197,75 @@ func newConnectorInspectCommand() *cobra.Command {
 				}
 				fmt.Fprintf(out, "  %s: %s:%s (resolved)\n", name, ref.Type, ref.Key)
 			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+
+	return cmd
+}
+
+func newConnectorTestCommand() *cobra.Command {
+	var dataDir string
+
+	cmd := &cobra.Command{
+		Use:   "test <id>",
+		Short: "Test a connector's connection through its plugin",
+		Long: "Resolves the connector's configuration and secrets, then asks the installed\n" +
+			"plugin that declares its type to actually attempt a connection — unlike\n" +
+			"`connector inspect`, which only checks that secret references resolve.\n" +
+			"Fails if no installed plugin declares the connector's type, or if that\n" +
+			"plugin does not support connector testing. A connection attempt that runs\n" +
+			"but fails (e.g. wrong password) is reported as FAILED, not a command error.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+			db, err := openDataStore(dataDir)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			resolved, err := connectors.Resolve(cmd.Context(), db, args[0], secrets.EnvStore{})
+			if errors.Is(err, connectors.ErrNotFound) {
+				return fmt.Errorf("test connector: %q was not found", args[0])
+			}
+			if err != nil {
+				return fmt.Errorf("test connector: %w", err)
+			}
+
+			// Testing a connector means calling into a live plugin process,
+			// so this command launches and supervises the installed plugins
+			// for the duration of this one test — same reasoning as
+			// `workflow run` (ADR-0017).
+			supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
+			if err := supervisor.Start(cmd.Context(), db); err != nil {
+				return fmt.Errorf("start plugin supervisor: %w", err)
+			}
+			defer func() {
+				stopCtx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+				defer cancel()
+				supervisor.Stop(stopCtx)
+			}()
+
+			ok, message, err := supervisor.TestConnector(cmd.Context(), resolved)
+			if err != nil {
+				return fmt.Errorf("test connector: %w", err)
+			}
+
+			out := cmd.OutOrStdout()
+			if !ok {
+				fmt.Fprintf(out, "FAILED: %s\n", message)
+				return nil
+			}
+			if message != "" {
+				fmt.Fprintf(out, "OK: %s\n", message)
+				return nil
+			}
+			fmt.Fprintln(out, "OK")
 
 			return nil
 		},

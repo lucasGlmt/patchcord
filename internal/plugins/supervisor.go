@@ -173,6 +173,39 @@ func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input m
 	return ExecuteAction(ctx, rp.proc.Client, actionID, input, connector)
 }
 
+// TestConnector attempts to reach the external system connector describes,
+// via whichever currently running plugin declares its type. ok/message is
+// the connector test's own outcome — the returned error means the test
+// could not even be attempted (no running plugin declares that connector
+// type, or the plugin that does returns codes.Unimplemented because it
+// doesn't support testing).
+func (s *Supervisor) TestConnector(ctx context.Context, connector *connectors.ResolvedConnector) (ok bool, message string, err error) {
+	if connector == nil {
+		return false, "", fmt.Errorf("test connector requires a connector")
+	}
+
+	s.mu.Lock()
+	var rp *runningPlugin
+	for _, candidate := range s.running {
+		for _, connectorType := range candidate.entry.Connectors {
+			if connectorType == connector.Type {
+				rp = candidate
+				break
+			}
+		}
+		if rp != nil {
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if rp == nil {
+		return false, "", fmt.Errorf("connector type %q is not currently available (no running plugin declares it)", connector.Type)
+	}
+
+	return TestConnector(ctx, rp.proc.Client, connector)
+}
+
 // launchAndHandshake launches entry's executable and validates it with a
 // handshake. On any failure it logs the reason and returns ok=false; it
 // never returns an error, since a bad plugin must never stop the agent or

@@ -212,6 +212,30 @@ func (executeAction) Run(ctx context.Context, input patchcord.ActionInput, conne
 	return runExecute(ctx, db, sqlText, args)
 }
 
+// connectorTester implements patchcord.ConnectorTester by opening a
+// connection and pinging it, backing `patchcord connector test` — no query
+// is run, so it works whether or not the caller has any table to query.
+type connectorTester struct{}
+
+func (connectorTester) TestConnector(ctx context.Context, connector patchcord.ConnectorConfig) error {
+	password, _ := connector.Secrets["password"].(string)
+	dsn, err := buildDSN(connector.Config, password)
+	if err != nil {
+		return err
+	}
+
+	db, err := sqlOpen(driverName, dsn)
+	if err != nil {
+		return fmt.Errorf("open connection: %w", err)
+	}
+	defer db.Close()
+
+	if err := db.PingContext(ctx); err != nil {
+		return fmt.Errorf("ping: %w", err)
+	}
+	return nil
+}
+
 func main() {
 	plugin := patchcord.Plugin{
 		Manifest: patchcord.Manifest{
@@ -220,6 +244,7 @@ func main() {
 		},
 		Actions:     []patchcord.Action{queryAction{}, executeAction{}},
 		Connectors:  []string{"mysql.connection@1"},
+		Tester:      connectorTester{},
 		Permissions: []string{"network.outbound"},
 	}
 

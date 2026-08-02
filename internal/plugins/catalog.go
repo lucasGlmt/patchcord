@@ -140,6 +140,26 @@ func KnownActions(ctx context.Context, db *sql.DB) (map[string]struct{}, error) 
 	return actions, nil
 }
 
+// KnownConnectorTypes returns the set of connector type identifiers
+// contributed by every installed plugin, for internal/connectors.Create to
+// check a new connector's --type against — the same role KnownActions plays
+// for the workflow compiler.
+func KnownConnectorTypes(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
+	entries, err := List(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	types := make(map[string]struct{})
+	for _, entry := range entries {
+		for _, connectorType := range entry.Connectors {
+			types[connectorType] = struct{}{}
+		}
+	}
+
+	return types, nil
+}
+
 // Get returns one installed plugin by id. It returns ErrNotInstalled if no
 // plugin with that id is in the catalog.
 func Get(ctx context.Context, db *sql.DB, id string) (*CatalogEntry, error) {

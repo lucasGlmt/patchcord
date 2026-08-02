@@ -378,6 +378,110 @@ func (x *ExecuteActionResponse) GetOutput() *structpb.Struct {
 	return nil
 }
 
+// TestConnectorRequest asks the plugin to attempt a connection using one
+// connector's resolved configuration and secrets.
+type TestConnectorRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Connector     *ConnectorConfig       `protobuf:"bytes,1,opt,name=connector,proto3" json:"connector,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestConnectorRequest) Reset() {
+	*x = TestConnectorRequest{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestConnectorRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestConnectorRequest) ProtoMessage() {}
+
+func (x *TestConnectorRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestConnectorRequest.ProtoReflect.Descriptor instead.
+func (*TestConnectorRequest) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TestConnectorRequest) GetConnector() *ConnectorConfig {
+	if x != nil {
+		return x.Connector
+	}
+	return nil
+}
+
+// TestConnectorResponse reports the outcome of a connector test. A failed
+// attempt (Ok = false) is a legitimate result, not an RPC error — the same
+// distinction ExecuteActionResponse's callers already make between a
+// business-level failure and a transport-level one.
+type TestConnectorResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// Human-readable detail: the error message on failure, or empty/a short
+	// confirmation on success.
+	Message       string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestConnectorResponse) Reset() {
+	*x = TestConnectorResponse{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestConnectorResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestConnectorResponse) ProtoMessage() {}
+
+func (x *TestConnectorResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestConnectorResponse.ProtoReflect.Descriptor instead.
+func (*TestConnectorResponse) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TestConnectorResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *TestConnectorResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_plugin_v1_plugin_proto protoreflect.FileDescriptor
 
 const file_plugin_v1_plugin_proto_rawDesc = "" +
@@ -405,10 +509,16 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x06config\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x06config\x121\n" +
 	"\asecrets\x18\x03 \x01(\v2\x17.google.protobuf.StructR\asecrets\"H\n" +
 	"\x15ExecuteActionResponse\x12/\n" +
-	"\x06output\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06output2\xab\x01\n" +
+	"\x06output\x18\x01 \x01(\v2\x17.google.protobuf.StructR\x06output\"P\n" +
+	"\x14TestConnectorRequest\x128\n" +
+	"\tconnector\x18\x01 \x01(\v2\x1a.plugin.v1.ConnectorConfigR\tconnector\"A\n" +
+	"\x15TestConnectorResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xff\x01\n" +
 	"\rPluginService\x12F\n" +
 	"\tHandshake\x12\x1b.plugin.v1.HandshakeRequest\x1a\x1c.plugin.v1.HandshakeResponse\x12R\n" +
-	"\rExecuteAction\x12\x1f.plugin.v1.ExecuteActionRequest\x1a .plugin.v1.ExecuteActionResponseB7Z5github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1b\x06proto3"
+	"\rExecuteAction\x12\x1f.plugin.v1.ExecuteActionRequest\x1a .plugin.v1.ExecuteActionResponse\x12R\n" +
+	"\rTestConnector\x12\x1f.plugin.v1.TestConnectorRequest\x1a .plugin.v1.TestConnectorResponseB7Z5github.com/lucasglmt/patchcord/api/plugin/v1;pluginv1b\x06proto3"
 
 var (
 	file_plugin_v1_plugin_proto_rawDescOnce sync.Once
@@ -422,7 +532,7 @@ func file_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_plugin_v1_plugin_proto_goTypes = []any{
 	(*HandshakeRequest)(nil),      // 0: plugin.v1.HandshakeRequest
 	(*HandshakeResponse)(nil),     // 1: plugin.v1.HandshakeResponse
@@ -430,24 +540,29 @@ var file_plugin_v1_plugin_proto_goTypes = []any{
 	(*ExecuteActionRequest)(nil),  // 3: plugin.v1.ExecuteActionRequest
 	(*ConnectorConfig)(nil),       // 4: plugin.v1.ConnectorConfig
 	(*ExecuteActionResponse)(nil), // 5: plugin.v1.ExecuteActionResponse
-	(*structpb.Struct)(nil),       // 6: google.protobuf.Struct
+	(*TestConnectorRequest)(nil),  // 6: plugin.v1.TestConnectorRequest
+	(*TestConnectorResponse)(nil), // 7: plugin.v1.TestConnectorResponse
+	(*structpb.Struct)(nil),       // 8: google.protobuf.Struct
 }
 var file_plugin_v1_plugin_proto_depIdxs = []int32{
-	2, // 0: plugin.v1.HandshakeResponse.contributes:type_name -> plugin.v1.Contributions
-	6, // 1: plugin.v1.ExecuteActionRequest.input:type_name -> google.protobuf.Struct
-	4, // 2: plugin.v1.ExecuteActionRequest.connector:type_name -> plugin.v1.ConnectorConfig
-	6, // 3: plugin.v1.ConnectorConfig.config:type_name -> google.protobuf.Struct
-	6, // 4: plugin.v1.ConnectorConfig.secrets:type_name -> google.protobuf.Struct
-	6, // 5: plugin.v1.ExecuteActionResponse.output:type_name -> google.protobuf.Struct
-	0, // 6: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
-	3, // 7: plugin.v1.PluginService.ExecuteAction:input_type -> plugin.v1.ExecuteActionRequest
-	1, // 8: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
-	5, // 9: plugin.v1.PluginService.ExecuteAction:output_type -> plugin.v1.ExecuteActionResponse
-	8, // [8:10] is the sub-list for method output_type
-	6, // [6:8] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	2,  // 0: plugin.v1.HandshakeResponse.contributes:type_name -> plugin.v1.Contributions
+	8,  // 1: plugin.v1.ExecuteActionRequest.input:type_name -> google.protobuf.Struct
+	4,  // 2: plugin.v1.ExecuteActionRequest.connector:type_name -> plugin.v1.ConnectorConfig
+	8,  // 3: plugin.v1.ConnectorConfig.config:type_name -> google.protobuf.Struct
+	8,  // 4: plugin.v1.ConnectorConfig.secrets:type_name -> google.protobuf.Struct
+	8,  // 5: plugin.v1.ExecuteActionResponse.output:type_name -> google.protobuf.Struct
+	4,  // 6: plugin.v1.TestConnectorRequest.connector:type_name -> plugin.v1.ConnectorConfig
+	0,  // 7: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
+	3,  // 8: plugin.v1.PluginService.ExecuteAction:input_type -> plugin.v1.ExecuteActionRequest
+	6,  // 9: plugin.v1.PluginService.TestConnector:input_type -> plugin.v1.TestConnectorRequest
+	1,  // 10: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
+	5,  // 11: plugin.v1.PluginService.ExecuteAction:output_type -> plugin.v1.ExecuteActionResponse
+	7,  // 12: plugin.v1.PluginService.TestConnector:output_type -> plugin.v1.TestConnectorResponse
+	10, // [10:13] is the sub-list for method output_type
+	7,  // [7:10] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_plugin_v1_plugin_proto_init() }
@@ -461,7 +576,7 @@ func file_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_v1_plugin_proto_rawDesc), len(file_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

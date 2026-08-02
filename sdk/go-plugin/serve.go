@@ -63,6 +63,7 @@ type server struct {
 	actionIDs    []string
 	actions      map[string]Action
 	connectorIDs []string
+	tester       ConnectorTester
 	permissions  []string
 }
 
@@ -89,6 +90,7 @@ func newServer(plugin Plugin) (*server, error) {
 		actionIDs:    actionIDs,
 		actions:      actions,
 		connectorIDs: plugin.Connectors,
+		tester:       plugin.Tester,
 		permissions:  plugin.Permissions,
 	}, nil
 }
@@ -133,6 +135,22 @@ func (s *server) ExecuteAction(ctx context.Context, req *pluginv1.ExecuteActionR
 	}
 
 	return &pluginv1.ExecuteActionResponse{Output: outputStruct}, nil
+}
+
+func (s *server) TestConnector(ctx context.Context, req *pluginv1.TestConnectorRequest) (*pluginv1.TestConnectorResponse, error) {
+	if s.tester == nil {
+		return nil, status.Errorf(codes.Unimplemented, "plugin %q does not support connector testing", s.manifest.ID)
+	}
+
+	connector := connectorConfigFromProto(req.GetConnector())
+	if connector == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "test connector requires a connector")
+	}
+
+	if err := s.tester.TestConnector(ctx, *connector); err != nil {
+		return &pluginv1.TestConnectorResponse{Ok: false, Message: err.Error()}, nil
+	}
+	return &pluginv1.TestConnectorResponse{Ok: true}, nil
 }
 
 // connectorConfigFromProto decodes the wire form of a bound connector into

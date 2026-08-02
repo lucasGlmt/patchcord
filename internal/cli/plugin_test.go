@@ -10,10 +10,20 @@ import (
 	"testing"
 )
 
-// examplePluginPath is built once for this package's tests: the real text
-// example plugin, so the plugin command group can be proven against an
-// actual binary, not just its fail-fast paths.
-var examplePluginPath string
+// examplePluginPath, exampleHTTPPluginPath and fakeConnectorPluginPath are
+// built once for this package's tests: the real text and http example
+// plugins, plus internal/plugins' hand-rolled protocol test fixture, so the
+// plugin and connector command groups can be proven against actual
+// binaries, not just their fail-fast paths. http is the fixture
+// connector_test.go uses for a plugin that does NOT support connector
+// testing (it declares a connector type but no Tester); fakeConnectorPlugin
+// is the one used for a controllable Ok/failed connector test, since it
+// alone exposes FAKE_PLUGIN_CONNECTOR_TYPE/FAKE_PLUGIN_CONNECTOR_TEST_MODE.
+var (
+	examplePluginPath       string
+	exampleHTTPPluginPath   string
+	fakeConnectorPluginPath string
+)
 
 func TestMain(m *testing.M) {
 	tmpDir, err := os.MkdirTemp("", "patchcord-cli-fixtures")
@@ -26,6 +36,18 @@ func TestMain(m *testing.M) {
 	build := exec.Command("go", "build", "-o", examplePluginPath, "../../plugins/examples/text")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("build example plugin: " + err.Error() + "\n" + string(out))
+	}
+
+	exampleHTTPPluginPath = filepath.Join(tmpDir, "http")
+	buildHTTP := exec.Command("go", "build", "-o", exampleHTTPPluginPath, "../../plugins/examples/http")
+	if out, err := buildHTTP.CombinedOutput(); err != nil {
+		panic("build example http plugin: " + err.Error() + "\n" + string(out))
+	}
+
+	fakeConnectorPluginPath = filepath.Join(tmpDir, "fakeconnector")
+	buildFake := exec.Command("go", "build", "-o", fakeConnectorPluginPath, "../../internal/plugins/testdata/fakeplugin")
+	if out, err := buildFake.CombinedOutput(); err != nil {
+		panic("build fake connector plugin: " + err.Error() + "\n" + string(out))
 	}
 
 	os.Exit(m.Run())

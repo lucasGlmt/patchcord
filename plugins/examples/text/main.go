@@ -129,6 +129,10 @@ func main() {
 			splitAction{},
 			echoConnectorAction{},
 		},
+		// "demo.connection@1" only exists to give connector_binding_demo.yaml
+		// a real, installed plugin to validate against (ADR-0022) — it isn't
+		// tied to any actual external system.
+		Connectors: []string{"demo.connection@1"},
 	}
 
 	if err := patchcord.Serve(plugin); err != nil {

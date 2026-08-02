@@ -13,6 +13,7 @@
 #       --config host=localhost --config port=3306 \
 #       --config database=app --config user=admin \
 #       --secret password=env:MYSQL_PASSWORD
+#   patchcord connector test mysql-db   # optional: verify the connection first
 #   patchcord workflow install workflows/examples/mysql_query_demo.yaml
 #   patchcord workflow run mysql_query_demo --binding db=mysql-db
 schema_version: 1

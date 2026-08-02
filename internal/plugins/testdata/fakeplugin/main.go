@@ -18,6 +18,14 @@
 // FAKE_PLUGIN_LAUNCH_COUNTER_FILE, if set, is appended one byte every time
 // the process starts, so a test can observe how many times it was
 // (re)launched.
+//
+// FAKE_PLUGIN_CONNECTOR_TYPE, if set, is reported as the plugin's sole
+// declared connector type in Handshake, so Supervisor.TestConnector's
+// routing-by-type can be exercised against a real process.
+// FAKE_PLUGIN_CONNECTOR_TEST_MODE controls what TestConnector then returns:
+// "ok" (Ok: true), "fail" (Ok: false, Message: "boom"), anything else
+// (including unset) responds Unimplemented, same as a plugin with no
+// ConnectorTester.
 package main
 
 import (
@@ -29,8 +37,10 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 
 	pluginv1 "github.com/lucasglmt/patchcord/api/plugin/v1"
 )
@@ -42,11 +52,26 @@ type server struct {
 }
 
 func (server) Handshake(context.Context, *pluginv1.HandshakeRequest) (*pluginv1.HandshakeResponse, error) {
-	return &pluginv1.HandshakeResponse{
+	resp := &pluginv1.HandshakeResponse{
 		ProtocolVersion: 1,
 		PluginId:        "io.patchcord.fake",
 		PluginVersion:   "0.0.1",
-	}, nil
+	}
+	if connectorType := os.Getenv("FAKE_PLUGIN_CONNECTOR_TYPE"); connectorType != "" {
+		resp.Contributes = &pluginv1.Contributions{Connectors: []string{connectorType}}
+	}
+	return resp, nil
+}
+
+func (server) TestConnector(_ context.Context, _ *pluginv1.TestConnectorRequest) (*pluginv1.TestConnectorResponse, error) {
+	switch os.Getenv("FAKE_PLUGIN_CONNECTOR_TEST_MODE") {
+	case "ok":
+		return &pluginv1.TestConnectorResponse{Ok: true}, nil
+	case "fail":
+		return &pluginv1.TestConnectorResponse{Ok: false, Message: "boom"}, nil
+	default:
+		return nil, status.Error(codes.Unimplemented, "fake plugin does not support connector testing")
+	}
 }
 
 func main() {

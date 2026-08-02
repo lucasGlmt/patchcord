@@ -22,6 +22,9 @@ type fakePluginServer struct {
 
 	executeResponse *pluginv1.ExecuteActionResponse
 	executeErr      error
+
+	testConnectorResponse *pluginv1.TestConnectorResponse
+	testConnectorErr      error
 }
 
 func (f *fakePluginServer) Handshake(context.Context, *pluginv1.HandshakeRequest) (*pluginv1.HandshakeResponse, error) {
@@ -36,6 +39,13 @@ func (f *fakePluginServer) ExecuteAction(context.Context, *pluginv1.ExecuteActio
 		return nil, f.executeErr
 	}
 	return f.executeResponse, nil
+}
+
+func (f *fakePluginServer) TestConnector(context.Context, *pluginv1.TestConnectorRequest) (*pluginv1.TestConnectorResponse, error) {
+	if f.testConnectorErr != nil {
+		return nil, f.testConnectorErr
+	}
+	return f.testConnectorResponse, nil
 }
 
 // dialFakePlugin starts an in-memory gRPC server backed by srv and returns a

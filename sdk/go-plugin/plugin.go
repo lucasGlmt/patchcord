@@ -43,6 +43,21 @@ type Action interface {
 	Run(ctx context.Context, input ActionInput, connector *ConnectorConfig) (ActionOutput, error)
 }
 
+// ConnectorTester is implemented by a plugin that can attempt a real
+// connection using a connector's resolved configuration and secrets,
+// without running any action — what `patchcord connector test` calls into.
+// Implementing it is optional: a plugin with no Tester set responds
+// UNIMPLEMENTED to TestConnector, which the agent reports distinctly from a
+// test that ran and failed.
+type ConnectorTester interface {
+	// TestConnector attempts to reach the external system connector
+	// describes. A returned error means the attempt failed (e.g. wrong
+	// password, host unreachable) — a legitimate, expected outcome, not a
+	// sign the plugin itself is broken. err's message is what the caller
+	// sees; never include a secret value in it.
+	TestConnector(ctx context.Context, connector ConnectorConfig) error
+}
+
 // Plugin describes everything a plugin contributes to the agent.
 type Plugin struct {
 	Manifest Manifest
@@ -52,6 +67,9 @@ type Plugin struct {
 	// only: the plugin's actions decide for themselves whether they
 	// require a bound connector, this just advertises it in the manifest.
 	Connectors []string
+	// Tester, if set, lets this plugin's connector(s) be checked with
+	// `patchcord connector test` without running a full action.
+	Tester ConnectorTester
 	// Permissions this plugin requires from the agent, e.g.
 	// "network.outbound". Declarative only in this version: the agent does
 	// not yet enforce them.
