@@ -65,6 +65,16 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 			}
 		}
 
+		if step.Connector != "" {
+			expr, ok := asExpression(step.Connector)
+			if !ok {
+				return fmt.Errorf("step %q: connector must be a \"${{ ... }}\" expression, not a literal value", step.ID)
+			}
+			if err := validateExpression(expr, seenSteps); err != nil {
+				return fmt.Errorf("step %q: connector: %w", step.ID, err)
+			}
+		}
+
 		seenSteps[step.ID] = struct{}{}
 	}
 

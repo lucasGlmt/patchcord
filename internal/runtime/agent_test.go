@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
@@ -132,7 +133,7 @@ steps:
 // writes it to the shared SQLite file, not that action execution works.
 type fakeSSEExecutor struct{}
 
-func (fakeSSEExecutor) ExecuteAction(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
+func (fakeSSEExecutor) ExecuteAction(_ context.Context, _ string, _ map[string]any, _ *connectors.ResolvedConnector) (map[string]any, error) {
 	return map[string]any{"value": "HELLO"}, nil
 }
 
@@ -184,7 +185,7 @@ func TestAgent_StreamsRunEventsOverSSE(t *testing.T) {
 	}
 	defer execDB.Close()
 
-	run, err := runs.Execute(context.Background(), execDB, fakeSSEExecutor{}, "hello_patchcord", nil, runs.ExecuteOptions{})
+	run, err := runs.Execute(context.Background(), execDB, fakeSSEExecutor{}, "hello_patchcord", nil, nil, runs.ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

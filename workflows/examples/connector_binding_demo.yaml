@@ -1,0 +1,23 @@
+# Reference example for connector binding (ADR-0021): a step can bind a
+# connector via a "${{ bindings.<name> }}" expression — never a literal
+# connector id, so a published workflow version never bakes in one
+# deployment's specific connector identity (ADR-0008).
+#
+# Run it with:
+#   patchcord connector create demo_conn --type "demo.connection@1" \
+#       --config greeting=hello --secret token=env:DEMO_TOKEN
+#   DEMO_TOKEN=s3cr3t patchcord workflow run connector_binding_demo \
+#       --binding demo=demo_conn
+schema_version: 1
+
+id: connector_binding_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: show_connector
+    uses: text.echo_connector@1
+    connector: "${{ bindings.demo }}"
+    with: {}

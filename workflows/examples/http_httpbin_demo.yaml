@@ -1,0 +1,28 @@
+# Reference example for the http connector-consuming plugin
+# (plugins/examples/http, ADR-0021): a step bound to an "http.connection@1"
+# connector makes a real outbound GET request through it.
+#
+# Unlike the other examples in this directory, this one needs network
+# access — it calls the public https://httpbin.org test service, which
+# echoes back whatever it received (headers, origin, url) as JSON.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/http
+#   patchcord connector create httpbin --type "http.connection@1" \
+#       --config base_url=https://httpbin.org
+#   patchcord workflow install workflows/examples/http_httpbin_demo.yaml
+#   patchcord workflow run http_httpbin_demo --binding api=httpbin
+schema_version: 1
+
+id: http_httpbin_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: call
+    uses: http.request@1
+    connector: "${{ bindings.api }}"
+    with:
+      path: "/get"

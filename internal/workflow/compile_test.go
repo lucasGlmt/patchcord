@@ -92,6 +92,26 @@ func TestValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "accepts a connector bound via a bindings expression",
+			mutate: func(d *Definition) {
+				d.Steps[0].Connector = "${{ bindings.ai_provider }}"
+			},
+		},
+		{
+			name: "rejects a literal connector id",
+			mutate: func(d *Definition) {
+				d.Steps[0].Connector = "my_connector"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a malformed connector expression shape",
+			mutate: func(d *Definition) {
+				d.Steps[0].Connector = "${{ nonsense }}"
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

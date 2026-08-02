@@ -56,6 +56,19 @@ message ExecuteActionRequest {
   // The action identifier, e.g. "text.uppercase@1".
   string action = 1;
   google.protobuf.Struct input = 2;
+  // The resolved configuration and secrets of the connector the calling
+  // workflow step bound to this action, if any. Absent when the step bound
+  // no connector. Never persisted by the agent — assembled fresh for this
+  // one call.
+  ConnectorConfig connector = 3;
+}
+
+// ConnectorConfig carries one connector's resolved configuration and secret
+// values, ready for a plugin to use for the duration of one action call.
+message ConnectorConfig {
+  string type = 1;
+  google.protobuf.Struct config = 2;
+  google.protobuf.Struct secrets = 3;
 }
 
 // ExecuteActionResponse carries the action's output.

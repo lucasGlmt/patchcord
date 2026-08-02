@@ -59,10 +59,11 @@ func Serve(plugin Plugin) error {
 type server struct {
 	pluginv1.UnimplementedPluginServiceServer
 
-	manifest    Manifest
-	actionIDs   []string
-	actions     map[string]Action
-	permissions []string
+	manifest     Manifest
+	actionIDs    []string
+	actions      map[string]Action
+	connectorIDs []string
+	permissions  []string
 }
 
 func newServer(plugin Plugin) (*server, error) {
@@ -84,10 +85,11 @@ func newServer(plugin Plugin) (*server, error) {
 	}
 
 	return &server{
-		manifest:    plugin.Manifest,
-		actionIDs:   actionIDs,
-		actions:     actions,
-		permissions: plugin.Permissions,
+		manifest:     plugin.Manifest,
+		actionIDs:    actionIDs,
+		actions:      actions,
+		connectorIDs: plugin.Connectors,
+		permissions:  plugin.Permissions,
 	}, nil
 }
 
@@ -107,7 +109,8 @@ func (s *server) Handshake(_ context.Context, req *pluginv1.HandshakeRequest) (*
 		PluginId:        s.manifest.ID,
 		PluginVersion:   s.manifest.Version,
 		Contributes: &pluginv1.Contributions{
-			Actions: s.actionIDs,
+			Actions:    s.actionIDs,
+			Connectors: s.connectorIDs,
 		},
 		Permissions: s.permissions,
 	}, nil
@@ -119,7 +122,7 @@ func (s *server) ExecuteAction(ctx context.Context, req *pluginv1.ExecuteActionR
 		return nil, status.Errorf(codes.NotFound, "unknown action %q", req.GetAction())
 	}
 
-	output, err := action.Run(ctx, ActionInput(req.GetInput().AsMap()))
+	output, err := action.Run(ctx, ActionInput(req.GetInput().AsMap()), connectorConfigFromProto(req.GetConnector()))
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "action %q failed: %s", req.GetAction(), err)
 	}
@@ -130,4 +133,18 @@ func (s *server) ExecuteAction(ctx context.Context, req *pluginv1.ExecuteActionR
 	}
 
 	return &pluginv1.ExecuteActionResponse{Output: outputStruct}, nil
+}
+
+// connectorConfigFromProto decodes the wire form of a bound connector into
+// the SDK's ConnectorConfig, or returns nil unchanged when the calling step
+// bound no connector.
+func connectorConfigFromProto(pb *pluginv1.ConnectorConfig) *ConnectorConfig {
+	if pb == nil {
+		return nil
+	}
+	return &ConnectorConfig{
+		Type:    pb.GetType(),
+		Config:  pb.GetConfig().AsMap(),
+		Secrets: pb.GetSecrets().AsMap(),
+	}
 }

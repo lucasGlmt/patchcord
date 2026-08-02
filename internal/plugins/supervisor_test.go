@@ -144,7 +144,7 @@ func TestSupervisor_ExecuteAction(t *testing.T) {
 	}
 	defer stopSupervisor(t, sup)
 
-	output, err := sup.ExecuteAction(context.Background(), "text.uppercase@1", map[string]any{"value": "hello"})
+	output, err := sup.ExecuteAction(context.Background(), "text.uppercase@1", map[string]any{"value": "hello"}, nil)
 	if err != nil {
 		t.Fatalf("ExecuteAction() error = %v", err)
 	}
@@ -152,7 +152,7 @@ func TestSupervisor_ExecuteAction(t *testing.T) {
 		t.Fatalf(`output["value"] = %v, want %q`, output["value"], "HELLO")
 	}
 
-	if _, err := sup.ExecuteAction(context.Background(), "unknown.action@1", nil); err == nil {
+	if _, err := sup.ExecuteAction(context.Background(), "unknown.action@1", nil, nil); err == nil {
 		t.Fatal("expected an error for an action no running plugin contributes, got nil")
 	}
 }

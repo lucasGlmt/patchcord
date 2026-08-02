@@ -49,7 +49,7 @@ func TestInstall_LaunchesHandshakesAndRecordsTheManifest(t *testing.T) {
 	if entry.ExecutablePath != examplePluginPath {
 		t.Fatalf("ExecutablePath = %q, want %q", entry.ExecutablePath, examplePluginPath)
 	}
-	wantActions := []string{"text.uppercase@1", "text.lowercase@1", "text.join@1", "text.split@1"}
+	wantActions := []string{"text.uppercase@1", "text.lowercase@1", "text.join@1", "text.split@1", "text.echo_connector@1"}
 	if !slices.Equal(entry.Actions, wantActions) {
 		t.Fatalf("Actions = %v, want %v", entry.Actions, wantActions)
 	}

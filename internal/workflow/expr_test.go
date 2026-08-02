@@ -79,3 +79,73 @@ func TestResolveInputs(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveConnector(t *testing.T) {
+	ctx := ExprContext{
+		Inputs:      map[string]any{"connector_id": "from_input", "not_a_string": 42},
+		StepOutputs: map[string]map[string]any{"first": {"connector_id": "from_step_output"}},
+		Bindings:    map[string]string{"ai_provider": "my_openai"},
+	}
+
+	tests := []struct {
+		name      string
+		connector string
+		want      string
+		wantErr   bool
+	}{
+		{
+			name:      "empty connector resolves to no connector",
+			connector: "",
+			want:      "",
+		},
+		{
+			name:      "resolves a bindings expression",
+			connector: "${{ bindings.ai_provider }}",
+			want:      "my_openai",
+		},
+		{
+			name:      "resolves a workflow.inputs expression",
+			connector: "${{ workflow.inputs.connector_id }}",
+			want:      "from_input",
+		},
+		{
+			name:      "resolves a steps.outputs expression",
+			connector: "${{ steps.first.outputs.connector_id }}",
+			want:      "from_step_output",
+		},
+		{
+			name:      "rejects a literal value",
+			connector: "my_connector",
+			wantErr:   true,
+		},
+		{
+			name:      "fails when the referenced binding was not provided",
+			connector: "${{ bindings.missing }}",
+			wantErr:   true,
+		},
+		{
+			name:      "fails when the expression resolves to a non-string",
+			connector: "${{ workflow.inputs.not_a_string }}",
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ResolveConnector(tt.connector, ctx)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ResolveConnector() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ResolveConnector() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

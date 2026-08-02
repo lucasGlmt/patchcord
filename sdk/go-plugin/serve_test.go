@@ -20,7 +20,7 @@ type echoAction struct{}
 
 func (echoAction) ID() string { return "test.echo@1" }
 
-func (echoAction) Run(_ context.Context, input ActionInput) (ActionOutput, error) {
+func (echoAction) Run(_ context.Context, input ActionInput, _ *ConnectorConfig) (ActionOutput, error) {
 	return ActionOutput(input), nil
 }
 
@@ -28,7 +28,7 @@ type failingAction struct{}
 
 func (failingAction) ID() string { return "test.fail@1" }
 
-func (failingAction) Run(context.Context, ActionInput) (ActionOutput, error) {
+func (failingAction) Run(context.Context, ActionInput, *ConnectorConfig) (ActionOutput, error) {
 	return nil, errors.New("boom")
 }
 
@@ -164,6 +164,28 @@ func TestServer_Handshake(t *testing.T) {
 	}
 }
 
+func TestServer_Handshake_ReportsConnectors(t *testing.T) {
+	srv, err := newServer(Plugin{
+		Manifest:   Manifest{ID: "io.example.test", Version: "1.0.0"},
+		Actions:    []Action{echoAction{}},
+		Connectors: []string{"http.connection@1"},
+	})
+	if err != nil {
+		t.Fatalf("newServer() error = %v", err)
+	}
+	client := dialServer(t, srv)
+
+	resp, err := client.Handshake(context.Background(), &pluginv1.HandshakeRequest{ProtocolVersion: 1})
+	if err != nil {
+		t.Fatalf("Handshake() error = %v", err)
+	}
+
+	gotConnectors := resp.GetContributes().GetConnectors()
+	if len(gotConnectors) != 1 || gotConnectors[0] != "http.connection@1" {
+		t.Fatalf("Connectors = %v, want [http.connection@1]", gotConnectors)
+	}
+}
+
 func TestServer_ExecuteAction(t *testing.T) {
 	srv, err := newServer(Plugin{
 		Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
@@ -207,6 +229,41 @@ func TestServer_ExecuteAction(t *testing.T) {
 		})
 		if status.Code(err) != codes.Internal {
 			t.Fatalf("status code = %v, want %v", status.Code(err), codes.Internal)
+		}
+	})
+}
+
+func TestConnectorConfigFromProto(t *testing.T) {
+	t.Run("returns nil for a nil input", func(t *testing.T) {
+		if got := connectorConfigFromProto(nil); got != nil {
+			t.Fatalf("connectorConfigFromProto(nil) = %v, want nil", got)
+		}
+	})
+
+	t.Run("decodes type, config and secrets", func(t *testing.T) {
+		configStruct, err := structpb.NewStruct(map[string]any{"host": "db.internal"})
+		if err != nil {
+			t.Fatalf("build config struct: %v", err)
+		}
+		secretsStruct, err := structpb.NewStruct(map[string]any{"password": "s3cr3t"})
+		if err != nil {
+			t.Fatalf("build secrets struct: %v", err)
+		}
+
+		got := connectorConfigFromProto(&pluginv1.ConnectorConfig{
+			Type:    "postgresql.connection@1",
+			Config:  configStruct,
+			Secrets: secretsStruct,
+		})
+
+		if got.Type != "postgresql.connection@1" {
+			t.Fatalf("Type = %q, want %q", got.Type, "postgresql.connection@1")
+		}
+		if got.Config["host"] != "db.internal" {
+			t.Fatalf("Config[host] = %v, want %q", got.Config["host"], "db.internal")
+		}
+		if got.Secrets["password"] != "s3cr3t" {
+			t.Fatalf("Secrets[password] = %v, want %q", got.Secrets["password"], "s3cr3t")
 		}
 	})
 }

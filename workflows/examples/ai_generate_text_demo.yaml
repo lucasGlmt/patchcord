@@ -1,0 +1,31 @@
+# Reference example for the openai connector-consuming plugin
+# (plugins/examples/openai): a step bound to an "openai.connection@1"
+# connector calls the real OpenAI Chat Completions API.
+#
+# Like http_httpbin_demo.yaml, this one needs network access — but it also
+# needs a real, valid OpenAI API key, and every run is billed by OpenAI.
+# Never put the key directly in --secret; export it as an environment
+# variable and reference it by name.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/openai
+#   export OPENAI_API_KEY=sk-...
+#   patchcord connector create openai --type "openai.connection@1" \
+#       --secret api_key=env:OPENAI_API_KEY
+#   patchcord workflow install workflows/examples/ai_generate_text_demo.yaml
+#   patchcord workflow run ai_generate_text_demo --binding provider=openai
+schema_version: 1
+
+id: ai_generate_text_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: ask
+    uses: ai.generate_text@1
+    connector: "${{ bindings.provider }}"
+    with:
+      model: gpt-4o-mini
+      prompt: "In one short sentence, what is Patchcord?"

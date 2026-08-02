@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -15,7 +17,7 @@ type slowExecutor struct {
 	delay time.Duration
 }
 
-func (s *slowExecutor) ExecuteAction(ctx context.Context, _ string, _ map[string]any) (map[string]any, error) {
+func (s *slowExecutor) ExecuteAction(ctx context.Context, _ string, _ map[string]any, _ *connectors.ResolvedConnector) (map[string]any, error) {
 	select {
 	case <-time.After(s.delay):
 		return map[string]any{}, nil
@@ -49,7 +51,7 @@ steps:
 		},
 	}
 
-	run, err := Execute(context.Background(), db, executor, "chained", map[string]any{"value": "hello"}, ExecuteOptions{})
+	run, err := Execute(context.Background(), db, executor, "chained", map[string]any{"value": "hello"}, nil, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -102,7 +104,7 @@ steps:
 		errs: map[string]error{"text.uppercase@1": boom},
 	}
 
-	run, err := Execute(context.Background(), db, executor, "chained", nil, ExecuteOptions{})
+	run, err := Execute(context.Background(), db, executor, "chained", nil, nil, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -136,7 +138,7 @@ func TestExecute_UnknownWorkflowFailsFast(t *testing.T) {
 	db := openTestDB(t)
 	executor := &fakeExecutor{}
 
-	_, err := Execute(context.Background(), db, executor, "unknown", nil, ExecuteOptions{})
+	_, err := Execute(context.Background(), db, executor, "unknown", nil, nil, ExecuteOptions{})
 	if !errors.Is(err, ErrWorkflowNotFound) {
 		t.Fatalf("Execute() error = %v, want ErrWorkflowNotFound", err)
 	}
@@ -165,7 +167,7 @@ steps:
 	}
 
 	// No "value" input is provided, so the expression cannot resolve.
-	run, err := Execute(context.Background(), db, executor, "needs_input", nil, ExecuteOptions{})
+	run, err := Execute(context.Background(), db, executor, "needs_input", nil, nil, ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
@@ -183,7 +185,7 @@ func TestExecute_StepTimeoutFailsTheRun(t *testing.T) {
 
 	executor := &slowExecutor{delay: 300 * time.Millisecond}
 
-	run, err := Execute(context.Background(), db, executor, "hello_patchcord", nil,
+	run, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, nil,
 		ExecuteOptions{StepTimeout: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -232,7 +234,7 @@ steps:
 	}
 	resultCh := make(chan result, 1)
 	go func() {
-		run, err := Execute(ctx, db, executor, "chained", nil, ExecuteOptions{StepTimeout: 5 * time.Second})
+		run, err := Execute(ctx, db, executor, "chained", nil, nil, ExecuteOptions{StepTimeout: 5 * time.Second})
 		resultCh <- result{run, err}
 	}()
 
@@ -266,5 +268,114 @@ steps:
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Execute() did not return after ctx was cancelled")
+	}
+}
+
+func TestExecute_ThreadsTheBoundConnectorToTheExecutor(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: connector_flow
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: bound
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+  - id: unbound
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+`)
+
+	t.Setenv("PATCHCORD_RUNNER_TEST_SECRET", "s3cr3t")
+	config := map[string]any{"host": "db.internal"}
+	secretRefs := map[string]secrets.Reference{"password": {Type: "env", Key: "PATCHCORD_RUNNER_TEST_SECRET"}}
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", config, secretRefs); err != nil {
+		t.Fatalf("connectors.Create() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	run, err := Execute(context.Background(), db, executor, "connector_flow", nil, map[string]string{"demo": "my_conn"}, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+
+	if len(executor.connectorsReceived) != 2 {
+		t.Fatalf("connectorsReceived = %d entries, want 2", len(executor.connectorsReceived))
+	}
+
+	bound := executor.connectorsReceived[0]
+	if bound == nil {
+		t.Fatal("first step's connector = nil, want the resolved connector")
+	}
+	if bound.Type != "postgresql.connection@1" {
+		t.Fatalf("connector.Type = %q, want %q", bound.Type, "postgresql.connection@1")
+	}
+	if bound.Config["host"] != "db.internal" {
+		t.Fatalf("connector.Config[host] = %v, want %q", bound.Config["host"], "db.internal")
+	}
+	if bound.Secrets["password"] != "s3cr3t" {
+		t.Fatalf("connector.Secrets[password] = %v, want %q", bound.Secrets["password"], "s3cr3t")
+	}
+
+	if executor.connectorsReceived[1] != nil {
+		t.Fatalf("second step's connector = %v, want nil (step bound none)", executor.connectorsReceived[1])
+	}
+}
+
+func TestExecute_FailsTheStepWhenTheBoundConnectorCannotBeResolved(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: connector_missing
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+`)
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	// "demo" is never bound to a connector id, so resolving the connector
+	// must fail — before the executor is ever called.
+	run, err := Execute(context.Background(), db, executor, "connector_missing", nil, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunFailed {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunFailed)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor was called %d times, want 0 (should fail before calling the action)", len(executor.calls))
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if steps[0].Status != workflow.StepFailed {
+		t.Fatalf("step status = %s, want %s", steps[0].Status, workflow.StepFailed)
+	}
+	// The input had already resolved successfully before the connector
+	// failed to resolve — it must still be persisted, not discarded.
+	if steps[0].Input["value"] != "hello" {
+		t.Fatalf(`steps[0].Input["value"] = %v, want %q (resolved input must survive a later connector failure)`, steps[0].Input["value"], "hello")
 	}
 }

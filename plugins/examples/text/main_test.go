@@ -34,7 +34,7 @@ func TestUppercaseAction_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := uppercaseAction{}.Run(context.Background(), tt.input)
+			output, err := uppercaseAction{}.Run(context.Background(), tt.input, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -78,7 +78,7 @@ func TestLowercaseAction_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := lowercaseAction{}.Run(context.Background(), tt.input)
+			output, err := lowercaseAction{}.Run(context.Background(), tt.input, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -137,7 +137,7 @@ func TestJoinAction_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := joinAction{}.Run(context.Background(), tt.input)
+			output, err := joinAction{}.Run(context.Background(), tt.input, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -201,7 +201,7 @@ func TestSplitAction_Run(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			output, err := splitAction{}.Run(context.Background(), tt.input)
+			output, err := splitAction{}.Run(context.Background(), tt.input, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -225,4 +225,48 @@ func TestSplitAction_Run(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEchoConnectorAction_Run(t *testing.T) {
+	t.Run("reports unbound when no connector is given", func(t *testing.T) {
+		output, err := echoConnectorAction{}.Run(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if output["bound"] != false {
+			t.Fatalf("output[bound] = %v, want false", output["bound"])
+		}
+	})
+
+	t.Run("echoes type and config, never secrets", func(t *testing.T) {
+		connector := &patchcord.ConnectorConfig{
+			Type:    "demo.connection@1",
+			Config:  map[string]any{"greeting": "hello"},
+			Secrets: map[string]any{"token": "s3cr3t"},
+		}
+
+		output, err := echoConnectorAction{}.Run(context.Background(), nil, connector)
+		if err != nil {
+			t.Fatalf("Run() error = %v", err)
+		}
+		if output["bound"] != true {
+			t.Fatalf("output[bound] = %v, want true", output["bound"])
+		}
+		if output["type"] != "demo.connection@1" {
+			t.Fatalf("output[type] = %v, want %q", output["type"], "demo.connection@1")
+		}
+		config, ok := output["config"].(map[string]any)
+		if !ok || config["greeting"] != "hello" {
+			t.Fatalf("output[config] = %v, want {\"greeting\":\"hello\"}", output["config"])
+		}
+
+		if _, leaked := output["secrets"]; leaked {
+			t.Fatal("output must never include \"secrets\"")
+		}
+		for _, v := range output {
+			if v == "s3cr3t" {
+				t.Fatalf("output = %v, must never leak the resolved secret value", output)
+			}
+		}
+	})
 }

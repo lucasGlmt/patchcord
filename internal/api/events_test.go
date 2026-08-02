@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/migrations"
@@ -47,7 +48,7 @@ steps:
 // plugin — this test only exercises the HTTP/SSE surface, not execution.
 type fakeExecutor struct{}
 
-func (fakeExecutor) ExecuteAction(_ context.Context, _ string, _ map[string]any) (map[string]any, error) {
+func (fakeExecutor) ExecuteAction(_ context.Context, _ string, _ map[string]any, _ *connectors.ResolvedConnector) (map[string]any, error) {
 	return map[string]any{"value": "HELLO"}, nil
 }
 
@@ -72,7 +73,7 @@ func TestHandleRunEvents_StreamsRunAndStepEventsAsSSE(t *testing.T) {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
 
-	run, err := runs.Execute(context.Background(), db, fakeExecutor{}, "hello_patchcord", nil, runs.ExecuteOptions{})
+	run, err := runs.Execute(context.Background(), db, fakeExecutor{}, "hello_patchcord", nil, nil, runs.ExecuteOptions{})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}

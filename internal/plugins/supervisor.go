@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/lucasglmt/patchcord/internal/connectors"
 )
 
 // SupervisorConfig controls the Plugin Supervisor's health check and
@@ -144,10 +146,11 @@ func (s *Supervisor) Stop(ctx context.Context) {
 }
 
 // ExecuteAction runs actionID on whichever currently running plugin
-// contributes it. It implements internal/runs's ActionExecutor interface,
+// contributes it, passing connector as the resolved connector bound to it
+// (nil if none). It implements internal/runs's ActionExecutor interface,
 // letting the workflow runner invoke actions without knowing anything
 // about plugin processes, transport, or supervision.
-func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input map[string]any) (map[string]any, error) {
+func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input map[string]any, connector *connectors.ResolvedConnector) (map[string]any, error) {
 	s.mu.Lock()
 	var rp *runningPlugin
 	for _, candidate := range s.running {
@@ -167,7 +170,7 @@ func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input m
 		return nil, fmt.Errorf("action %q is not currently available (no running plugin contributes it)", actionID)
 	}
 
-	return ExecuteAction(ctx, rp.proc.Client, actionID, input)
+	return ExecuteAction(ctx, rp.proc.Client, actionID, input, connector)
 }
 
 // launchAndHandshake launches entry's executable and validates it with a

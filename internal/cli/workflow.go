@@ -190,6 +190,7 @@ func newWorkflowExportCommand() *cobra.Command {
 func newWorkflowRunCommand() *cobra.Command {
 	var dataDir string
 	var inputFlags map[string]string
+	var bindingFlags map[string]string
 	var stepTimeout time.Duration
 
 	cmd := &cobra.Command{
@@ -233,7 +234,7 @@ func newWorkflowRunCommand() *cobra.Command {
 				inputs[k] = v
 			}
 
-			run, err := runs.Execute(ctx, db, supervisor, args[0], inputs, runs.ExecuteOptions{StepTimeout: stepTimeout})
+			run, err := runs.Execute(ctx, db, supervisor, args[0], inputs, bindingFlags, runs.ExecuteOptions{StepTimeout: stepTimeout})
 			if err != nil {
 				return fmt.Errorf("run workflow: %w", err)
 			}
@@ -252,6 +253,7 @@ func newWorkflowRunCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
 	cmd.Flags().StringToStringVar(&inputFlags, "input", nil, "workflow input as key=value, repeatable")
+	cmd.Flags().StringToStringVar(&bindingFlags, "binding", nil, "connector binding as name=connector-id, repeatable (see a step's connector: field)")
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", runs.DefaultStepTimeout, "maximum duration of a single step's action call")
 
 	return cmd

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 	"github.com/lucasglmt/patchcord/migrations"
@@ -40,14 +41,20 @@ var knownActions = map[string]struct{}{
 // process, keeping the runner's orchestration logic testable on its own,
 // independent of internal/plugins (see internal/plugins.Supervisor for the
 // real implementation, and the end-to-end test in internal/runtime).
+// connectorsReceived records the connector each call in calls received, in
+// the same order, so tests can assert a step's bound connector actually
+// reached the executor (or that an unbound step received nil).
 type fakeExecutor struct {
 	responses map[string]map[string]any
 	errs      map[string]error
 	calls     []string
+
+	connectorsReceived []*connectors.ResolvedConnector
 }
 
-func (f *fakeExecutor) ExecuteAction(_ context.Context, actionID string, _ map[string]any) (map[string]any, error) {
+func (f *fakeExecutor) ExecuteAction(_ context.Context, actionID string, _ map[string]any, connector *connectors.ResolvedConnector) (map[string]any, error) {
 	f.calls = append(f.calls, actionID)
+	f.connectorsReceived = append(f.connectorsReceived, connector)
 	if err, ok := f.errs[actionID]; ok {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	pluginv1 "github.com/lucasglmt/patchcord/api/plugin/v1"
+	"github.com/lucasglmt/patchcord/internal/connectors"
 )
 
 func TestExecuteAction(t *testing.T) {
@@ -42,7 +43,7 @@ func TestExecuteAction(t *testing.T) {
 				executeErr:      tt.executeErr,
 			})
 
-			got, err := ExecuteAction(context.Background(), client, "text.uppercase@1", map[string]any{"value": "hello"})
+			got, err := ExecuteAction(context.Background(), client, "text.uppercase@1", map[string]any{"value": "hello"}, nil)
 
 			if tt.wantErr {
 				if err == nil {
@@ -57,5 +58,29 @@ func TestExecuteAction(t *testing.T) {
 				t.Fatalf("output = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestExecuteAction_EncodesABoundConnector(t *testing.T) {
+	outputStruct, err := structpb.NewStruct(map[string]any{"bound": true})
+	if err != nil {
+		t.Fatalf("build output struct: %v", err)
+	}
+	client := dialFakePlugin(t, &fakePluginServer{
+		executeResponse: &pluginv1.ExecuteActionResponse{Output: outputStruct},
+	})
+
+	connector := &connectors.ResolvedConnector{
+		Type:    "postgresql.connection@1",
+		Config:  map[string]any{"host": "db.internal"},
+		Secrets: map[string]any{"password": "s3cr3t"},
+	}
+
+	got, err := ExecuteAction(context.Background(), client, "postgresql.query@1", map[string]any{"query": "select 1"}, connector)
+	if err != nil {
+		t.Fatalf("ExecuteAction() error = %v", err)
+	}
+	if got["bound"] != true {
+		t.Fatalf("output = %v, want bound=true", got)
 	}
 }

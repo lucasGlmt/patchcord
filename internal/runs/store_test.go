@@ -185,10 +185,10 @@ func TestListRuns(t *testing.T) {
 	installTestWorkflow(t, db, helloWorkflow)
 
 	executor := &fakeExecutor{responses: map[string]map[string]any{"text.uppercase@1": {"value": "X"}}}
-	if _, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, ExecuteOptions{}); err != nil {
+	if _, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, nil, ExecuteOptions{}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if _, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, ExecuteOptions{}); err != nil {
+	if _, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, nil, ExecuteOptions{}); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
@@ -226,7 +226,7 @@ func TestCancelRun(t *testing.T) {
 
 	t.Run("returns ErrRunNotCancellable for a finished run", func(t *testing.T) {
 		executor := &fakeExecutor{responses: map[string]map[string]any{"text.uppercase@1": {"value": "X"}}}
-		run, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, ExecuteOptions{})
+		run, err := Execute(context.Background(), db, executor, "hello_patchcord", nil, nil, ExecuteOptions{})
 		if err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}

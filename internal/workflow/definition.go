@@ -36,6 +36,12 @@ type Step struct {
 	// the workflow's inputs or a prior step's outputs; every other value
 	// is passed through unchanged.
 	With map[string]any `yaml:"with"`
+	// Connector, if non-empty, binds a connector to this step's action
+	// call. It must be entirely one ${{ ... }} expression — never a
+	// literal connector id — so a published, immutable workflow version
+	// (ADR-0008) never bakes in one deployment's specific connector
+	// identity; see ResolveConnector and ADR-0021.
+	Connector string `yaml:"connector,omitempty"`
 }
 
 // Parse parses a workflow definition from its YAML source. It only parses:

@@ -1,0 +1,31 @@
+# Reference example for the mysql connector-consuming plugin
+# (plugins/examples/mysql): a step bound to a "mysql.connection@1"
+# connector runs a trivial query through it.
+#
+# Unlike http_httpbin_demo.yaml or ai_generate_text_demo.yaml, this one
+# needs a real MySQL server you control — there is no public demo database.
+# "SELECT 1 AS ok" needs no schema, so it works against any reachable
+# server/database/user combination.
+#
+# Run it with:
+#   patchcord plugin install ./bin/plugins/mysql
+#   patchcord connector create mysql-db --type "mysql.connection@1" \
+#       --config host=localhost --config port=3306 \
+#       --config database=app --config user=admin \
+#       --secret password=env:MYSQL_PASSWORD
+#   patchcord workflow install workflows/examples/mysql_query_demo.yaml
+#   patchcord workflow run mysql_query_demo --binding db=mysql-db
+schema_version: 1
+
+id: mysql_query_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: ping
+    uses: mysql.query@1
+    connector: "${{ bindings.db }}"
+    with:
+      sql: "SELECT 1 AS ok"
