@@ -1,0 +1,16 @@
+# Minimal reference application (vision document, section 7.6, 9.3, 15.4).
+# Unlike apps/examples/dashboard (a generic development tool for exercising
+# any workflow with raw JSON inputs), this one demonstrates nothing more
+# than what "patchcord app install" itself proves: a static page, served by
+# the agent, restricted by a session to running exactly one workflow.
+#
+# Install and run with:
+#   patchcord app install apps/examples/greeter
+#   patchcord serve
+# then open http://127.0.0.1:7331/apps/greeter/
+id: greeter
+version: "0.1.0"
+permissions:
+  workflows:
+    run:
+      - hello_patchcord

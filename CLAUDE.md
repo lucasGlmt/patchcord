@@ -194,3 +194,14 @@ go vet ./...
 go test ./...
 patchcord serve --listen 127.0.0.1:7331   # une fois le binaire buildé
 ```
+
+## 11. Documentation utilisateur (`docs/book/`)
+
+En plus du document de vision (`docs/PATCHCORD_VISION_ARCHITECTURE.md`, le *pourquoi*) et des ADR (`docs/adr/`, l'historique des décisions), le dépôt contient une documentation utilisateur au format **mdBook** dans `docs/book/` — le *comment utiliser* Patchcord.
+
+- Outil : [mdBook](https://rust-lang.github.io/mdBook/) (`cargo install mdbook`). Zéro dépendance Node, un seul fichier `book.toml`, une nav explicite dans `docs/book/src/SUMMARY.md`. Commandes : `make docs-build` / `make docs-serve`.
+- Structure : cinq parties top-level qui reflètent les frontières du dépôt, pas une hiérarchie inventée — **CLI**, **Plugins** (avec les connecteurs en sous-partie, car un connecteur est une configuration exposée par un greffon), **Workflows**, **SDK TypeScript**, **Apps**. Une page d'introduction (`introduction.md`) porte le tableau de vocabulaire et renvoie vers le document de vision plutôt que de le dupliquer.
+- Langue : contrairement aux ADR, le contenu de `docs/book/` est en **anglais** (cohérent avec la règle section 4 — ce sont des frontières publiques consommées potentiellement par des tiers).
+- Ton : clair et précis, pas de tournures narratives. Cette doc est lue autant par des développeurs que par des agents de codage (dont toi, dans de futures sessions) — privilégie les faits vérifiables (chemins de fichiers, noms de commandes, numéros d'ADR) aux formulations vagues.
+- Une page renvoie vers l'ADR ou la section du document de vision concernée plutôt que de réexpliquer un choix d'architecture — pas de duplication entre `docs/book/` et `docs/adr/`.
+- Règle de maintenance : toute nouvelle commande CLI, tout nouveau greffon d'exemple, toute nouvelle capacité de SDK ou de manifeste d'application mérite une mise à jour de la page correspondante dans `docs/book/src/`. Ne pas laisser les pages stub ("Placeholder — content pending.") diverger silencieusement du code une fois qu'une section est rédigée.

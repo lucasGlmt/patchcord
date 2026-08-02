@@ -26,6 +26,9 @@ vendor/
 node_modules/
 dist/
 
+# mdBook build output
+/docs/book/book/
+
 # Editors and OS
 .vscode/
 .idea/

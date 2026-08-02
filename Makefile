@@ -50,6 +50,14 @@ proto: ## Regenerate the plugin protocol's Go stubs (api/plugin/v1) with buf
 swagger: ## Regenerate the OpenAPI spec (api/agent) from internal/api's swag annotations — requires `go install github.com/swaggo/swag/cmd/swag@latest`
 	swag init --dir ./internal/api --generalInfo doc.go --parseInternal --output api/agent --outputTypes json,yaml --quiet
 
+.PHONY: docs-build
+docs-build: ## Build the mdBook documentation (requires `cargo install mdbook`)
+	mdbook build docs/book
+
+.PHONY: docs-serve
+docs-serve: ## Serve the mdBook documentation locally with live reload (requires `cargo install mdbook`)
+	mdbook serve docs/book
+
 .PHONY: check
 check: vet fmt-check test ## Run everything a change should pass before it's proposed as done
 

@@ -1,0 +1,119 @@
+<!doctype html>
+<!--
+  Minimal reference application (vision document, section 7.6, 10.3;
+  ADR-0026). No build step on purpose — install it directly:
+
+    patchcord app install apps/examples/greeter
+    patchcord serve
+
+  then open http://127.0.0.1:7331/apps/greeter/. The page fetches its own
+  session (POST /v1/apps/greeter/sessions) before running the workflow, so
+  it only ever gets to run "hello_patchcord" — patchcord-app.yaml's
+  permissions.workflows.run is the only thing that allows that. Served by
+  the agent itself, this page and the API it calls share one origin, so
+  none of the cross-origin CORS concerns apps/examples/dashboard's Vite dev
+  server needs apply here.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Patchcord Greeter (demo)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 480px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+        text-align: center;
+      }
+      button {
+        font-size: 1rem;
+        padding: 0.6rem 1.5rem;
+        margin-top: 1rem;
+        cursor: pointer;
+      }
+      .status {
+        margin-top: 1rem;
+        opacity: 0.75;
+      }
+      .status.error {
+        color: #d33;
+        opacity: 1;
+      }
+      .greeting {
+        margin-top: 1.5rem;
+        font-size: 1.5rem;
+        font-weight: 600;
+        min-height: 2em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Patchcord Greeter</h1>
+    <p>An installed application, running one workflow through a session limited to exactly that.</p>
+    <button id="run">Say hello</button>
+    <p class="status" id="status"></p>
+    <p class="greeting" id="greeting"></p>
+
+    <script>
+      const runButton = document.querySelector("#run");
+      const statusEl = document.querySelector("#status");
+      const greetingEl = document.querySelector("#greeting");
+
+      runButton.addEventListener("click", () => {
+        void sayHello();
+      });
+
+      async function sayHello() {
+        runButton.disabled = true;
+        greetingEl.textContent = "";
+        statusEl.classList.remove("error");
+
+        try {
+          statusEl.textContent = "Requesting a session…";
+          const sessionResponse = await fetch("/v1/apps/greeter/sessions", { method: "POST" });
+          if (!sessionResponse.ok) {
+            throw new Error(`could not get a session (${sessionResponse.status})`);
+          }
+          const session = await sessionResponse.json();
+
+          statusEl.textContent = "Running hello_patchcord…";
+          const runResponse = await fetch("/v1/workflows/hello_patchcord/run", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.token}`,
+            },
+            body: JSON.stringify({}),
+          });
+          if (!runResponse.ok) {
+            throw new Error(`run failed (${runResponse.status})`);
+          }
+          let run = await runResponse.json();
+
+          while (run.status === "queued" || run.status === "running") {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+            const pollResponse = await fetch(`/v1/runs/${run.id}`);
+            run = await pollResponse.json();
+          }
+
+          if (run.status !== "succeeded") {
+            throw new Error(run.error || `run ended as ${run.status}`);
+          }
+
+          statusEl.textContent = "Done — restricted to this one workflow by its session.";
+          greetingEl.textContent = run.outputs?.value ?? JSON.stringify(run.outputs);
+        } catch (err) {
+          statusEl.textContent = `Error: ${err.message}`;
+          statusEl.classList.add("error");
+        } finally {
+          runButton.disabled = false;
+        }
+      }
+    </script>
+  </body>
+</html>

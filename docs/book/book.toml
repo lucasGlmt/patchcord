@@ -1,0 +1,14 @@
+[book]
+title = "Patchcord Documentation"
+authors = ["Lucas Guilleminot"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+
+[output.html.search]
+enable = true
+limit-results = 20
+use-boolean-and = true
