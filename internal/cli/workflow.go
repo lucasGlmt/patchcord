@@ -13,6 +13,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/scheduler"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -69,6 +70,10 @@ func newWorkflowInstallCommand() *cobra.Command {
 			def, err := runs.InstallWorkflow(cmd.Context(), db, source, knownActions)
 			if err != nil {
 				return fmt.Errorf("install workflow: %w", err)
+			}
+
+			if err := scheduler.Sync(cmd.Context(), db, def); err != nil {
+				return fmt.Errorf("schedule workflow: %w", err)
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "Installed %s version %d (%d step(s)%s)\n", def.ID, def.Version, len(def.Steps), inputCountSuffix(def))

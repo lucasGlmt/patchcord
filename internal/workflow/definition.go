@@ -45,11 +45,22 @@ type InputDef struct {
 	Enum []string `yaml:"enum,omitempty"`
 }
 
-// Trigger declares how a workflow starts. Only the "manual" type is
-// supported so far; scheduled and webhook triggers belong to the
-// scheduler (a later phase).
+// Trigger declares how a workflow starts: "manual" (the default so far) or
+// "schedule", fired unattended by internal/scheduler on a cron cadence.
+// Webhook and event triggers remain a later phase.
 type Trigger struct {
 	Type string `yaml:"type"`
+	// Cron is a standard 5-field cron expression ("minute hour dom month
+	// dow"). Required when Type is "schedule", rejected otherwise. See
+	// ADR-0035.
+	Cron string `yaml:"cron,omitempty"`
+	// OnMissed controls what happens to occurrences the scheduler could not
+	// fire because the agent was offline past them: "skip" (the default,
+	// used when empty) drops the backlog and resumes at the next future
+	// occurrence; "fire_once" runs once for the most recently missed
+	// occurrence, then resumes normal cadence. Only meaningful when Type is
+	// "schedule". See ADR-0035.
+	OnMissed string `yaml:"on_missed,omitempty"`
 }
 
 // Step is one action invocation within a workflow.

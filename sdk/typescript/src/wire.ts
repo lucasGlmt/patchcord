@@ -140,6 +140,9 @@ export interface WireWorkflowDetail {
   version: number;
   schema_version: number;
   trigger_type: string;
+  trigger_cron?: string;
+  trigger_on_missed?: string;
+  next_run_at?: string;
   inputs?: WireWorkflowInputDetail[];
   steps: WireWorkflowStepDetail[];
   bindings?: WireWorkflowBindingDetail[];
@@ -174,6 +177,9 @@ export function workflowDetailFromWire(wire: WireWorkflowDetail): WorkflowDetail
     version: wire.version,
     schemaVersion: wire.schema_version,
     triggerType: wire.trigger_type,
+    triggerCron: wire.trigger_cron,
+    triggerOnMissed: wire.trigger_on_missed,
+    nextRunAt: wire.next_run_at,
     inputs: (wire.inputs ?? []).map(workflowInputDetailFromWire),
     steps: wire.steps.map(workflowStepDetailFromWire),
     bindings: (wire.bindings ?? []).map(workflowBindingDetailFromWire),

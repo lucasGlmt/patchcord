@@ -17,6 +17,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
+	"github.com/lucasglmt/patchcord/internal/scheduler"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -88,6 +89,11 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 	// background run is recorded Cancelled instead of left running against
 	// plugins that are about to be torn down by supervisor.Stop.
 	runCtx, cancelRuns := context.WithCancel(context.Background())
+
+	// The scheduler fires "schedule"-triggered workflows (ADR-0035) the same
+	// way handleRunWorkflow fires a manual one — under runCtx, so it shares
+	// the same shutdown-cancellation behavior.
+	go scheduler.NewRunner(db, supervisor, logger).Run(runCtx)
 
 	return &Agent{
 		cfg:    cfg,

@@ -295,6 +295,76 @@ func TestValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "accepts a well-formed schedule trigger",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *"}
+			},
+		},
+		{
+			name: "accepts a schedule trigger with an explicit on_missed policy",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *", OnMissed: "fire_once"}
+			},
+		},
+		{
+			name: "rejects a schedule trigger with a malformed cron expression",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "not a cron expression"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a schedule trigger with an empty cron expression",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a schedule trigger with an unrecognized on_missed policy",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *", OnMissed: "catch_up_all"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a manual trigger declaring a cron expression",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "manual", Cron: "*/5 * * * *"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a manual trigger declaring an on_missed policy",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "manual", OnMissed: "skip"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a schedule trigger with a required input lacking a default",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *"}
+				d.Inputs = []InputDef{{Name: "name", Required: true}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a schedule trigger with a non-required input that has a default",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *"}
+				d.Inputs = []InputDef{{Name: "name", Default: "world"}}
+			},
+		},
+		{
+			name: "rejects a schedule trigger with a connector-bound step",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *"}
+				d.Steps[0].Connector = "${{ bindings.ai_provider }}"
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

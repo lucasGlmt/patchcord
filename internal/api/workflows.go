@@ -13,6 +13,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/scheduler"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -124,12 +125,21 @@ type workflowInputDetail struct {
 // workflow's structure, plus its raw YAML source for a "view source"
 // affordance — the same source `patchcord workflow export` prints.
 type workflowDetail struct {
-	ID            string                `json:"id"`
-	Version       int                   `json:"version"`
-	SchemaVersion int                   `json:"schema_version"`
-	TriggerType   string                `json:"trigger_type"`
-	Inputs        []workflowInputDetail `json:"inputs,omitempty"`
-	Steps         []workflowStepDetail  `json:"steps"`
+	ID            string `json:"id"`
+	Version       int    `json:"version"`
+	SchemaVersion int    `json:"schema_version"`
+	TriggerType   string `json:"trigger_type"`
+	// TriggerCron and TriggerOnMissed are only set when TriggerType is
+	// "schedule" — see internal/workflow.Trigger (ADR-0035).
+	TriggerCron     string `json:"trigger_cron,omitempty"`
+	TriggerOnMissed string `json:"trigger_on_missed,omitempty"`
+	// NextRunAt is this workflow's next scheduled firing, populated from
+	// the schedules table (internal/scheduler) rather than parsed from the
+	// definition — nil for a "manual" trigger, or if the schedules row
+	// hasn't caught up yet with a just-installed version.
+	NextRunAt *time.Time            `json:"next_run_at,omitempty"`
+	Inputs    []workflowInputDetail `json:"inputs,omitempty"`
+	Steps     []workflowStepDetail  `json:"steps"`
 	// Bindings is every distinct connector binding name referenced by Steps
 	// (via a "${{ bindings.<name> }}" expression), each paired with its
 	// inferred connector type when one could be — see bindingConnectorType.
@@ -137,12 +147,31 @@ type workflowDetail struct {
 	Source   string                  `json:"source"`
 }
 
+// effectiveOnMissed returns t.OnMissed, resolving the default a Trigger
+// leaves implicit (an empty OnMissed means scheduler.OnMissedSkip — see
+// internal/workflow.Trigger and scheduler.Sync) so a client always sees the
+// policy that actually governs the schedule, not the raw possibly-empty
+// YAML field.
+func effectiveOnMissed(t workflow.Trigger) string {
+	if t.Type != "schedule" {
+		return ""
+	}
+	if t.OnMissed == "" {
+		return scheduler.OnMissedSkip
+	}
+	return t.OnMissed
+}
+
 // toWorkflowDetail builds a workflowDetail from a parsed workflow
 // definition. catalog is every installed plugin, used to infer each
 // binding's connector type (bindingConnectorType) — pass nil when that
 // inference isn't needed (every step's Connector/ConnectorType/BindingName
-// then comes back empty, same as before this field existed).
-func toWorkflowDetail(def *workflow.Definition, source string, catalog []plugins.CatalogEntry) workflowDetail {
+// then comes back empty, same as before this field existed). nextRunAt is
+// looked up separately (scheduler.NextRunAt) rather than derived from def,
+// since it depends on the schedules table's live state, not the
+// definition alone — pass nil when it isn't needed (e.g. handleListWorkflows
+// doesn't call toWorkflowDetail at all today).
+func toWorkflowDetail(def *workflow.Definition, source string, catalog []plugins.CatalogEntry, nextRunAt *time.Time) workflowDetail {
 	inputs := make([]workflowInputDetail, 0, len(def.Inputs))
 	for _, input := range def.Inputs {
 		inputs = append(inputs, workflowInputDetail{
@@ -201,14 +230,17 @@ func toWorkflowDetail(def *workflow.Definition, source string, catalog []plugins
 	}
 
 	return workflowDetail{
-		ID:            def.ID,
-		Version:       def.Version,
-		SchemaVersion: def.SchemaVersion,
-		TriggerType:   def.Trigger.Type,
-		Inputs:        inputs,
-		Steps:         steps,
-		Bindings:      bindings,
-		Source:        source,
+		ID:              def.ID,
+		Version:         def.Version,
+		SchemaVersion:   def.SchemaVersion,
+		TriggerType:     def.Trigger.Type,
+		TriggerCron:     def.Trigger.Cron,
+		TriggerOnMissed: effectiveOnMissed(def.Trigger),
+		NextRunAt:       nextRunAt,
+		Inputs:          inputs,
+		Steps:           steps,
+		Bindings:        bindings,
+		Source:          source,
 	}
 }
 
@@ -286,7 +318,21 @@ func handleGetWorkflow(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, toWorkflowDetail(def, source, catalog))
+		// The schedules table is keyed by workflow_id, not (workflow_id,
+		// version) — it always reflects the currently installed trigger
+		// going forward, so this is populated even when an older version is
+		// being viewed (?version=N).
+		var nextRunAt *time.Time
+		if def.Trigger.Type == "schedule" {
+			if t, ok, err := scheduler.NextRunAt(r.Context(), deps.DB, id); err != nil {
+				http.Error(w, "get workflow: "+err.Error(), http.StatusInternalServerError)
+				return
+			} else if ok {
+				nextRunAt = &t
+			}
+		}
+
+		writeJSON(w, http.StatusOK, toWorkflowDetail(def, source, catalog, nextRunAt))
 	}
 }
 

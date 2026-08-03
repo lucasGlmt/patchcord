@@ -12,6 +12,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/scheduler"
 )
 
 func TestBindingName(t *testing.T) {
@@ -245,6 +246,61 @@ func TestHandleGetWorkflow_ReturnsStepsAndSource(t *testing.T) {
 	}
 	if !strings.Contains(got.Source, "hello_patchcord") {
 		t.Fatalf("Source = %q, want it to contain the raw YAML", got.Source)
+	}
+}
+
+const scheduledTestWorkflow = `
+schema_version: 1
+id: nightly_report
+version: 1
+trigger:
+  type: schedule
+  cron: "*/5 * * * *"
+steps:
+  - id: step1
+    uses: text.uppercase@1
+    with:
+      value: hello
+`
+
+func TestHandleGetWorkflow_ReturnsScheduleTriggerDetails(t *testing.T) {
+	db := openMigratedTestDB(t)
+	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	def, err := runs.InstallWorkflow(context.Background(), db, []byte(scheduledTestWorkflow), knownActions)
+	if err != nil {
+		t.Fatalf("InstallWorkflow() error = %v", err)
+	}
+	// handleGetWorkflow doesn't schedule anything itself — only the CLI's
+	// `workflow install` calls scheduler.Sync (see internal/cli/workflow.go)
+	// — so the test does the same before exercising the handler.
+	if err := scheduler.Sync(context.Background(), db, def); err != nil {
+		t.Fatalf("scheduler.Sync() error = %v", err)
+	}
+
+	router := NewRouter(Deps{DB: db})
+	req := httptest.NewRequest(http.MethodGet, "/v1/workflows/nightly_report", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var got workflowDetail
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if got.TriggerType != "schedule" {
+		t.Fatalf("TriggerType = %q, want %q", got.TriggerType, "schedule")
+	}
+	if got.TriggerCron != "*/5 * * * *" {
+		t.Fatalf("TriggerCron = %q, want %q", got.TriggerCron, "*/5 * * * *")
+	}
+	if got.TriggerOnMissed != "skip" {
+		t.Fatalf("TriggerOnMissed = %q, want default %q", got.TriggerOnMissed, "skip")
+	}
+	if got.NextRunAt == nil || !got.NextRunAt.After(time.Now()) {
+		t.Fatalf("NextRunAt = %v, want a time in the future", got.NextRunAt)
 	}
 }
 

@@ -1,0 +1,25 @@
+# A "schedule" trigger (ADR-0035): fires unattended on a cron cadence, no
+# manual `workflow run` involved. install and let it run on its own —
+# `patchcord workflow install workflows/examples/scheduled_demo.yaml`, then
+# watch `patchcord workflow runs scheduled_demo` fill in over time (or check
+# GET /v1/workflows/scheduled_demo's next_run_at).
+#
+# A scheduled run has no caller to supply inputs or connector bindings, so
+# Validate rejects a required input without a default and any
+# connector-bound step for this trigger type — see "Schedule trigger" in
+# docs/book/src/workflows/format.md.
+schema_version: 1
+
+id: scheduled_demo
+version: 1
+
+trigger:
+  type: schedule
+  cron: "*/5 * * * *"
+  on_missed: skip
+
+steps:
+  - id: greet
+    uses: text.uppercase@1
+    with:
+      value: "hello from the scheduler"

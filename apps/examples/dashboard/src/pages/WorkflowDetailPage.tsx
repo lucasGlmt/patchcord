@@ -16,6 +16,7 @@ import MenuItem from "@mui/material/MenuItem";
 import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -29,6 +30,19 @@ import { buildTypedInputs, initialTypedInputs, parseJSONRecord, type TypedInputV
 import { CrossFade, PageFade, StaggerItem, StaggerList } from "../motion";
 
 type Phase = "form" | "running" | "done" | "error";
+
+// nextRunLabel renders a schedule trigger's next firing as a short relative
+// duration ("in 4m") — same rounding-and-unit-picking approach as RunsPage's
+// durationLabel, but counting forward from now instead of a run's elapsed
+// time. The full timestamp is left to a Tooltip rather than shown inline.
+function nextRunLabel(nextRunAt: string): string {
+  const ms = new Date(nextRunAt).getTime() - Date.now();
+  if (ms <= 0) return "due now";
+  if (ms < 60_000) return `in ${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) return `in ${Math.round(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `in ${Math.round(ms / 3_600_000)}h`;
+  return `in ${Math.round(ms / 86_400_000)}d`;
+}
 
 export default function WorkflowDetailPage({ client }: { client: PatchcordClient }) {
   const { id = "" } = useParams();
@@ -116,8 +130,24 @@ export default function WorkflowDetailPage({ client }: { client: PatchcordClient
       {detail && (
         <Box sx={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "flex-start" }}>
           <Box sx={{ flex: "1 1 520px", minWidth: 0 }}>
-            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap" }}>
               <Chip label={`trigger: ${detail.triggerType}`} size="small" variant="outlined" />
+              {detail.triggerType === "schedule" && detail.triggerCron && (
+                <Chip
+                  label={`schedule: ${detail.triggerCron}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ fontFamily: "ui-monospace, monospace" }}
+                />
+              )}
+              {detail.triggerType === "schedule" && detail.triggerOnMissed && (
+                <Chip label={`on missed: ${detail.triggerOnMissed}`} size="small" variant="outlined" />
+              )}
+              {detail.triggerType === "schedule" && detail.nextRunAt && (
+                <Tooltip title={new Date(detail.nextRunAt).toLocaleString()}>
+                  <Chip label={`next run ${nextRunLabel(detail.nextRunAt)}`} size="small" color="secondary" variant="outlined" />
+                </Tooltip>
+              )}
               <Chip label={`schema v${detail.schemaVersion}`} size="small" variant="outlined" />
               <Chip label={`${detail.steps.length} step${detail.steps.length === 1 ? "" : "s"}`} size="small" variant="outlined" />
             </Stack>

@@ -2,6 +2,8 @@ package workflow
 
 import (
 	"fmt"
+
+	"github.com/robfig/cron/v3"
 )
 
 // SupportedSchemaVersion is the only workflow schema version this engine
@@ -12,7 +14,11 @@ const SupportedSchemaVersion = 1
 // can be installed or run (vision document, section 12.5):
 //
 //   - a supported schema version;
-//   - a non-empty id, a positive version, exactly one "manual" trigger;
+//   - a non-empty id, a positive version, a "manual" or "schedule" trigger;
+//   - for a "schedule" trigger: a valid 5-field cron expression, a
+//     recognized on_missed policy, no required input lacking a default and
+//     no connector-bound step — a schedule fires unattended, with nobody to
+//     supply inputs or bindings at run time (see ADR-0035);
 //   - at least one step, with unique, non-empty step ids;
 //   - every step's action exists among knownActions;
 //   - every ${{ steps.<id>.outputs...}} expression refers to an earlier
@@ -44,8 +50,8 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 	if def.Version < 1 {
 		return fmt.Errorf("workflow version must be a positive integer, got %d", def.Version)
 	}
-	if def.Trigger.Type != "manual" {
-		return fmt.Errorf("unsupported trigger type %q, only \"manual\" is supported", def.Trigger.Type)
+	if err := validateTrigger(def); err != nil {
+		return err
 	}
 	if len(def.Steps) == 0 {
 		return fmt.Errorf("workflow must declare at least one step")
@@ -119,4 +125,46 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 	}
 
 	return nil
+}
+
+// validateTrigger checks def.Trigger against the rules described in
+// Validate's doc comment. A "schedule" trigger additionally rejects any
+// required input lacking a default and any connector-bound step: a
+// scheduled run fires unattended, so there is no caller left to supply
+// either at run time (unlike POST /workflows/{id}/run's body.Inputs and
+// body.Bindings) — see ADR-0035.
+func validateTrigger(def *Definition) error {
+	switch def.Trigger.Type {
+	case "manual":
+		if def.Trigger.Cron != "" || def.Trigger.OnMissed != "" {
+			return fmt.Errorf("trigger: cron and on_missed only apply to a \"schedule\" trigger, not \"manual\"")
+		}
+		return nil
+
+	case "schedule":
+		if _, err := cron.ParseStandard(def.Trigger.Cron); err != nil {
+			return fmt.Errorf("trigger: invalid cron expression %q: %w", def.Trigger.Cron, err)
+		}
+
+		switch def.Trigger.OnMissed {
+		case "", "skip", "fire_once":
+		default:
+			return fmt.Errorf("trigger: on_missed must be \"skip\" or \"fire_once\", got %q", def.Trigger.OnMissed)
+		}
+
+		for _, input := range def.Inputs {
+			if input.Required && input.Default == nil {
+				return fmt.Errorf("trigger: schedule requires input %q to declare a default — a scheduled run has no caller to supply it", input.Name)
+			}
+		}
+		for _, step := range def.Steps {
+			if step.Connector != "" {
+				return fmt.Errorf("trigger: schedule does not support step %q's connector binding — a scheduled run has no caller to supply it", step.ID)
+			}
+		}
+		return nil
+
+	default:
+		return fmt.Errorf("unsupported trigger type %q, only \"manual\" and \"schedule\" are supported", def.Trigger.Type)
+	}
 }

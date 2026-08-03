@@ -143,6 +143,24 @@ export interface WorkflowDetail {
   version: number;
   schemaVersion: number;
   triggerType: string;
+  /**
+   * A standard 5-field cron expression, present only when triggerType is
+   * "schedule" — see docs/book/src/workflows/format.md#schedule-trigger.
+   */
+  triggerCron?: string;
+  /**
+   * The effective missed-occurrence policy ("skip" or "fire_once"), present
+   * only when triggerType is "schedule" — always resolved, never empty even
+   * when the workflow's YAML left on_missed implicit.
+   */
+  triggerOnMissed?: string;
+  /**
+   * This workflow's next scheduled firing (ISO 8601), present only when
+   * triggerType is "schedule". Reflects the live schedules table, not the
+   * definition alone, so it stays accurate even when viewing an older
+   * installed version.
+   */
+  nextRunAt?: string;
   /** The workflow's declared input schema. Empty when it declares none. */
   inputs: WorkflowInputDetail[];
   steps: WorkflowStepDetail[];

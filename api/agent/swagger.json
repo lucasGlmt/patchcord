@@ -812,6 +812,10 @@
                         "$ref": "#/definitions/api.workflowInputDetail"
                     }
                 },
+                "next_run_at": {
+                    "description": "NextRunAt is this workflow's next scheduled firing, populated from\nthe schedules table (internal/scheduler) rather than parsed from the\ndefinition — nil for a \"manual\" trigger, or if the schedules row\nhasn't caught up yet with a just-installed version.",
+                    "type": "string"
+                },
                 "schema_version": {
                     "type": "integer"
                 },
@@ -823,6 +827,13 @@
                     "items": {
                         "$ref": "#/definitions/api.workflowStepDetail"
                     }
+                },
+                "trigger_cron": {
+                    "description": "TriggerCron and TriggerOnMissed are only set when TriggerType is\n\"schedule\" — see internal/workflow.Trigger (ADR-0035).",
+                    "type": "string"
+                },
+                "trigger_on_missed": {
+                    "type": "string"
                 },
                 "trigger_type": {
                     "type": "string"

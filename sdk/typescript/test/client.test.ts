@@ -97,6 +97,24 @@ function startFakeAgent(): Promise<{ baseUrl: string; close: () => Promise<void>
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/v1/workflows/scheduled_demo") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "scheduled_demo",
+          version: 1,
+          schema_version: 1,
+          trigger_type: "schedule",
+          trigger_cron: "*/5 * * * *",
+          trigger_on_missed: "skip",
+          next_run_at: "2026-01-01T00:05:00Z",
+          steps: [{ id: "greet", uses: "text.uppercase@1", with: { value: "hello" } }],
+          source: "schema_version: 1\nid: scheduled_demo\n",
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/v1/runs") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(
@@ -318,6 +336,9 @@ test("PatchcordClient.workflows.get returns one workflow version's steps and sou
     assert.equal(detail.version, 1);
     assert.equal(detail.schemaVersion, 1);
     assert.equal(detail.triggerType, "manual");
+    assert.equal(detail.triggerCron, undefined);
+    assert.equal(detail.triggerOnMissed, undefined);
+    assert.equal(detail.nextRunAt, undefined);
     assert.deepEqual(detail.inputs, [
       { name: "value", type: "string", required: true, description: "Value to uppercase.", default: undefined, enum: undefined },
       { name: "shout", type: "boolean", required: false, description: undefined, default: false, enum: undefined },
@@ -335,6 +356,20 @@ test("PatchcordClient.workflows.get returns one workflow version's steps and sou
     ]);
     assert.deepEqual(detail.bindings, []);
     assert.match(detail.source, /id: demo/);
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.workflows.get returns schedule trigger details for a schedule-triggered workflow", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const detail = await client.workflows.get("scheduled_demo");
+    assert.equal(detail.triggerType, "schedule");
+    assert.equal(detail.triggerCron, "*/5 * * * *");
+    assert.equal(detail.triggerOnMissed, "skip");
+    assert.equal(detail.nextRunAt, "2026-01-01T00:05:00Z");
   } finally {
     await agent.close();
   }

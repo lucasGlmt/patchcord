@@ -43,7 +43,7 @@ steps:
 | `schema_version` | Must equal `workflow.SupportedSchemaVersion` (currently `1`) — the only version this engine understands. |
 | `id` | The workflow's stable id, referenced by `patchcord workflow run <id>` and `POST /v1/workflows/{id}/run`. |
 | `version` | A positive integer. Installing a workflow never overwrites an existing `(id, version)` — see [Concepts](concepts.md). |
-| `trigger.type` | Must be `"manual"` — the only trigger the engine supports today. Scheduled and webhook triggers belong to the scheduler, a later phase (CLAUDE.md §9). |
+| `trigger.type` | `"manual"` or `"schedule"`. Webhook and event triggers remain a later phase (CLAUDE.md §9). See [Schedule trigger](#schedule-trigger). |
 | `inputs` | Optional — the workflow's declared input schema. See [Declared inputs](#declared-inputs). A workflow with no `inputs` accepts any `${{ workflow.inputs.<key> }}` key, unvalidated, exactly as before this field existed. |
 | `steps` | A non-empty list of steps, executed strictly in order. |
 
@@ -64,7 +64,7 @@ Each step:
 
 `workflow.Validate` (`internal/workflow/compile.go`) checks a parsed `Definition` before it can be installed or run (vision document, section 12.5):
 
-- `schema_version` is supported, `id` is non-empty, `version` is positive, `trigger.type` is `"manual"`;
+- `schema_version` is supported, `id` is non-empty, `version` is positive, `trigger.type` is `"manual"` or `"schedule"` — see [Schedule trigger](#schedule-trigger) for the extra rules a `"schedule"` trigger must satisfy;
 - at least one step; every step id is non-empty and unique;
 - every `uses` is in `knownActions` — the set of action ids currently installed plugins contribute (`plugins.KnownActions`), passed in by the caller so this package stays free of any persistence or process dependency;
 - every `${{ ... }}` expression in `with`, `connector`, `if` or `foreach` has a supported shape (below), and every `steps.<id>.outputs...` reference points at a step defined **earlier** in the same list — a forward reference or a typo'd step id is rejected at install time, not at run time;
@@ -99,6 +99,46 @@ Each declared input:
 - values are coerced to their declared type — needed because the CLI's `--input key=value` only ever supplies strings, while an HTTP JSON body already carries typed values, so both paths go through the same coercion.
 
 A workflow that declares no `inputs` at all keeps working exactly as before this field existed: any `${{ workflow.inputs.<key> }}` key may be passed, unvalidated.
+
+## Schedule trigger
+
+`trigger: { type: schedule, cron: "...", on_missed: ... }` fires a workflow unattended, on a cron cadence, with nobody supplying inputs or connector bindings the way a manual run's caller does (`workflow.Trigger`, `internal/scheduler`, [ADR-0035](../../../adr/0035-trigger-schedule-scheduler-persistant.md)):
+
+```yaml
+trigger:
+  type: schedule
+  cron: "*/5 * * * *"
+  on_missed: skip
+```
+
+(`workflows/examples/scheduled_demo.yaml`. Install it and it starts firing on its own — no `workflow run` needed: `patchcord workflow install workflows/examples/scheduled_demo.yaml`.)
+
+| Field | Meaning |
+|---|---|
+| `cron` | A standard 5-field cron expression (`minute hour day-of-month month day-of-week`). Required, validated by `Validate` at install time — a typo is rejected before the workflow is ever published, not discovered the first time it fails to fire. |
+| `on_missed` | `skip` (the default when omitted) or `fire_once`. Governs what happens to occurrences the scheduler couldn't fire because the agent was offline across more than one of them — see below. |
+
+Because nobody is present to supply inputs or a connector id when a scheduled run starts, `Validate` additionally rejects, for a `"schedule"` trigger only:
+
+- any declared input with `required: true` and no `default` (see [Declared inputs](#declared-inputs)) — there would be nothing to satisfy it;
+- any step with a `connector:` binding — there is no `bindings` map for it to resolve against.
+
+A workflow needing either should stay `"manual"`, or move its connector/input decisions into the action itself (a fixed `with` value, or a connector referenced by a fixed id is still rejected — bindings must stay an expression per [Connector binding](#connector-binding) — so today that really does mean staying `"manual"`).
+
+`internal/scheduler.Runner` polls for due workflows and fires each one through the same `runs.Execute` path a manual run or `POST /v1/workflows/{id}/run` uses — a scheduled run is not a different kind of run, just a differently triggered one, and shows up identically in `patchcord workflow runs <id>` / `GET /v1/runs`.
+
+Installing a new version of a `"schedule"`-triggered workflow always reschedules from that moment on — `internal/scheduler.Sync` recomputes `next_run_at` from "now" using the newly installed version's `cron`, regardless of what an earlier version's cron was. Switching a version's trigger back to `"manual"` removes the schedule entirely.
+
+### Missed occurrences
+
+If the agent was offline past a scheduled firing, `on_missed` decides what happens once it comes back:
+
+- **`skip`** (default) — drop the backlog and resume at the next future occurrence. No burst of catch-up runs on restart.
+- **`fire_once`** — run once for the most recently missed occurrence, then resume normal cadence, regardless of how many occurrences were actually missed.
+
+Missing exactly one occurrence (the ordinary case — the agent was running continuously and the schedule simply came due) always fires, independent of `on_missed`; the policy only kicks in once more than one occurrence has gone by, which only happens after a stretch of downtime.
+
+`GET /v1/workflows/{id}` exposes the resolved state for a client: `trigger_type`, `trigger_cron`, `trigger_on_missed` (always the effective policy — `"skip"` even when the YAML left it implicit), and `next_run_at` (from the `schedules` table, so it reflects the live schedule even when viewing an older installed version).
 
 ## Expressions
 
