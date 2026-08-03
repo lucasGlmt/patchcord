@@ -1,9 +1,8 @@
 import type { PatchcordClient, AppSummary } from "@patchcord/sdk";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import Chip from "@mui/material/Chip";
 import IconButton from "@mui/material/IconButton";
 import Link from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
@@ -17,7 +16,9 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useEffect, useState } from "react";
 
-export default function AppsPanel({ client, agentBaseUrl }: { client: PatchcordClient; agentBaseUrl: string }) {
+import { PageFade } from "../motion";
+
+export default function AppsPage({ client, agentBaseUrl }: { client: PatchcordClient; agentBaseUrl: string }) {
   const [apps, setApps] = useState<AppSummary[] | undefined>();
   const [error, setError] = useState<string | undefined>();
 
@@ -32,7 +33,7 @@ export default function AppsPanel({ client, agentBaseUrl }: { client: PatchcordC
   useEffect(load, [client]);
 
   return (
-    <Box>
+    <PageFade>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
         <Typography variant="h6">Installed applications</Typography>
         <Tooltip title="Refresh">
@@ -106,6 +107,6 @@ export default function AppsPanel({ client, agentBaseUrl }: { client: PatchcordC
           </Table>
         </Paper>
       )}
-    </Box>
+    </PageFade>
   );
 }

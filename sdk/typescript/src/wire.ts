@@ -6,12 +6,17 @@
 import type {
   AppSession,
   AppSummary,
+  Connector,
+  ConnectorSecretRef,
+  ConnectorTestResult,
   HealthStatus,
+  PluginSummary,
   RunEvent,
   RunStatus,
   RunStep,
   RunSummary,
   StepStatus,
+  WorkflowBindingDetail,
   WorkflowDetail,
   WorkflowInputDetail,
   WorkflowInputType,
@@ -108,6 +113,17 @@ export interface WireWorkflowStepDetail {
   uses: string;
   with?: Record<string, unknown>;
   connector?: string;
+  binding_name?: string;
+  connector_type?: string;
+}
+
+export interface WireWorkflowBindingDetail {
+  name: string;
+  connector_type?: string;
+}
+
+export function workflowBindingDetailFromWire(wire: WireWorkflowBindingDetail): WorkflowBindingDetail {
+  return { name: wire.name, connectorType: wire.connector_type };
 }
 
 export interface WireWorkflowInputDetail {
@@ -126,6 +142,7 @@ export interface WireWorkflowDetail {
   trigger_type: string;
   inputs?: WireWorkflowInputDetail[];
   steps: WireWorkflowStepDetail[];
+  bindings?: WireWorkflowBindingDetail[];
   source: string;
 }
 
@@ -135,6 +152,8 @@ export function workflowStepDetailFromWire(wire: WireWorkflowStepDetail): Workfl
     uses: wire.uses,
     with: wire.with,
     connector: wire.connector,
+    bindingName: wire.binding_name,
+    connectorType: wire.connector_type,
   };
 }
 
@@ -157,6 +176,7 @@ export function workflowDetailFromWire(wire: WireWorkflowDetail): WorkflowDetail
     triggerType: wire.trigger_type,
     inputs: (wire.inputs ?? []).map(workflowInputDetailFromWire),
     steps: wire.steps.map(workflowStepDetailFromWire),
+    bindings: (wire.bindings ?? []).map(workflowBindingDetailFromWire),
     source: wire.source,
   };
 }
@@ -198,4 +218,62 @@ export interface WireHealthStatus {
 
 export function healthStatusFromWire(wire: WireHealthStatus): HealthStatus {
   return { status: wire.status, database: wire.database };
+}
+
+export interface WireConnectorSecretRef {
+  type: string;
+  key: string;
+}
+
+export interface WireConnector {
+  id: string;
+  type: string;
+  config?: Record<string, unknown>;
+  secret_refs?: Record<string, WireConnectorSecretRef>;
+  created_at: string;
+}
+
+export function connectorFromWire(wire: WireConnector): Connector {
+  return {
+    id: wire.id,
+    type: wire.type,
+    config: wire.config ?? {},
+    secretRefs: wire.secret_refs ?? {},
+    createdAt: wire.created_at,
+  };
+}
+
+export function connectorSecretRefsToWire(
+  refs: Record<string, ConnectorSecretRef> | undefined,
+): Record<string, WireConnectorSecretRef> {
+  const wire: Record<string, WireConnectorSecretRef> = {};
+  for (const [name, ref] of Object.entries(refs ?? {})) {
+    wire[name] = { type: ref.type, key: ref.key };
+  }
+  return wire;
+}
+
+export interface WireConnectorTestResult {
+  ok: boolean;
+  message?: string;
+}
+
+export function connectorTestResultFromWire(wire: WireConnectorTestResult): ConnectorTestResult {
+  return { ok: wire.ok, message: wire.message };
+}
+
+export interface WirePluginSummary {
+  id: string;
+  version: string;
+  connectors?: string[];
+  actions?: string[];
+}
+
+export function pluginSummaryFromWire(wire: WirePluginSummary): PluginSummary {
+  return {
+    id: wire.id,
+    version: wire.version,
+    connectors: wire.connectors ?? [],
+    actions: wire.actions ?? [],
+  };
 }

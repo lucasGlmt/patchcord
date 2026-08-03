@@ -1,9 +1,7 @@
 import type { PatchcordClient, WorkflowSummary } from "@patchcord/sdk";
-import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
-import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import IconButton from "@mui/material/IconButton";
@@ -17,8 +15,9 @@ import TableRow from "@mui/material/TableRow";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-import WorkflowDetailDialog from "./WorkflowDetailDialog";
+import { PageFade } from "../motion";
 
 interface WorkflowGroup {
   id: string;
@@ -26,10 +25,10 @@ interface WorkflowGroup {
   versions: WorkflowSummary[];
 }
 
-export default function WorkflowsPanel({ client }: { client: PatchcordClient }) {
+export default function WorkflowsPage({ client }: { client: PatchcordClient }) {
   const [summaries, setSummaries] = useState<WorkflowSummary[] | undefined>();
   const [error, setError] = useState<string | undefined>();
-  const [selected, setSelected] = useState<string | undefined>();
+  const navigate = useNavigate();
 
   function load() {
     setError(undefined);
@@ -57,10 +56,8 @@ export default function WorkflowsPanel({ client }: { client: PatchcordClient }) 
       .sort((a, b) => a.id.localeCompare(b.id));
   }, [summaries]);
 
-  const selectedGroup = groups.find((g) => g.id === selected);
-
   return (
-    <Box>
+    <PageFade>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
         <Typography variant="h6">Installed workflows</Typography>
         <Tooltip title="Refresh">
@@ -96,12 +93,12 @@ export default function WorkflowsPanel({ client }: { client: PatchcordClient }) 
                 <TableCell>Workflow</TableCell>
                 <TableCell>Latest version</TableCell>
                 <TableCell>Installed at</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell align="right" />
               </TableRow>
             </TableHead>
             <TableBody>
               {groups.map((group) => (
-                <TableRow key={group.id} hover>
+                <TableRow key={group.id} hover sx={{ cursor: "pointer" }} onClick={() => navigate(`/workflows/${group.id}`)}>
                   <TableCell>
                     <Typography fontFamily="ui-monospace, monospace" fontWeight={600}>
                       {group.id}
@@ -123,16 +120,7 @@ export default function WorkflowsPanel({ client }: { client: PatchcordClient }) 
                     </Typography>
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip title="Details">
-                      <IconButton size="small" onClick={() => setSelected(group.id)}>
-                        <InfoOutlinedIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Run">
-                      <IconButton size="small" color="primary" onClick={() => setSelected(group.id)}>
-                        <PlayArrowIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
+                    <ChevronRightIcon fontSize="small" color="action" />
                   </TableCell>
                 </TableRow>
               ))}
@@ -140,16 +128,6 @@ export default function WorkflowsPanel({ client }: { client: PatchcordClient }) 
           </Table>
         </Paper>
       )}
-
-      {selectedGroup && (
-        <WorkflowDetailDialog
-          client={client}
-          workflowId={selectedGroup.id}
-          versions={selectedGroup.versions}
-          open={Boolean(selectedGroup)}
-          onClose={() => setSelected(undefined)}
-        />
-      )}
-    </Box>
+    </PageFade>
   );
 }

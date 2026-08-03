@@ -84,6 +84,34 @@ export interface WorkflowStepDetail {
   uses: string;
   with?: Record<string, unknown>;
   connector?: string;
+  /**
+   * The logical binding name `connector` refers to (the "db" in
+   * `"${{ bindings.db }}"`), present only when `connector` is exactly that
+   * shape. Absent for a connector expression over `workflow.inputs` or
+   * `steps.*.outputs` — those compute a connector id dynamically, so there's
+   * no static binding to offer a picker for ahead of a run.
+   */
+  bindingName?: string;
+  /**
+   * The connector type inferred for bindingName — see WorkflowBindingDetail.
+   * Absent when it couldn't be inferred (no installed plugin contributes
+   * this step's action, or that plugin declares more than one connector
+   * type).
+   */
+  connectorType?: string;
+}
+
+/**
+ * One connector binding a WorkflowDetail declares across its steps,
+ * deduplicated by name — the same design as WorkflowInputDetail: a small
+ * typed array a client iterates to render one form control per binding (a
+ * `<select>` of connectors of `connectorType`) instead of a free-form JSON
+ * blob.
+ */
+export interface WorkflowBindingDetail {
+  name: string;
+  /** Absent when it could not be inferred, or when different steps referring to this name disagree. */
+  connectorType?: string;
 }
 
 /** The type a WorkflowInputDetail declares — see internal/workflow/inputs.go. */
@@ -118,6 +146,8 @@ export interface WorkflowDetail {
   /** The workflow's declared input schema. Empty when it declares none. */
   inputs: WorkflowInputDetail[];
   steps: WorkflowStepDetail[];
+  /** Every distinct connector binding name referenced by steps. Empty when the workflow uses none. */
+  bindings: WorkflowBindingDetail[];
   source: string;
 }
 
@@ -157,4 +187,53 @@ export interface AppSession {
 export interface HealthStatus {
   status: "ok" | "degraded";
   database: string;
+}
+
+/**
+ * A logical reference to a secret's value — never the value itself
+ * (ADR-0009, ADR-0020, ADR-0021). Only type "env" is supported today.
+ */
+export interface ConnectorSecretRef {
+  type: string;
+  key: string;
+}
+
+/**
+ * One connector: a persistent, named configuration for accessing an
+ * external system (vision document, section 7.3), as returned by
+ * PatchcordClient.connectors.list/get/create. Never carries a resolved
+ * secret value — only each secret reference's logical type/key.
+ */
+export interface Connector {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  secretRefs: Record<string, ConnectorSecretRef>;
+  createdAt: string;
+}
+
+/** Options accepted by PatchcordClient.connectors.create. */
+export interface CreateConnectorOptions {
+  id: string;
+  type: string;
+  config?: Record<string, unknown>;
+  secretRefs?: Record<string, ConnectorSecretRef>;
+}
+
+/** The outcome of PatchcordClient.connectors.test — a connection attempt that ran but failed reports ok=false, not a thrown error. */
+export interface ConnectorTestResult {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * One installed plugin, as returned by PatchcordClient.plugins.list — the
+ * connector types and action ids its manifest declares, enough for a client
+ * to build a connector-type picker.
+ */
+export interface PluginSummary {
+  id: string;
+  version: string;
+  connectors: string[];
+  actions: string[];
 }

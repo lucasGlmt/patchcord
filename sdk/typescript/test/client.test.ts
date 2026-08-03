@@ -147,6 +147,76 @@ function startFakeAgent(): Promise<{ baseUrl: string; close: () => Promise<void>
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/v1/connectors") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify([
+          {
+            id: "my_api",
+            type: "http.request@1",
+            config: { base_url: "https://example.com" },
+            secret_refs: { api_key: { type: "env", key: "DEMO_API_KEY" } },
+            created_at: "2026-01-01T00:00:00Z",
+          },
+        ]),
+      );
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1/connectors/my_api") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          id: "my_api",
+          type: "http.request@1",
+          config: { base_url: "https://example.com" },
+          secret_refs: { api_key: { type: "env", key: "DEMO_API_KEY" } },
+          created_at: "2026-01-01T00:00:00Z",
+        }),
+      );
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/connectors") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString("utf8");
+      });
+      req.on("end", () => {
+        const parsed = JSON.parse(body);
+        res.writeHead(201, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            id: parsed.id,
+            type: parsed.type,
+            config: parsed.config ?? {},
+            secret_refs: parsed.secret_refs ?? {},
+            created_at: "2026-01-01T00:00:00Z",
+          }),
+        );
+      });
+      return;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/v1/connectors/my_api") {
+      res.writeHead(204).end();
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/connectors/my_api/test") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, message: "connection refused" }));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/v1/plugins") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify([{ id: "io.patchcord.http", version: "1.0.0", connectors: ["http.request@1"], actions: ["http.get@1"] }]),
+      );
+      return;
+    }
+
     res.writeHead(404).end();
   });
 
@@ -253,7 +323,17 @@ test("PatchcordClient.workflows.get returns one workflow version's steps and sou
       { name: "shout", type: "boolean", required: false, description: undefined, default: false, enum: undefined },
       { name: "greeting", type: "enum", required: false, description: undefined, default: undefined, enum: ["hi", "hello"] },
     ]);
-    assert.deepEqual(detail.steps, [{ id: "transform", uses: "text.uppercase@1", with: { value: "hi" }, connector: undefined }]);
+    assert.deepEqual(detail.steps, [
+      {
+        id: "transform",
+        uses: "text.uppercase@1",
+        with: { value: "hi" },
+        connector: undefined,
+        bindingName: undefined,
+        connectorType: undefined,
+      },
+    ]);
+    assert.deepEqual(detail.bindings, []);
     assert.match(detail.source, /id: demo/);
   } finally {
     await agent.close();
@@ -267,10 +347,99 @@ test("PatchcordClient.runs.list returns Run handles that can be fetched and awai
     const runs = await client.runs.list({ workflowId: "demo" });
     assert.equal(runs.length, 1);
     assert.equal(runs[0].id, "run-1");
+    assert.equal(runs[0].workflowId, "demo");
+    assert.equal(runs[0].workflowVersion, 1);
+    assert.equal(runs[0].status, "succeeded");
+    assert.equal(runs[0].createdAt, "2026-01-01T00:00:00Z");
+    assert.equal(runs[0].startedAt, undefined);
+    assert.equal(runs[0].finishedAt, undefined);
 
     const summary = await runs[0].fetch();
     assert.equal(summary.status, "succeeded");
     assert.equal(summary.outputs?.value, "HI");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.connectors.list returns every recorded connector", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const connectors = await client.connectors.list();
+    assert.deepEqual(connectors, [
+      {
+        id: "my_api",
+        type: "http.request@1",
+        config: { base_url: "https://example.com" },
+        secretRefs: { api_key: { type: "env", key: "DEMO_API_KEY" } },
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    ]);
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.connectors.get returns one connector", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const connector = await client.connectors.get("my_api");
+    assert.equal(connector.id, "my_api");
+    assert.equal(connector.type, "http.request@1");
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.connectors.create sends the connector and decodes the created result", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const created = await client.connectors.create({
+      id: "new_connector",
+      type: "http.request@1",
+      config: { base_url: "https://example.com" },
+      secretRefs: { api_key: { type: "env", key: "DEMO_API_KEY" } },
+    });
+    assert.equal(created.id, "new_connector");
+    assert.equal(created.type, "http.request@1");
+    assert.deepEqual(created.secretRefs, { api_key: { type: "env", key: "DEMO_API_KEY" } });
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.connectors.delete resolves on a 204 No Content response", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    await assert.doesNotReject(client.connectors.delete("my_api"));
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.connectors.test reports a failed connection attempt as ok=false, not a thrown error", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const result = await client.connectors.test("my_api");
+    assert.deepEqual(result, { ok: false, message: "connection refused" });
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.plugins.list returns every installed plugin", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    const plugins = await client.plugins.list();
+    assert.deepEqual(plugins, [
+      { id: "io.patchcord.http", version: "1.0.0", connectors: ["http.request@1"], actions: ["http.get@1"] },
+    ]);
   } finally {
     await agent.close();
   }

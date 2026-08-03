@@ -7,9 +7,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 
+	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
@@ -36,6 +38,71 @@ type workflowStepDetail struct {
 	Uses      string         `json:"uses"`
 	With      map[string]any `json:"with,omitempty"`
 	Connector string         `json:"connector,omitempty"`
+	// BindingName is the logical name this step's Connector expression
+	// refers to (the "db" in "${{ bindings.db }}"), populated only when
+	// Connector is exactly that shape — see bindingName.
+	BindingName string `json:"binding_name,omitempty"`
+	// ConnectorType is the connector type inferred for BindingName, so a
+	// client can offer a <select> of matching connectors instead of a
+	// free-text id — see bindingConnectorType. Left empty when it can't be
+	// inferred (no owning plugin found, or that plugin declares more than
+	// one connector type).
+	ConnectorType string `json:"connector_type,omitempty"`
+}
+
+// workflowBindingDetail is one connector binding a workflow declares across
+// its steps, deduplicated by name — the same design as workflowInputDetail:
+// a small typed array a client iterates to render one form control per
+// binding (here, a <select> of connectors) instead of a free-form JSON blob.
+type workflowBindingDetail struct {
+	Name string `json:"name"`
+	// ConnectorType is empty when it could not be inferred for every step
+	// that references this binding name, or when different steps referring
+	// to the same name disagree on it.
+	ConnectorType string `json:"connector_type,omitempty"`
+}
+
+// bindingNamePattern matches exactly "${{ bindings.<name> }}" (arbitrary
+// inner whitespace), the only connector expression shape this endpoint
+// tries to interpret — see bindingName's doc comment.
+var bindingNamePattern = regexp.MustCompile(`^\$\{\{\s*bindings\.([a-zA-Z0-9_]+)\s*\}\}$`)
+
+// bindingName extracts the logical binding name from a step's Connector
+// expression when it is exactly "${{ bindings.<name> }}" — the shape every
+// current example uses (workflow.ResolveConnector also accepts a connector
+// expression over workflow.inputs or steps.*.outputs, but those compute a
+// connector id dynamically at run time, so there's no static "which
+// connector" a client could offer ahead of a run; ok is false for those,
+// and the dashboard falls back to its free-JSON bindings field for them).
+func bindingName(connectorExpr string) (name string, ok bool) {
+	match := bindingNamePattern.FindStringSubmatch(connectorExpr)
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
+
+// bindingConnectorType infers the connector type a step's action requires
+// by finding the installed plugin that contributes uses (its Actions
+// declared at handshake time) and returning its declared connector type. It
+// returns ok=false when no installed plugin contributes uses, or when that
+// plugin declares zero or more than one connector type — this project's
+// connector-consuming plugins (openai, http, postgresql, mysql) each
+// declare exactly one today, so the ambiguous case is left unresolved
+// rather than guessed at.
+func bindingConnectorType(uses string, catalog []plugins.CatalogEntry) (connectorType string, ok bool) {
+	for _, entry := range catalog {
+		for _, action := range entry.Actions {
+			if action != uses {
+				continue
+			}
+			if len(entry.Connectors) != 1 {
+				return "", false
+			}
+			return entry.Connectors[0], true
+		}
+	}
+	return "", false
 }
 
 // workflowInputDetail is the JSON shape of one declared input within a
@@ -63,10 +130,19 @@ type workflowDetail struct {
 	TriggerType   string                `json:"trigger_type"`
 	Inputs        []workflowInputDetail `json:"inputs,omitempty"`
 	Steps         []workflowStepDetail  `json:"steps"`
-	Source        string                `json:"source"`
+	// Bindings is every distinct connector binding name referenced by Steps
+	// (via a "${{ bindings.<name> }}" expression), each paired with its
+	// inferred connector type when one could be — see bindingConnectorType.
+	Bindings []workflowBindingDetail `json:"bindings,omitempty"`
+	Source   string                  `json:"source"`
 }
 
-func toWorkflowDetail(def *workflow.Definition, source string) workflowDetail {
+// toWorkflowDetail builds a workflowDetail from a parsed workflow
+// definition. catalog is every installed plugin, used to infer each
+// binding's connector type (bindingConnectorType) — pass nil when that
+// inference isn't needed (every step's Connector/ConnectorType/BindingName
+// then comes back empty, same as before this field existed).
+func toWorkflowDetail(def *workflow.Definition, source string, catalog []plugins.CatalogEntry) workflowDetail {
 	inputs := make([]workflowInputDetail, 0, len(def.Inputs))
 	for _, input := range def.Inputs {
 		inputs = append(inputs, workflowInputDetail{
@@ -80,14 +156,50 @@ func toWorkflowDetail(def *workflow.Definition, source string) workflowDetail {
 	}
 
 	steps := make([]workflowStepDetail, 0, len(def.Steps))
+	// bindingTypes tracks, per distinct binding name, the connector type
+	// found so far and whether every step referencing it has agreed —
+	// preserving first-seen order so the response is deterministic.
+	var bindingOrder []string
+	bindingTypes := make(map[string]string)
+	bindingConflict := make(map[string]bool)
+
 	for _, step := range def.Steps {
-		steps = append(steps, workflowStepDetail{
+		detail := workflowStepDetail{
 			ID:        step.ID,
 			Uses:      step.Uses,
 			With:      step.With,
 			Connector: step.Connector,
-		})
+		}
+
+		if name, ok := bindingName(step.Connector); ok {
+			detail.BindingName = name
+			if connectorType, ok := bindingConnectorType(step.Uses, catalog); ok {
+				detail.ConnectorType = connectorType
+
+				if existing, seen := bindingTypes[name]; !seen {
+					bindingOrder = append(bindingOrder, name)
+					bindingTypes[name] = connectorType
+				} else if existing != connectorType {
+					bindingConflict[name] = true
+				}
+			} else if _, seen := bindingTypes[name]; !seen {
+				bindingOrder = append(bindingOrder, name)
+				bindingTypes[name] = ""
+			}
+		}
+
+		steps = append(steps, detail)
 	}
+
+	bindings := make([]workflowBindingDetail, 0, len(bindingOrder))
+	for _, name := range bindingOrder {
+		connectorType := bindingTypes[name]
+		if bindingConflict[name] {
+			connectorType = ""
+		}
+		bindings = append(bindings, workflowBindingDetail{Name: name, ConnectorType: connectorType})
+	}
+
 	return workflowDetail{
 		ID:            def.ID,
 		Version:       def.Version,
@@ -95,6 +207,7 @@ func toWorkflowDetail(def *workflow.Definition, source string) workflowDetail {
 		TriggerType:   def.Trigger.Type,
 		Inputs:        inputs,
 		Steps:         steps,
+		Bindings:      bindings,
 		Source:        source,
 	}
 }
@@ -167,7 +280,13 @@ func handleGetWorkflow(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, toWorkflowDetail(def, source))
+		catalog, err := plugins.List(r.Context(), deps.DB)
+		if err != nil {
+			http.Error(w, "get workflow: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		writeJSON(w, http.StatusOK, toWorkflowDetail(def, source, catalog))
 	}
 }
 

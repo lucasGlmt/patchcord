@@ -6,7 +6,7 @@
 
 | File | Responsibility |
 |---|---|
-| `src/client.ts` | `PatchcordClient` — one instance per agent connection, exposing `system`, `workflows`, `runs`, and `apps` namespaces. |
+| `src/client.ts` | `PatchcordClient` — one instance per agent connection, exposing `system`, `workflows`, `runs`, `apps`, `connectors`, and `plugins` namespaces. |
 | `src/run.ts` | `Run` — a handle on one workflow execution, returned by every method that produces or fetches a run. |
 | `src/sse.ts` | A minimal `text/event-stream` parser used by `Run.events()`. Not `EventSource`-based — see the file's own header comment for why. |
 | `src/types.ts` | The public, camelCase types (`RunSummary`, `WorkflowSummary`, `AppSession`, ...). This is the surface application code imports. |
@@ -20,11 +20,13 @@ The SDK wraps every `/v1/*` route the agent implements today — no more, no les
 | Namespace | Backed by |
 |---|---|
 | `client.system.health()` | `GET /v1/system/health` |
-| `client.workflows.list()`, `client.workflows.run(...)` | `GET /v1/workflows`, `POST /v1/workflows/{id}/run` |
+| `client.workflows.list()`, `client.workflows.get(...)`, `client.workflows.run(...)` | `GET /v1/workflows`, `GET /v1/workflows/{id}`, `POST /v1/workflows/{id}/run` |
 | `client.runs.list(...)`, `client.runs.get(...)`, `client.runs.cancel(...)` | `GET /v1/runs`, `GET /v1/runs/{id}`, `POST /v1/runs/{id}/cancel` |
 | `client.apps.list()`, `client.apps.createSession(...)` | `GET /v1/apps`, `POST /v1/apps/{id}/sessions` |
+| `client.connectors.list()`, `.get(...)`, `.create(...)`, `.delete(...)`, `.test(...)` | `GET /v1/connectors`, `GET/DELETE /v1/connectors/{id}`, `POST /v1/connectors`, `POST /v1/connectors/{id}/test` ([ADR-0034](../../../adr/0034-connecteurs-catalogue-greffons-http-bindings-dashboard.md)) |
+| `client.plugins.list()` | `GET /v1/plugins` |
 
-The vision document's fuller `client.*` surface (section 10.2) also describes `plugins`, `connectors`, `actions`, `files`, `notifications`, and `storage` namespaces. None of those have a server-side HTTP implementation yet (`internal/api/doc.go` is explicit about this), so the SDK does not expose them either — adding a client method ahead of its endpoint would let application code compile against something that doesn't exist at runtime.
+The vision document's fuller `client.*` surface (section 10.2) also describes `actions`, `files`, `notifications`, and `storage` namespaces. None of those have a server-side HTTP implementation yet (`internal/api/doc.go` is explicit about this), so the SDK does not expose them either — adding a client method ahead of its endpoint would let application code compile against something that doesn't exist at runtime.
 
 ## Where to go next
 

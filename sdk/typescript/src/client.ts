@@ -2,9 +2,13 @@ import { Run } from "./run.js";
 import type {
   AppSession,
   AppSummary,
+  Connector,
+  ConnectorTestResult,
+  CreateConnectorOptions,
   GetWorkflowOptions,
   HealthStatus,
   ListRunsOptions,
+  PluginSummary,
   RunWorkflowOptions,
   WorkflowDetail,
   WorkflowSummary,
@@ -12,13 +16,20 @@ import type {
 import {
   appSessionFromWire,
   appSummaryFromWire,
+  connectorFromWire,
+  connectorSecretRefsToWire,
+  connectorTestResultFromWire,
   healthStatusFromWire,
+  pluginSummaryFromWire,
   runSummaryFromWire,
   workflowDetailFromWire,
   workflowSummaryFromWire,
   type WireAppSession,
   type WireAppSummary,
+  type WireConnector,
+  type WireConnectorTestResult,
   type WireHealthStatus,
+  type WirePluginSummary,
   type WireRunSummary,
   type WireWorkflowDetail,
   type WireWorkflowSummary,
@@ -112,6 +123,38 @@ export class PatchcordClient {
     createSession(appId: string): Promise<AppSession>;
   };
 
+  readonly connectors: {
+    /** Returns every recorded connector, ordered by id (GET /v1/connectors). Never a resolved secret value. */
+    list(): Promise<Connector[]>;
+    /** Returns one connector by id (GET /v1/connectors/{id}). */
+    get(connectorId: string): Promise<Connector>;
+    /**
+     * Creates a new connector (POST /v1/connectors). `type` must match a
+     * connector type declared by an installed plugin's manifest — see
+     * PatchcordClient.plugins.list. Throws on a duplicate id (409) or an
+     * invalid connector (400: empty id/type, unknown type, unsupported
+     * secret reference type).
+     */
+    create(options: CreateConnectorOptions): Promise<Connector>;
+    /**
+     * Removes a connector (DELETE /v1/connectors/{id}). There is no update
+     * endpoint (ADR-0020) — recreate it with the same id to change it.
+     */
+    delete(connectorId: string): Promise<void>;
+    /**
+     * Resolves the connector's configuration and secrets, then asks the
+     * installed plugin that declares its type to actually attempt a
+     * connection (POST /v1/connectors/{id}/test). A connection attempt that
+     * runs but fails is reported as `{ ok: false }`, not a thrown error.
+     */
+    test(connectorId: string): Promise<ConnectorTestResult>;
+  };
+
+  readonly plugins: {
+    /** Returns every installed plugin and the connector types/action ids its manifest declares (GET /v1/plugins). */
+    list(): Promise<PluginSummary[]>;
+  };
+
   constructor(options: PatchcordClientOptions) {
     this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
     // fetch is a Web API method: it checks that its receiver (`this`) is
@@ -139,6 +182,16 @@ export class PatchcordClient {
     this.apps = {
       list: () => this.#listApps(),
       createSession: (appId) => this.#createAppSession(appId),
+    };
+    this.connectors = {
+      list: () => this.#listConnectors(),
+      get: (connectorId) => this.#getConnector(connectorId),
+      create: (options) => this.#createConnector(options),
+      delete: (connectorId) => this.#deleteConnector(connectorId),
+      test: (connectorId) => this.#testConnector(connectorId),
+    };
+    this.plugins = {
+      list: () => this.#listPlugins(),
     };
   }
 
@@ -168,6 +221,23 @@ export class PatchcordClient {
       throw new Error(`${method} ${path}: ${response.status} ${response.statusText}${text ? ` — ${text}` : ""}`);
     }
     return (await response.json()) as T;
+  }
+
+  /**
+   * Like #request, but for an endpoint that responds 204 No Content on
+   * success (DELETE /v1/connectors/{id}) — there's no JSON body to decode.
+   */
+  async #requestNoContent(method: string, path: string): Promise<void> {
+    const headers: Record<string, string> = {};
+    if (this.#token) {
+      headers.Authorization = `Bearer ${this.#token}`;
+    }
+
+    const response = await this.#fetch(`${this.#baseUrl}${path}`, { method, headers });
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`${method} ${path}: ${response.status} ${response.statusText}${text ? ` — ${text}` : ""}`);
+    }
   }
 
   async #health(): Promise<HealthStatus> {
@@ -219,5 +289,39 @@ export class PatchcordClient {
   async #createAppSession(appId: string): Promise<AppSession> {
     const wire = await this.#request<WireAppSession>("POST", `/v1/apps/${encodeURIComponent(appId)}/sessions`);
     return appSessionFromWire(wire);
+  }
+
+  async #listConnectors(): Promise<Connector[]> {
+    const wire = await this.#request<WireConnector[]>("GET", "/v1/connectors");
+    return wire.map(connectorFromWire);
+  }
+
+  async #getConnector(connectorId: string): Promise<Connector> {
+    const wire = await this.#request<WireConnector>("GET", `/v1/connectors/${encodeURIComponent(connectorId)}`);
+    return connectorFromWire(wire);
+  }
+
+  async #createConnector(options: CreateConnectorOptions): Promise<Connector> {
+    const wire = await this.#request<WireConnector>("POST", "/v1/connectors", {
+      id: options.id,
+      type: options.type,
+      config: options.config ?? {},
+      secret_refs: connectorSecretRefsToWire(options.secretRefs),
+    });
+    return connectorFromWire(wire);
+  }
+
+  async #deleteConnector(connectorId: string): Promise<void> {
+    await this.#requestNoContent("DELETE", `/v1/connectors/${encodeURIComponent(connectorId)}`);
+  }
+
+  async #testConnector(connectorId: string): Promise<ConnectorTestResult> {
+    const wire = await this.#request<WireConnectorTestResult>("POST", `/v1/connectors/${encodeURIComponent(connectorId)}/test`);
+    return connectorTestResultFromWire(wire);
+  }
+
+  async #listPlugins(): Promise<PluginSummary[]> {
+    const wire = await this.#request<WirePluginSummary[]>("GET", "/v1/plugins");
+    return wire.map(pluginSummaryFromWire);
   }
 }

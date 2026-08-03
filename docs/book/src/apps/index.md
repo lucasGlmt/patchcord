@@ -11,7 +11,7 @@ An application is a client of the agent per the [vocabulary](../introduction.md#
 | Example | What it demonstrates |
 |---|---|
 | [`greeter`](example-walkthrough.md) | The minimal case: a single static `index.html`, no build step, one permitted workflow (`hello_patchcord`). Proves exactly what `patchcord app install` itself proves. |
-| `dashboard` | An operator dashboard built with React, MUI and the TypeScript SDK: browse installed workflows and their steps, browse installed applications, and trigger a run with a live, step-by-step view of its progress. Deliberately calls the API without an app session — see [Building an App with the TS SDK](building-with-sdk-ts.md#an-app-that-deliberately-skips-sessions). |
+| `dashboard` | An operator console built with React, MUI, `react-router-dom` and the TypeScript SDK: browse and run installed workflows (with a `<select>` per connector binding, filled from the connectors compatible with that step's inferred type), browse run history, CRUD connectors, and browse installed applications. Deliberately calls the API without an app session — see [Building an App with the TS SDK](building-with-sdk-ts.md#an-app-that-deliberately-skips-sessions). |
 | `users_list` | Another static, no-build-step example, permitted to run `http_api_task` — a second data point for the "plain HTML" end of the spectrum alongside `greeter`. |
 
 ## Where to go next

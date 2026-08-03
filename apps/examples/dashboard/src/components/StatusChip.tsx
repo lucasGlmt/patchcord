@@ -5,6 +5,8 @@ import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Chip, { type ChipProps } from "@mui/material/Chip";
 
+import { RunningPulse } from "../motion";
+
 // Covers both a run's and a step's status (internal/workflow.RunStatus /
 // StepStatus) — "pending" and "queued" are the two entities' respective
 // "hasn't started" state, kept as separate literals here rather than
@@ -23,5 +25,6 @@ const statusConfig: Record<Status, { label: string; color: ChipProps["color"]; i
 
 export default function StatusChip({ status, size = "small" }: { status: string; size?: ChipProps["size"] }) {
   const config = statusConfig[status as Status] ?? { label: status, color: "default" as const, icon: undefined };
-  return <Chip label={config.label} color={config.color} icon={config.icon} size={size} variant="outlined" />;
+  const chip = <Chip label={config.label} color={config.color} icon={config.icon} size={size} variant="outlined" />;
+  return status === "running" ? <RunningPulse>{chip}</RunningPulse> : chip;
 }

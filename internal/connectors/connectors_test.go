@@ -71,11 +71,11 @@ func TestCreate_RecordsAConnector(t *testing.T) {
 func TestCreate_RejectsAnEmptyIDOrType(t *testing.T) {
 	db := openTestDB(t)
 
-	if _, err := Create(context.Background(), db, "", "http.request@1", nil, nil, testKnownTypes); err == nil {
-		t.Fatal("expected an error for an empty id, got nil")
+	if _, err := Create(context.Background(), db, "", "http.request@1", nil, nil, testKnownTypes); !errors.Is(err, ErrInvalidConnector) {
+		t.Fatalf("Create() error = %v, want ErrInvalidConnector for an empty id", err)
 	}
-	if _, err := Create(context.Background(), db, "my_api", "", nil, nil, testKnownTypes); err == nil {
-		t.Fatal("expected an error for an empty type, got nil")
+	if _, err := Create(context.Background(), db, "my_api", "", nil, nil, testKnownTypes); !errors.Is(err, ErrInvalidConnector) {
+		t.Fatalf("Create() error = %v, want ErrInvalidConnector for an empty type", err)
 	}
 }
 
@@ -83,8 +83,8 @@ func TestCreate_RejectsAnUnknownConnectorType(t *testing.T) {
 	db := openTestDB(t)
 
 	_, err := Create(context.Background(), db, "my_api", "smtp.connection@1", nil, nil, testKnownTypes)
-	if err == nil {
-		t.Fatal("expected an error for a type no installed plugin declares, got nil")
+	if !errors.Is(err, ErrInvalidConnector) {
+		t.Fatalf("Create() error = %v, want ErrInvalidConnector for a type no installed plugin declares", err)
 	}
 
 	if _, err := Get(context.Background(), db, "my_api"); !errors.Is(err, ErrNotFound) {
@@ -107,8 +107,8 @@ func TestCreate_RejectsAnUnsupportedSecretReferenceType(t *testing.T) {
 	db := openTestDB(t)
 
 	secretRefs := map[string]secrets.Reference{"api_key": {Type: "vault", Key: "DEMO_API_KEY"}}
-	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs, testKnownTypes); err == nil {
-		t.Fatal("expected an error for an unsupported secret reference type, got nil")
+	if _, err := Create(context.Background(), db, "my_api", "http.request@1", nil, secretRefs, testKnownTypes); !errors.Is(err, ErrInvalidConnector) {
+		t.Fatalf("Create() error = %v, want ErrInvalidConnector for an unsupported secret reference type", err)
 	}
 
 	if _, err := Get(context.Background(), db, "my_api"); !errors.Is(err, ErrNotFound) {

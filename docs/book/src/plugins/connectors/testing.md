@@ -34,3 +34,7 @@ type ConnectorTester interface {
 
 - No dedicated timeout for `connector test` — it inherits the Supervisor's default behavior, same as `workflow run` before per-step timeouts existed. A plugin whose test hangs (e.g. a TCP connect that never resolves) blocks the command for just as long.
 - Never include a secret value in the message returned from `TestConnector` — it becomes exactly what the CLI prints after `FAILED:`.
+
+## `POST /v1/connectors/{id}/test`
+
+The same test, over HTTP (`internal/api/connectors.go`), reported as `{"ok": bool, "message"?: string}` — a connection attempt that ran but failed is still a `200`, not an HTTP error, the same "legitimate outcome" distinction the CLI makes. Unlike `patchcord connector test`, which launches its own ephemeral supervisor for the duration of the command (no agent is running), the HTTP endpoint reuses the single long-lived `plugins.Supervisor` already running under `patchcord serve` ([ADR-0034](../../../../adr/0034-connecteurs-catalogue-greffons-http-bindings-dashboard.md)).

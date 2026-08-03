@@ -1,5 +1,11 @@
 # Connector Model
 
+## HTTP API
+
+`internal/api/connectors.go` mirrors the CLI's CRUD one-for-one: `GET /v1/connectors` (list), `GET /v1/connectors/{id}` (get), `POST /v1/connectors` (create), `DELETE /v1/connectors/{id}` (delete) — same rules as below, same never-a-resolved-secret-value guarantee as `connector inspect`. There is no `PUT`/`PATCH` update endpoint either, for the same reason the CLI has none (see below); a client that wants to change a connector deletes then recreates it under the same id — see [ADR-0034](../../../../adr/0034-connecteurs-catalogue-greffons-http-bindings-dashboard.md) for how the dashboard's "Modifier" action does exactly that, with a warning about the brief window where the connector doesn't exist.
+
+`GET /v1/plugins` lists installed plugins' declared connector types and action ids — enough for a client to build a connector-type picker without reimplementing the CLI's own catalog logic.
+
 ## Create rejects duplicates, never overwrites
 
 Unlike `plugin install` (which upserts by ID), `connector create` fails with `ErrAlreadyExists` if the ID is already in use ([ADR-0020](../../../../adr/0020-modele-connecteur-references-secrets-env.md)). A connector ID is a stable reference other workflows point to via `bindings` — an upsert on a command typo could silently repoint a connector already in use elsewhere. There is no `update`; changing a connector means `remove` then `create` again.

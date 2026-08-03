@@ -1,5 +1,5 @@
 import { parseEventStream } from "./sse.js";
-import type { RunEvent, RunSummary } from "./types.js";
+import type { RunEvent, RunStatus, RunSummary } from "./types.js";
 import { runEventFromWire, runSummaryFromWire, type WireRunEvent, type WireRunSummary } from "./wire.js";
 
 /**
@@ -21,6 +21,41 @@ export class Run {
     this.#baseUrl = baseUrl;
     this.#fetch = fetchImpl;
     this.#summary = summary;
+  }
+
+  /**
+   * The most recently known summary for this run — the one passed to the
+   * constructor (from PatchcordClient.workflows.run/runs.list/runs.get)
+   * until .fetch() or .cancel() replaces it with a fresher one. Lets a list
+   * view (e.g. a runs table) render workflow id, status, and timestamps
+   * without an extra GET per row.
+   */
+  get workflowId(): string {
+    return this.#summary.workflowId;
+  }
+
+  get workflowVersion(): number {
+    return this.#summary.workflowVersion;
+  }
+
+  get status(): RunStatus {
+    return this.#summary.status;
+  }
+
+  get error(): string | undefined {
+    return this.#summary.error;
+  }
+
+  get createdAt(): string {
+    return this.#summary.createdAt;
+  }
+
+  get startedAt(): string | undefined {
+    return this.#summary.startedAt;
+  }
+
+  get finishedAt(): string | undefined {
+    return this.#summary.finishedAt;
   }
 
   /**

@@ -2,6 +2,7 @@ import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider } from "@mui/material/styles";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { HashRouter } from "react-router-dom";
 
 import App from "./App";
 import "./index.css";
@@ -27,7 +28,9 @@ function Root() {
   return (
     <ThemeProvider theme={mode === "dark" ? darkTheme : lightTheme}>
       <CssBaseline />
-      <App mode={mode} onToggleMode={toggleMode} />
+      <HashRouter>
+        <App mode={mode} onToggleMode={toggleMode} />
+      </HashRouter>
     </ThemeProvider>
   );
 }

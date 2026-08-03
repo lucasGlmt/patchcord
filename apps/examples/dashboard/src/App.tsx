@@ -8,21 +8,22 @@ import Container from "@mui/material/Container";
 import IconButton from "@mui/material/IconButton";
 import Popover from "@mui/material/Popover";
 import Stack from "@mui/material/Stack";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import TextField from "@mui/material/TextField";
 import Toolbar from "@mui/material/Toolbar";
-import Typography from "@mui/material/Typography";
 import { useEffect, useMemo, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 
-import AppsPanel from "./components/AppsPanel";
+import Sidebar, { sidebarWidth } from "./components/Sidebar";
 import HealthChip, { type HealthState } from "./components/HealthChip";
-import WorkflowsPanel from "./components/WorkflowsPanel";
+import AppsPage from "./pages/AppsPage";
+import ConnectorsPage from "./pages/ConnectorsPage";
+import RunsPage from "./pages/RunsPage";
+import WorkflowDetailPage from "./pages/WorkflowDetailPage";
+import WorkflowsPage from "./pages/WorkflowsPage";
 import { defaultBaseUrl } from "./apiClient";
 
 export default function App({ onToggleMode, mode }: { onToggleMode: () => void; mode: "light" | "dark" }) {
   const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
-  const [tab, setTab] = useState(0);
   const [health, setHealth] = useState<HealthState>("checking");
   const [settingsAnchor, setSettingsAnchor] = useState<HTMLElement | null>(null);
 
@@ -45,52 +46,56 @@ export default function App({ onToggleMode, mode }: { onToggleMode: () => void; 
   }, [client]);
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "background.default" }}>
-      <AppBar position="static" color="transparent" sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
-        <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 700 }}>
-            Patchcord Dashboard
-          </Typography>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <HealthChip state={health} />
-            <IconButton size="small" onClick={(e) => setSettingsAnchor(e.currentTarget)} title="Agent base URL">
-              <SettingsIcon fontSize="small" />
-            </IconButton>
-            <IconButton size="small" onClick={onToggleMode} title="Toggle theme">
-              {mode === "dark" ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
-            </IconButton>
-          </Stack>
-        </Toolbar>
-      </AppBar>
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: "background.default" }}>
+      <Sidebar />
 
-      <Popover
-        open={Boolean(settingsAnchor)}
-        anchorEl={settingsAnchor}
-        onClose={() => setSettingsAnchor(null)}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-      >
-        <Box sx={{ p: 2, width: 320 }}>
-          <TextField
-            label="Agent base URL"
-            fullWidth
-            size="small"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-            helperText="The Patchcord agent's HTTP API"
-          />
-        </Box>
-      </Popover>
+      <Box sx={{ flexGrow: 1, minWidth: 0, width: `calc(100% - ${sidebarWidth}px)` }}>
+        <AppBar position="static" color="transparent" sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
+          <Toolbar>
+            <Box sx={{ flexGrow: 1 }} />
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <HealthChip state={health} />
+              <IconButton size="small" onClick={(e) => setSettingsAnchor(e.currentTarget)} title="Agent base URL">
+                <SettingsIcon fontSize="small" />
+              </IconButton>
+              <IconButton size="small" onClick={onToggleMode} title="Toggle theme">
+                {mode === "dark" ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
+              </IconButton>
+            </Stack>
+          </Toolbar>
+        </AppBar>
 
-      <Container maxWidth="md" sx={{ py: 3 }}>
-        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
-          <Tab label="Workflows" />
-          <Tab label="Apps" />
-        </Tabs>
+        <Popover
+          open={Boolean(settingsAnchor)}
+          anchorEl={settingsAnchor}
+          onClose={() => setSettingsAnchor(null)}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+          transformOrigin={{ vertical: "top", horizontal: "right" }}
+        >
+          <Box sx={{ p: 2, width: 320 }}>
+            <TextField
+              label="Agent base URL"
+              fullWidth
+              size="small"
+              value={baseUrl}
+              onChange={(e) => setBaseUrl(e.target.value)}
+              helperText="The Patchcord agent's HTTP API"
+            />
+          </Box>
+        </Popover>
 
-        {tab === 0 && <WorkflowsPanel client={client} />}
-        {tab === 1 && <AppsPanel client={client} agentBaseUrl={baseUrl} />}
-      </Container>
+        <Container maxWidth="lg" sx={{ py: 3 }}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/workflows" replace />} />
+            <Route path="/workflows" element={<WorkflowsPage client={client} />} />
+            <Route path="/workflows/:id" element={<WorkflowDetailPage client={client} />} />
+            <Route path="/runs" element={<RunsPage client={client} />} />
+            <Route path="/connectors" element={<ConnectorsPage client={client} />} />
+            <Route path="/apps" element={<AppsPage client={client} agentBaseUrl={baseUrl} />} />
+            <Route path="*" element={<Navigate to="/workflows" replace />} />
+          </Routes>
+        </Container>
+      </Box>
     </Box>
   );
 }

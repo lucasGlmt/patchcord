@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
@@ -100,6 +101,26 @@ func TestRouter_Health(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestRouter_CORSAllowsDelete guards against a regression where a new verb
+// (DELETE /v1/connectors/{id}) is wired into the mux but withCORS's
+// Access-Control-Allow-Methods list isn't updated to match — invisible to
+// every other test here since none of them go through a browser's actual
+// CORS preflight enforcement, only this response header.
+func TestRouter_CORSAllowsDelete(t *testing.T) {
+	router := NewRouter(Deps{DB: openTestDB(t)})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/connectors/my_api", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if allow := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(allow, "DELETE") {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want it to contain DELETE", allow)
 	}
 }
 

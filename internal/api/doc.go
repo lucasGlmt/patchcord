@@ -5,6 +5,6 @@
 //
 // @title           Patchcord Agent API
 // @version         1
-// @description     Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability; the rest of the vision document's API surface (plugins, connectors, actions, apps) is not implemented yet.
+// @description     Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability, connector CRUD and testing, application hosting, and a read-only plugin catalog listing; the rest of the vision document's API surface (actions, full plugin management) is not implemented yet.
 // @BasePath        /v1
 package api

@@ -28,6 +28,14 @@ var ErrNotFound = errors.New("connector not found")
 // id already exists.
 var ErrAlreadyExists = errors.New("connector already exists")
 
+// ErrInvalidConnector is wrapped by every error Create returns for a
+// caller-fixable problem (an empty id/type, a type no installed plugin
+// declares, an unsupported secret reference type) — as opposed to a
+// persistence failure. internal/api's connector handlers use it to answer
+// 400 instead of 500, the same role workflow.ErrInvalidInputs plays for
+// handleRunWorkflow.
+var ErrInvalidConnector = errors.New("invalid connector")
+
 // Connector is one persistent, named configuration for accessing an
 // external system, as recorded in the database.
 type Connector struct {
@@ -53,17 +61,17 @@ type Connector struct {
 // dependency — the same split workflow.Validate uses for knownActions.
 func Create(ctx context.Context, db *sql.DB, id, connectorType string, config map[string]any, secretRefs map[string]secrets.Reference, knownTypes map[string]struct{}) (*Connector, error) {
 	if id == "" {
-		return nil, fmt.Errorf("connector id must not be empty")
+		return nil, fmt.Errorf("%w: connector id must not be empty", ErrInvalidConnector)
 	}
 	if connectorType == "" {
-		return nil, fmt.Errorf("connector type must not be empty")
+		return nil, fmt.Errorf("%w: connector type must not be empty", ErrInvalidConnector)
 	}
 	if _, ok := knownTypes[connectorType]; !ok {
-		return nil, fmt.Errorf("connector type %q is not declared by any installed plugin", connectorType)
+		return nil, fmt.Errorf("%w: connector type %q is not declared by any installed plugin", ErrInvalidConnector, connectorType)
 	}
 	for name, ref := range secretRefs {
 		if err := secrets.ValidateType(ref.Type); err != nil {
-			return nil, fmt.Errorf("secret %q: %w", name, err)
+			return nil, fmt.Errorf("%w: secret %q: %w", ErrInvalidConnector, name, err)
 		}
 	}
 

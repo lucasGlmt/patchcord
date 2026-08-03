@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability; the rest of the vision document's API surface (plugins, connectors, actions, apps) is not implemented yet.",
+        "description": "Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability, connector CRUD and testing, application hosting, and a read-only plugin catalog listing; the rest of the vision document's API surface (actions, full plugin management) is not implemented yet.",
         "title": "Patchcord Agent API",
         "contact": {},
         "version": "1"
@@ -61,6 +61,199 @@
                         "description": "app not found",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/connectors": {
+            "get": {
+                "description": "Returns every recorded connector, ordered by id. Never includes a resolved secret value — only each secret reference's logical type/key.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "List connectors",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.connectorSummary"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new connector: a persistent, named configuration for accessing an external system. type must match a connector type declared by an installed plugin's manifest.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Create a connector",
+                "parameters": [
+                    {
+                        "description": "Connector to create",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/api.createConnectorRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/api.connectorSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "malformed request body, or the connector is invalid (empty id/type, unknown type, unsupported secret reference type)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "409": {
+                        "description": "a connector with this id already exists",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/connectors/{id}": {
+            "get": {
+                "description": "Returns one connector's configuration and secret references (never a resolved secret value).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Get a connector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Connector id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.connectorSummary"
+                        }
+                    },
+                    "404": {
+                        "description": "connector not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes a connector. There is no update endpoint (ADR-0020) — a caller that wants to change one recreates it, which is exactly what the dashboard's \"Modifier\" does under the hood.",
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Delete a connector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Connector id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "deleted"
+                    },
+                    "404": {
+                        "description": "connector not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/connectors/{id}/test": {
+            "post": {
+                "description": "Resolves the connector's configuration and secrets, then asks the installed plugin that declares its type to actually attempt a connection. Unlike GET /connectors/{id}, this calls into a live plugin process. A connection attempt that runs but fails (e.g. wrong password) is reported as ok=false, not an HTTP error.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "connectors"
+                ],
+                "summary": "Test a connector",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Connector id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.connectorTestResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "connector not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "no connector tester configured, a secret failed to resolve, or the plugin call itself failed",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/plugins": {
+            "get": {
+                "description": "Returns every installed plugin and the connector types/action ids its manifest declares — enough for a client to build a connector-type picker without a copy of the CLI's own catalog logic.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "plugins"
+                ],
+                "summary": "List installed plugins",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/api.pluginSummary"
+                            }
                         }
                     }
                 }
@@ -401,6 +594,73 @@
                 }
             }
         },
+        "api.connectorSecretRef": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.connectorSummary": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "secret_refs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.connectorSecretRef"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.connectorTestResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "ok": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.createConnectorRequest": {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "id": {
+                    "type": "string"
+                },
+                "secret_refs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/api.connectorSecretRef"
+                    }
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
         "api.healthResponse": {
             "type": "object",
             "properties": {
@@ -408,6 +668,29 @@
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.pluginSummary": {
+            "type": "object",
+            "properties": {
+                "actions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "connectors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }
@@ -498,9 +781,28 @@
                 }
             }
         },
+        "api.workflowBindingDetail": {
+            "type": "object",
+            "properties": {
+                "connector_type": {
+                    "description": "ConnectorType is empty when it could not be inferred for every step\nthat references this binding name, or when different steps referring\nto the same name disagree on it.",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "api.workflowDetail": {
             "type": "object",
             "properties": {
+                "bindings": {
+                    "description": "Bindings is every distinct connector binding name referenced by Steps\n(via a \"${{ bindings.\u003cname\u003e }}\" expression), each paired with its\ninferred connector type when one could be — see bindingConnectorType.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.workflowBindingDetail"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -557,7 +859,15 @@
         "api.workflowStepDetail": {
             "type": "object",
             "properties": {
+                "binding_name": {
+                    "description": "BindingName is the logical name this step's Connector expression\nrefers to (the \"db\" in \"${{ bindings.db }}\"), populated only when\nConnector is exactly that shape — see bindingName.",
+                    "type": "string"
+                },
                 "connector": {
+                    "type": "string"
+                },
+                "connector_type": {
+                    "description": "ConnectorType is the connector type inferred for BindingName, so a\nclient can offer a \u003cselect\u003e of matching connectors instead of a\nfree-text id — see bindingConnectorType. Left empty when it can't be\ninferred (no owning plugin found, or that plugin declares more than\none connector type).",
                     "type": "string"
                 },
                 "id": {

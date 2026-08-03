@@ -18,7 +18,7 @@ A route that exists in `internal/api` but has no SDK method yet is a gap, not a 
 
 ## Why wire types are a separate layer
 
-`RunSummary`, `WorkflowSummary`, `AppSummary`, and `AppSession` all have `Wire*` counterparts in `wire.ts` with snake_case fields (`workflow_id`, `installed_at`, `workflows_run`, ...) matching `internal/api`'s JSON encoding exactly. Application code never sees these — only `src/types.ts`'s camelCase types, re-exported from `src/index.ts`. This means a JSON field rename inside a Go handler is a one-file fix (`wire.ts`), not a breaking change application code has to react to, as long as the public type in `types.ts` keeps the same shape.
+`RunSummary`, `WorkflowSummary`, `AppSummary`, `AppSession`, `Connector`, and `PluginSummary` all have `Wire*` counterparts in `wire.ts` with snake_case fields (`workflow_id`, `installed_at`, `workflows_run`, `secret_refs`, ...) matching `internal/api`'s JSON encoding exactly. Application code never sees these — only `src/types.ts`'s camelCase types, re-exported from `src/index.ts`. This means a JSON field rename inside a Go handler is a one-file fix (`wire.ts`), not a breaking change application code has to react to, as long as the public type in `types.ts` keeps the same shape.
 
 ## Versioning
 

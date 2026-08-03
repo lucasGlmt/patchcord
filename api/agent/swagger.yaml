@@ -24,11 +24,70 @@ definitions:
           type: string
         type: array
     type: object
+  api.connectorSecretRef:
+    properties:
+      key:
+        type: string
+      type:
+        type: string
+    type: object
+  api.connectorSummary:
+    properties:
+      config:
+        additionalProperties: {}
+        type: object
+      created_at:
+        type: string
+      id:
+        type: string
+      secret_refs:
+        additionalProperties:
+          $ref: '#/definitions/api.connectorSecretRef'
+        type: object
+      type:
+        type: string
+    type: object
+  api.connectorTestResponse:
+    properties:
+      message:
+        type: string
+      ok:
+        type: boolean
+    type: object
+  api.createConnectorRequest:
+    properties:
+      config:
+        additionalProperties: {}
+        type: object
+      id:
+        type: string
+      secret_refs:
+        additionalProperties:
+          $ref: '#/definitions/api.connectorSecretRef'
+        type: object
+      type:
+        type: string
+    type: object
   api.healthResponse:
     properties:
       database:
         type: string
       status:
+        type: string
+    type: object
+  api.pluginSummary:
+    properties:
+      actions:
+        items:
+          type: string
+        type: array
+      connectors:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      version:
         type: string
     type: object
   api.runStep:
@@ -89,8 +148,27 @@ definitions:
         additionalProperties: {}
         type: object
     type: object
+  api.workflowBindingDetail:
+    properties:
+      connector_type:
+        description: |-
+          ConnectorType is empty when it could not be inferred for every step
+          that references this binding name, or when different steps referring
+          to the same name disagree on it.
+        type: string
+      name:
+        type: string
+    type: object
   api.workflowDetail:
     properties:
+      bindings:
+        description: |-
+          Bindings is every distinct connector binding name referenced by Steps
+          (via a "${{ bindings.<name> }}" expression), each paired with its
+          inferred connector type when one could be — see bindingConnectorType.
+        items:
+          $ref: '#/definitions/api.workflowBindingDetail'
+        type: array
       id:
         type: string
       inputs:
@@ -128,7 +206,21 @@ definitions:
     type: object
   api.workflowStepDetail:
     properties:
+      binding_name:
+        description: |-
+          BindingName is the logical name this step's Connector expression
+          refers to (the "db" in "${{ bindings.db }}"), populated only when
+          Connector is exactly that shape — see bindingName.
+        type: string
       connector:
+        type: string
+      connector_type:
+        description: |-
+          ConnectorType is the connector type inferred for BindingName, so a
+          client can offer a <select> of matching connectors instead of a
+          free-text id — see bindingConnectorType. Left empty when it can't be
+          inferred (no owning plugin found, or that plugin declares more than
+          one connector type).
         type: string
       id:
         type: string
@@ -150,8 +242,9 @@ definitions:
 info:
   contact: {}
   description: Public HTTP API for the Patchcord agent (vision document, section 10.1).
-    Covers workflow triggering and run observability; the rest of the vision document's
-    API surface (plugins, connectors, actions, apps) is not implemented yet.
+    Covers workflow triggering and run observability, connector CRUD and testing,
+    application hosting, and a read-only plugin catalog listing; the rest of the vision
+    document's API surface (actions, full plugin management) is not implemented yet.
   title: Patchcord Agent API
   version: "1"
 paths:
@@ -196,6 +289,147 @@ paths:
       summary: Issue an application session
       tags:
       - apps
+  /connectors:
+    get:
+      description: Returns every recorded connector, ordered by id. Never includes
+        a resolved secret value — only each secret reference's logical type/key.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.connectorSummary'
+            type: array
+      summary: List connectors
+      tags:
+      - connectors
+    post:
+      consumes:
+      - application/json
+      description: 'Creates a new connector: a persistent, named configuration for
+        accessing an external system. type must match a connector type declared by
+        an installed plugin''s manifest.'
+      parameters:
+      - description: Connector to create
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.createConnectorRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/api.connectorSummary'
+        "400":
+          description: malformed request body, or the connector is invalid (empty
+            id/type, unknown type, unsupported secret reference type)
+          schema:
+            type: string
+        "409":
+          description: a connector with this id already exists
+          schema:
+            type: string
+      summary: Create a connector
+      tags:
+      - connectors
+  /connectors/{id}:
+    delete:
+      description: Removes a connector. There is no update endpoint (ADR-0020) — a
+        caller that wants to change one recreates it, which is exactly what the dashboard's
+        "Modifier" does under the hood.
+      parameters:
+      - description: Connector id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: deleted
+        "404":
+          description: connector not found
+          schema:
+            type: string
+      summary: Delete a connector
+      tags:
+      - connectors
+    get:
+      description: Returns one connector's configuration and secret references (never
+        a resolved secret value).
+      parameters:
+      - description: Connector id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.connectorSummary'
+        "404":
+          description: connector not found
+          schema:
+            type: string
+      summary: Get a connector
+      tags:
+      - connectors
+  /connectors/{id}/test:
+    post:
+      description: Resolves the connector's configuration and secrets, then asks the
+        installed plugin that declares its type to actually attempt a connection.
+        Unlike GET /connectors/{id}, this calls into a live plugin process. A connection
+        attempt that runs but fails (e.g. wrong password) is reported as ok=false,
+        not an HTTP error.
+      parameters:
+      - description: Connector id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.connectorTestResponse'
+        "404":
+          description: connector not found
+          schema:
+            type: string
+        "500":
+          description: no connector tester configured, a secret failed to resolve,
+            or the plugin call itself failed
+          schema:
+            type: string
+      summary: Test a connector
+      tags:
+      - connectors
+  /plugins:
+    get:
+      description: Returns every installed plugin and the connector types/action ids
+        its manifest declares — enough for a client to build a connector-type picker
+        without a copy of the CLI's own catalog logic.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/api.pluginSummary'
+            type: array
+      summary: List installed plugins
+      tags:
+      - plugins
   /runs:
     get:
       description: Returns every recorded run, most recently created first.

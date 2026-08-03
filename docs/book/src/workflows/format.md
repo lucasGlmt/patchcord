@@ -153,6 +153,8 @@ patchcord connector create demo_conn --type "demo.connection@1" --config greetin
 DEMO_TOKEN=s3cr3t patchcord workflow run connector_binding_demo --binding demo=demo_conn
 ```
 
+`GET /v1/workflows/{id}` exposes each such binding for a client that wants to offer a picker instead of a free-text connector id: `workflowDetail.bindings` lists every distinct `${{ bindings.<name> }}` name used across the workflow's steps, each paired with a `connectorType` **inferred** server-side (the installed plugin that contributes the step's `uses` action, and its declared connector type) when unambiguous ([ADR-0034](../../../adr/0034-connecteurs-catalogue-greffons-http-bindings-dashboard.md)). A `connector:` expression over `workflow.inputs` or `steps.*.outputs` has no static connector id to offer ahead of a run, so it never appears in `bindings` — only the `${{ bindings.<name> }}` shape does. The dashboard's workflow detail page (`apps/examples/dashboard`) uses exactly this to render one `<select>` per binding, filled from `GET /v1/connectors` filtered by `connectorType`.
+
 ## Conditional steps
 
 A step's `if:` field gates whether it runs at all (`workflow.Step.If`; enforced and resolved by `Validate` and `workflow.ResolveIf`, [ADR-0031](../../../adr/0031-etapes-conditionnelles-if.md)). It is either a literal boolean, or a `${{ ... }}` expression that must itself resolve to one — the same three shapes as any other expression, referencing a workflow input, an earlier step's output, or a connector binding. A step with no `if` always runs, exactly as before this field existed.

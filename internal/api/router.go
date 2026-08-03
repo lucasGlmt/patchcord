@@ -41,6 +41,12 @@ type Deps struct {
 	// every other existing route keeps working exactly as before this
 	// package existed.
 	Sessions *auth.Store
+	// ConnectorTester attempts a live connection through a resolved
+	// connector's plugin, typically the same internal/plugins.Supervisor as
+	// Executor (it satisfies both by duck typing). Only needed by
+	// POST /connectors/{id}/test — left nil, that one endpoint fails clearly
+	// rather than panicking.
+	ConnectorTester ConnectorTester
 }
 
 func (d Deps) runCtx() context.Context {
@@ -72,6 +78,12 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /v1/apps", handleListApps(deps))
 	mux.HandleFunc("POST /v1/apps/{id}/sessions", handleCreateAppSession(deps))
 	mux.HandleFunc("GET /apps/{id}/", handleServeApp(deps))
+	mux.HandleFunc("GET /v1/connectors", handleListConnectors(deps))
+	mux.HandleFunc("POST /v1/connectors", handleCreateConnector(deps))
+	mux.HandleFunc("GET /v1/connectors/{id}", handleGetConnector(deps))
+	mux.HandleFunc("DELETE /v1/connectors/{id}", handleDeleteConnector(deps))
+	mux.HandleFunc("POST /v1/connectors/{id}/test", handleTestConnector(deps))
+	mux.HandleFunc("GET /v1/plugins", handleListPlugins(deps))
 	return withCORS(mux)
 }
 
@@ -86,7 +98,7 @@ func handleOpenAPISpec() http.HandlerFunc {
 }
 
 // withCORS wraps handler with a permissive CORS policy — reflecting any
-// Origin, allowing GET/POST and a JSON Content-Type, and answering
+// Origin, allowing GET/POST/DELETE and a JSON Content-Type, and answering
 // preflight OPTIONS requests directly. This exists solely so a Vite dev
 // server (a different origin than the agent) can call this API during
 // application development; it is NOT a security boundary and must not be
@@ -95,7 +107,7 @@ func handleOpenAPISpec() http.HandlerFunc {
 func withCORS(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		if r.Method == http.MethodOptions {
