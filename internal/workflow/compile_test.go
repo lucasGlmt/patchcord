@@ -126,6 +126,145 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "accepts a literal boolean if",
+			mutate: func(d *Definition) {
+				d.Steps[0].If = false
+			},
+		},
+		{
+			name: "accepts an if bound via a steps expression",
+			mutate: func(d *Definition) {
+				d.Steps[1].If = "${{ steps.first.outputs.value }}"
+			},
+		},
+		{
+			name: "rejects a non-boolean literal if",
+			mutate: func(d *Definition) {
+				d.Steps[0].If = "yes"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a malformed if expression shape",
+			mutate: func(d *Definition) {
+				d.Steps[0].If = "${{ nonsense }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects an if expression referencing a step defined later",
+			mutate: func(d *Definition) {
+				d.Steps[0].If = "${{ steps.second.outputs.value }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a literal foreach list with each referenced in with",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = []any{"a", "b"}
+				d.Steps[0].With["value"] = "${{ each }}"
+			},
+		},
+		{
+			name: "accepts a foreach bound via a steps expression",
+			mutate: func(d *Definition) {
+				d.Steps[1].Foreach = "${{ steps.first.outputs.value }}"
+				d.Steps[1].With["value"] = "${{ each }}"
+			},
+		},
+		{
+			name: "rejects a non-list, non-expression foreach",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = "not_a_list_or_expression"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a malformed foreach expression shape",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = "${{ nonsense }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects each referenced in with when the step has no foreach",
+			mutate: func(d *Definition) {
+				d.Steps[0].With["value"] = "${{ each }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects each referenced in another step's with",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = []any{"a", "b"}
+				d.Steps[1].With["value"] = "${{ each }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects each referenced in if",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = []any{"a", "b"}
+				d.Steps[0].If = "${{ each }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects each referenced in connector",
+			mutate: func(d *Definition) {
+				d.Steps[0].Foreach = []any{"a", "b"}
+				d.Steps[0].Connector = "${{ each }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts an if comparison expression",
+			mutate: func(d *Definition) {
+				d.Steps[1].If = "${{ steps.first.outputs.value == 'hello' }}"
+			},
+		},
+		{
+			name: "rejects an if comparison with a malformed literal",
+			mutate: func(d *Definition) {
+				d.Steps[1].If = "${{ steps.first.outputs.value >= not_a_literal }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts stop_if_false alongside if",
+			mutate: func(d *Definition) {
+				d.Steps[0].If = false
+				d.Steps[0].StopIfFalse = true
+			},
+		},
+		{
+			name: "rejects stop_if_false without if",
+			mutate: func(d *Definition) {
+				d.Steps[0].StopIfFalse = true
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts else_of referencing an earlier step",
+			mutate: func(d *Definition) {
+				d.Steps[1].ElseOf = "first"
+			},
+		},
+		{
+			name: "rejects else_of referencing an undefined step",
+			mutate: func(d *Definition) {
+				d.Steps[0].ElseOf = "unknown"
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects else_of referencing a step defined later",
+			mutate: func(d *Definition) {
+				d.Steps[0].ElseOf = "second"
+			},
+			wantErr: true,
+		},
+		{
 			name: "accepts a well-formed input schema",
 			mutate: func(d *Definition) {
 				d.Inputs = []InputDef{

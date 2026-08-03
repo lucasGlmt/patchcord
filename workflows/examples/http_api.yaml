@@ -1,7 +1,7 @@
 schema_version: 1
 
 id: http_api_task
-version: 5
+version: 9
 
 trigger:
   type: manual
@@ -23,3 +23,9 @@ steps:
     with:
       value: "${{ steps.parse_to_json.outputs.value }}"
       path: "$[*].username"
+  
+  - id: uppercase_all
+    uses: text.uppercase@1
+    foreach: "${{ steps.extract_username.outputs.values }}"
+    with:
+      value: "${{ each }}"

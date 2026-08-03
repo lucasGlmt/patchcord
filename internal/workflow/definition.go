@@ -70,6 +70,36 @@ type Step struct {
 	// (ADR-0008) never bakes in one deployment's specific connector
 	// identity; see ResolveConnector and ADR-0021.
 	Connector string `yaml:"connector,omitempty"`
+	// If, when set, gates whether this step runs at all: a literal bool,
+	// or a ${{ ... }} expression that must resolve to one. A step whose
+	// If resolves to false is recorded as skipped — never invoked, and its
+	// outputs are unavailable to later steps — without failing the run.
+	// Nil (the field omitted) means the step always runs. See ResolveIf
+	// and ADR-0031.
+	If any `yaml:"if,omitempty"`
+	// Foreach, when set, runs this step's action once per item of a
+	// literal list or a ${{ ... }} expression that must resolve to one,
+	// with the current item available to With as ${{ each }}. Outputs are
+	// collected into lists under the action's own output keys — a
+	// foreach step's steps.<ID>.outputs.<key> is an array, not a scalar.
+	// Nil (the field omitted) means the step runs exactly once, as if it
+	// had no Foreach at all. See ResolveForeach and ADR-0032.
+	Foreach any `yaml:"foreach,omitempty"`
+	// StopIfFalse changes what a false If does: instead of skipping only
+	// this step (the default), it skips this step and every step after it,
+	// ending the run as succeeded — no error, exactly a guard clause's
+	// early return. Ignored when If is nil (nothing to be false) or when
+	// ElseOf causes this step to be skipped before If is even evaluated.
+	// See ADR-0033.
+	StopIfFalse bool `yaml:"stop_if_false,omitempty"`
+	// ElseOf, when set, names an earlier step (by ID): this step is
+	// skipped whenever that step actually ran — regardless of this step's
+	// own If, which (if present) still applies on top, as an additional
+	// condition. Chaining ElseOf onto the previous link in a sequence of
+	// steps — not onto the first one — builds an if/elseif/else chain
+	// without nesting: a step with ElseOf but no If is that chain's
+	// unconditional "else". See ADR-0033.
+	ElseOf string `yaml:"else_of,omitempty"`
 }
 
 // Parse parses a workflow definition from its YAML source. It only parses:

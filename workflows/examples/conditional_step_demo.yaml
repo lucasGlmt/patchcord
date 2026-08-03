@@ -1,0 +1,35 @@
+# Reference example for conditional steps (ADR-0031): a step's "if" gates
+# whether it runs at all — a literal bool, or a "${{ ... }}" expression that
+# must resolve to one. A step whose "if" is false is recorded as skipped and
+# never invokes its action, but the run continues with the steps after it.
+#
+# Run it with:
+#   patchcord workflow run conditional_step_demo --input shout=true
+#   patchcord workflow run conditional_step_demo --input shout=false
+schema_version: 1
+
+id: conditional_step_demo
+version: 1
+
+trigger:
+  type: manual
+
+inputs:
+  - name: shout
+    type: boolean
+    required: true
+    description: Whether to uppercase the greeting.
+
+steps:
+  - id: shout
+    if: "${{ workflow.inputs.shout }}"
+    uses: text.uppercase@1
+    with:
+      value: "hello, patchcord"
+
+  - id: say_hello
+    uses: text.join@1
+    with:
+      values:
+        - "Greeting: "
+        - "hello, patchcord"

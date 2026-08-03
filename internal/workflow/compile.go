@@ -17,7 +17,18 @@ const SupportedSchemaVersion = 1
 //   - every step's action exists among knownActions;
 //   - every ${{ steps.<id>.outputs...}} expression refers to an earlier
 //     step in the same workflow, catching typos and forward references
-//     before a run ever starts.
+//     before a run ever starts;
+//   - a step's if, when set, is a literal bool or a ${{ ... }} expression
+//     of a supported shape — never any other literal type;
+//   - a step's foreach, when set, is a literal list or a ${{ ... }}
+//     expression of a supported shape;
+//   - "${{ each }}" only appears inside a foreach step's own with — every
+//     other spot (if, connector, foreach itself, another step's with) is
+//     rejected, since no iteration is in progress there;
+//   - a comparison expression's ("<path> <op> <literal>") left-hand side is
+//     a supported shape and its literal right-hand side is well-formed;
+//   - stop_if_false requires if to be set;
+//   - else_of, when set, names a step defined earlier in the same workflow.
 //
 // knownActions is the set of action identifiers currently installed
 // plugins contribute; the caller (internal/runs) is responsible for
@@ -58,8 +69,18 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 			return fmt.Errorf("step %q: unknown action %q (no installed plugin contributes it)", step.ID, step.Uses)
 		}
 
+		if step.Foreach != nil {
+			if expr, ok := asExpression(step.Foreach); ok {
+				if err := validateExpression(expr, seenSteps, false); err != nil {
+					return fmt.Errorf("step %q: foreach: %w", step.ID, err)
+				}
+			} else if _, ok := step.Foreach.([]any); !ok {
+				return fmt.Errorf("step %q: foreach must be a list or a \"${{ ... }}\" expression, got %T", step.ID, step.Foreach)
+			}
+		}
+
 		for key, value := range step.With {
-			if err := validateValueExpressions(value, seenSteps); err != nil {
+			if err := validateValueExpressions(value, seenSteps, step.Foreach != nil); err != nil {
 				return fmt.Errorf("step %q: input %q: %w", step.ID, key, err)
 			}
 		}
@@ -69,8 +90,28 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 			if !ok {
 				return fmt.Errorf("step %q: connector must be a \"${{ ... }}\" expression, not a literal value", step.ID)
 			}
-			if err := validateExpression(expr, seenSteps); err != nil {
+			if err := validateExpression(expr, seenSteps, false); err != nil {
 				return fmt.Errorf("step %q: connector: %w", step.ID, err)
+			}
+		}
+
+		if step.If != nil {
+			if expr, ok := asExpression(step.If); ok {
+				if err := validateExpression(expr, seenSteps, false); err != nil {
+					return fmt.Errorf("step %q: if: %w", step.ID, err)
+				}
+			} else if _, ok := step.If.(bool); !ok {
+				return fmt.Errorf("step %q: if must be a boolean or a \"${{ ... }}\" expression, got %T", step.ID, step.If)
+			}
+		}
+
+		if step.StopIfFalse && step.If == nil {
+			return fmt.Errorf("step %q: stop_if_false requires if to be set — there is nothing for it to be false", step.ID)
+		}
+
+		if step.ElseOf != "" {
+			if _, ok := seenSteps[step.ElseOf]; !ok {
+				return fmt.Errorf("step %q: else_of references step %q, which is not defined before this step", step.ID, step.ElseOf)
 			}
 		}
 

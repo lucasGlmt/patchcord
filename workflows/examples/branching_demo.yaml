@@ -1,0 +1,54 @@
+# Reference example for comparison expressions, stop_if_false and else_of
+# (ADR-0033). An if/elseif/else chain built without nesting — else_of
+# chains onto the *previous* link, not always the first one — plus a guard
+# step that stops the run early (no error) when a value is out of range.
+#
+# Run it with:
+#   patchcord workflow run branching_demo --input score=9    # case_high
+#   patchcord workflow run branching_demo --input score=6    # case_mid
+#   patchcord workflow run branching_demo --input score=2    # case_low
+#   patchcord workflow run branching_demo --input score=150  # guard stops the run
+schema_version: 1
+
+id: branching_demo
+version: 1
+
+trigger:
+  type: manual
+
+inputs:
+  - name: score
+    type: number
+    required: true
+
+steps:
+  - id: case_high
+    if: "${{ workflow.inputs.score >= 8 }}"
+    uses: text.uppercase@1
+    with:
+      value: "high score"
+
+  - id: case_mid
+    else_of: case_high
+    if: "${{ workflow.inputs.score >= 5 }}"
+    uses: text.uppercase@1
+    with:
+      value: "mid score"
+
+  - id: case_low
+    else_of: case_mid
+    uses: text.uppercase@1
+    with:
+      value: "low score"
+
+  - id: guard
+    if: "${{ workflow.inputs.score <= 100 }}"
+    stop_if_false: true
+    uses: text.uppercase@1
+    with:
+      value: "score in valid range"
+
+  - id: after_guard
+    uses: text.uppercase@1
+    with:
+      value: "after guard"

@@ -270,3 +270,57 @@ func TestEchoConnectorAction_Run(t *testing.T) {
 		}
 	})
 }
+
+func TestReplaceAction_Run(t *testing.T) {
+		tests := []struct {
+		name    string
+		input   patchcord.ActionInput
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "replaces a word",
+			input: patchcord.ActionInput{"value": "hello there", "old": "hello", "new": "hi"},
+			want:  "hi there",
+		},
+		{
+			name:  "replaces many words",
+			input: patchcord.ActionInput{"value": "cats are cats", "old": "cats", "new": "dogs"},
+			want:  "dogs are dogs",
+		},
+		{
+			name:  "replaces nothing",
+			input: patchcord.ActionInput{"value": "i love you", "old": "candies", "new": "potatoes"},
+			want:  "i love you",
+		},
+		{
+			name:  "replaces nothing",
+			input: patchcord.ActionInput{"value": "i love you", "old": "candies", "new": "potatoes"},
+			want:  "i love you",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output, err := replaceAction{}.Run(context.Background(), tt.input, nil)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			got, ok := output["value"].(string)
+			if !ok {
+				t.Fatalf("output[value] = %#v, want string", output["value"])
+			}
+			want := tt.want
+			if want != got {
+				t.Fatalf("output[value] = %v, want %v", got, want)
+			}
+		})
+	}
+}

@@ -1,0 +1,22 @@
+# Reference example for foreach steps (ADR-0032): a step's "foreach" runs
+# its action once per item of a literal list or a "${{ ... }}" expression
+# that must resolve to one, with the current item available to "with" as
+# "${{ each }}". Outputs are collected into lists under the action's own
+# output keys — steps.shout.outputs.value below is an array, not a scalar.
+#
+# Run it with:
+#   patchcord workflow run foreach_demo
+schema_version: 1
+
+id: foreach_demo
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    foreach: ["alice", "bob", "carol"]
+    with:
+      value: "${{ each }}"

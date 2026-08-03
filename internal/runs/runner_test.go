@@ -134,6 +134,503 @@ steps:
 	}
 }
 
+func TestExecute_SkipsAStepWhoseIfResolvesToFalseWithoutFailingTheRun(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: conditional
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: first
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+  - id: skipped
+    if: false
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+  - id: last
+    uses: text.uppercase@1
+    with:
+      value: "${{ steps.first.outputs.value }}"
+`)
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	run, err := Execute(context.Background(), db, executor, "conditional", nil, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+	// Only "first" and "last" ever call the executor — "skipped" must not.
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor was called %d times, want 2 (the skipped step must not call the action)", len(executor.calls))
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	byID := make(map[string]Step, len(steps))
+	for _, step := range steps {
+		byID[step.StepID] = step
+	}
+	if byID["first"].Status != workflow.StepSucceeded {
+		t.Fatalf(`steps["first"].Status = %s, want %s`, byID["first"].Status, workflow.StepSucceeded)
+	}
+	if byID["skipped"].Status != workflow.StepSkipped {
+		t.Fatalf(`steps["skipped"].Status = %s, want %s`, byID["skipped"].Status, workflow.StepSkipped)
+	}
+	if byID["last"].Status != workflow.StepSucceeded {
+		t.Fatalf(`steps["last"].Status = %s, want %s (run must continue past a skipped step)`, byID["last"].Status, workflow.StepSucceeded)
+	}
+}
+
+func TestExecute_StopIfFalseEndsTheRunSucceededWithoutRunningLaterSteps(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: guard
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: first
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+  - id: guard
+    if: false
+    stop_if_false: true
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+  - id: never
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+`)
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	run, err := Execute(context.Background(), db, executor, "guard", nil, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s (a guard clause is not an error)", run.Status, workflow.RunSucceeded)
+	}
+	// Only "first" ever calls the executor — "guard" is false (never calls
+	// its action) and "never" is skipped by the early stop.
+	if len(executor.calls) != 1 {
+		t.Fatalf("executor was called %d times, want 1", len(executor.calls))
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	byID := make(map[string]Step, len(steps))
+	for _, step := range steps {
+		byID[step.StepID] = step
+	}
+	if byID["first"].Status != workflow.StepSucceeded {
+		t.Fatalf(`steps["first"].Status = %s, want %s`, byID["first"].Status, workflow.StepSucceeded)
+	}
+	if byID["guard"].Status != workflow.StepSkipped {
+		t.Fatalf(`steps["guard"].Status = %s, want %s`, byID["guard"].Status, workflow.StepSkipped)
+	}
+	if byID["never"].Status != workflow.StepSkipped {
+		t.Fatalf(`steps["never"].Status = %s, want %s (stop_if_false must skip every later step too)`, byID["never"].Status, workflow.StepSkipped)
+	}
+}
+
+func TestExecute_ElseOfBuildsAnIfElseChainWithoutNesting(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: branching
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: case_true
+    if: "${{ workflow.inputs.flag }}"
+    uses: text.uppercase@1
+    with:
+      value: "true-branch"
+  - id: case_false
+    else_of: case_true
+    uses: text.uppercase@1
+    with:
+      value: "false-branch"
+`)
+
+	executor := &echoValueExecutor{}
+
+	t.Run("flag true runs case_true, skips case_false", func(t *testing.T) {
+		run, err := Execute(context.Background(), db, executor, "branching", map[string]any{"flag": true}, nil, ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if run.Status != workflow.RunSucceeded {
+			t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+		}
+
+		_, steps, err := GetRun(context.Background(), db, run.ID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		byID := make(map[string]Step, len(steps))
+		for _, step := range steps {
+			byID[step.StepID] = step
+		}
+		if byID["case_true"].Status != workflow.StepSucceeded {
+			t.Fatalf(`steps["case_true"].Status = %s, want %s`, byID["case_true"].Status, workflow.StepSucceeded)
+		}
+		if byID["case_false"].Status != workflow.StepSkipped {
+			t.Fatalf(`steps["case_false"].Status = %s, want %s (else_of must skip it since case_true ran)`, byID["case_false"].Status, workflow.StepSkipped)
+		}
+	})
+
+	executor2 := &echoValueExecutor{}
+	t.Run("flag false skips case_true, runs case_false", func(t *testing.T) {
+		run, err := Execute(context.Background(), db, executor2, "branching", map[string]any{"flag": false}, nil, ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if run.Status != workflow.RunSucceeded {
+			t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+		}
+
+		_, steps, err := GetRun(context.Background(), db, run.ID)
+		if err != nil {
+			t.Fatalf("GetRun() error = %v", err)
+		}
+		byID := make(map[string]Step, len(steps))
+		for _, step := range steps {
+			byID[step.StepID] = step
+		}
+		if byID["case_true"].Status != workflow.StepSkipped {
+			t.Fatalf(`steps["case_true"].Status = %s, want %s`, byID["case_true"].Status, workflow.StepSkipped)
+		}
+		if byID["case_false"].Status != workflow.StepSucceeded {
+			t.Fatalf(`steps["case_false"].Status = %s, want %s (else_of must let it run since case_true was skipped)`, byID["case_false"].Status, workflow.StepSucceeded)
+		}
+		if len(executor2.calls) != 1 || executor2.calls[0]["value"] != "false-branch" {
+			t.Fatalf("executor2.calls = %+v, want exactly one call with value \"false-branch\"", executor2.calls)
+		}
+	})
+}
+
+// TestExecute_ElseOfChainOfThreeOnlyRunsOneCase exercises a proper
+// elseif/elseif/else chain (three links, not just an if/else pair) — the
+// case that exposed a real bug during manual testing: a naive else_of that
+// only checks "did my immediate predecessor literally run" lets the final
+// catch-all run even when an *earlier* link further up the chain (not its
+// direct predecessor) was the one actually taken. Each of the three cases
+// must run exactly once, whichever branch a given score falls into.
+func TestExecute_ElseOfChainOfThreeOnlyRunsOneCase(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: switch_demo
+version: 1
+trigger:
+  type: manual
+inputs:
+  - name: score
+    type: number
+    required: true
+steps:
+  - id: case_high
+    if: "${{ workflow.inputs.score >= 8 }}"
+    uses: text.uppercase@1
+    with:
+      value: "high"
+  - id: case_mid
+    else_of: case_high
+    if: "${{ workflow.inputs.score >= 5 }}"
+    uses: text.uppercase@1
+    with:
+      value: "mid"
+  - id: case_low
+    else_of: case_mid
+    uses: text.uppercase@1
+    with:
+      value: "low"
+`)
+
+	tests := []struct {
+		score float64
+		want  string // the one case expected to succeed
+	}{
+		{score: 9, want: "case_high"},
+		{score: 6, want: "case_mid"},
+		{score: 2, want: "case_low"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			executor := &fakeExecutor{
+				responses: map[string]map[string]any{"text.uppercase@1": {"value": "X"}},
+			}
+
+			run, err := Execute(context.Background(), db, executor, "switch_demo", map[string]any{"score": tt.score}, nil, ExecuteOptions{})
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if run.Status != workflow.RunSucceeded {
+				t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+			}
+			// Exactly one of the three cases ever calls the action —
+			// the bug produced 2 here for score=9 and score=6.
+			if len(executor.calls) != 1 {
+				t.Fatalf("executor was called %d times, want exactly 1", len(executor.calls))
+			}
+
+			_, steps, err := GetRun(context.Background(), db, run.ID)
+			if err != nil {
+				t.Fatalf("GetRun() error = %v", err)
+			}
+			for _, step := range steps {
+				wantStatus := workflow.StepSkipped
+				if step.StepID == tt.want {
+					wantStatus = workflow.StepSucceeded
+				}
+				if step.Status != wantStatus {
+					t.Fatalf("score=%v: steps[%q].Status = %s, want %s", tt.score, step.StepID, step.Status, wantStatus)
+				}
+			}
+		})
+	}
+}
+
+func TestExecute_IfComparisonExpressionGatesAStep(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: threshold
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: count
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+  - id: over_threshold
+    if: "${{ steps.count.outputs.value == 'HELLO' }}"
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+`)
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	run, err := Execute(context.Background(), db, executor, "threshold", nil, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	byID := make(map[string]Step, len(steps))
+	for _, step := range steps {
+		byID[step.StepID] = step
+	}
+	if byID["over_threshold"].Status != workflow.StepSucceeded {
+		t.Fatalf(`steps["over_threshold"].Status = %s, want %s (the comparison should have resolved true)`, byID["over_threshold"].Status, workflow.StepSucceeded)
+	}
+}
+
+func TestExecute_FailsTheRunWhenIfCannotBeResolved(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: bad_if
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    if: "${{ workflow.inputs.enabled }}"
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+`)
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	// No "enabled" input is provided, so the if expression cannot resolve.
+	run, err := Execute(context.Background(), db, executor, "bad_if", nil, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunFailed {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunFailed)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor was called %d times, want 0 (should fail before calling the action)", len(executor.calls))
+	}
+}
+
+func TestExecute_ForeachRunsTheActionOncePerItemAndAggregatesOutputs(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: foreach_demo
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    foreach: "${{ workflow.inputs.names }}"
+    with:
+      value: "${{ each }}"
+`)
+
+	executor := &echoValueExecutor{}
+
+	run, err := Execute(context.Background(), db, executor, "foreach_demo",
+		map[string]any{"names": []any{"alice", "bob", "carol"}}, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+	if len(executor.calls) != 3 {
+		t.Fatalf("executor was called %d times, want 3 (one per item)", len(executor.calls))
+	}
+	for i, want := range []string{"alice", "bob", "carol"} {
+		if executor.calls[i]["value"] != want {
+			t.Fatalf(`executor.calls[%d]["value"] = %v, want %q (each item resolved in order)`, i, executor.calls[i]["value"], want)
+		}
+	}
+
+	want := []any{"alice", "bob", "carol"}
+	got, ok := run.Outputs["value"].([]any)
+	if !ok || len(got) != len(want) {
+		t.Fatalf(`run.Outputs["value"] = %v, want %v`, run.Outputs["value"], want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf(`run.Outputs["value"][%d] = %v, want %v`, i, got[i], want[i])
+		}
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if len(steps) != 1 || steps[0].Status != workflow.StepSucceeded {
+		t.Fatalf("steps = %+v, want a single succeeded step", steps)
+	}
+}
+
+func TestExecute_ForeachStopsTheRunAtTheFirstFailingItem(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: foreach_failure
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    foreach: "${{ workflow.inputs.names }}"
+    with:
+      value: "${{ each }}"
+  - id: after
+    uses: text.uppercase@1
+    with:
+      value: "hello"
+`)
+
+	boom := errors.New("boom")
+	executor := &echoValueExecutor{errs: map[string]error{"bob": boom}}
+
+	run, err := Execute(context.Background(), db, executor, "foreach_failure",
+		map[string]any{"names": []any{"alice", "bob", "carol"}}, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunFailed {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunFailed)
+	}
+	// "bob" (item 1) fails, so "carol" (item 2) must never be attempted.
+	if len(executor.calls) != 2 {
+		t.Fatalf("executor was called %d times, want 2 (stops at the failing item)", len(executor.calls))
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	byID := make(map[string]Step, len(steps))
+	for _, step := range steps {
+		byID[step.StepID] = step
+	}
+	if byID["shout"].Status != workflow.StepFailed {
+		t.Fatalf(`steps["shout"].Status = %s, want %s`, byID["shout"].Status, workflow.StepFailed)
+	}
+	if byID["after"].Status != workflow.StepSkipped {
+		t.Fatalf(`steps["after"].Status = %s, want %s`, byID["after"].Status, workflow.StepSkipped)
+	}
+}
+
+func TestExecute_ForeachWithNoItemsSucceedsWithoutCallingTheAction(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: foreach_empty
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    foreach: "${{ workflow.inputs.names }}"
+    with:
+      value: "${{ each }}"
+`)
+
+	executor := &echoValueExecutor{}
+
+	run, err := Execute(context.Background(), db, executor, "foreach_empty",
+		map[string]any{"names": []any{}}, nil, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor was called %d times, want 0 (empty foreach list)", len(executor.calls))
+	}
+}
+
 func TestExecute_UnknownWorkflowFailsFast(t *testing.T) {
 	db := openTestDB(t)
 	executor := &fakeExecutor{}

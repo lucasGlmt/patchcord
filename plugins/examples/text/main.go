@@ -59,6 +59,31 @@ func (splitAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchc
 	return patchcord.ActionOutput{"values": values}, nil
 }
 
+type replaceAction struct {}
+
+func (replaceAction) ID() string { return "text.replace@1" }
+
+func (replaceAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
+	value, ok := input["value"].(string)
+	if !ok {
+		return nil, fmt.Errorf("input %q must be a string", "value")
+	}
+
+	old, ok := input["old"].(string)
+	if !ok {
+		return nil, fmt.Errorf("input %q must be a string", "old")
+	}
+
+	new, ok := input["new"].(string)
+	if !ok {
+		return nil, fmt.Errorf("input %q must be a string", "new")
+	}
+
+	result := strings.ReplaceAll(value, old, new)
+
+	return patchcord.ActionOutput{"value": result}, nil
+}
+
 type lowercaseAction struct{}
 
 func (lowercaseAction) ID() string { return "text.lowercase@1" }
@@ -128,6 +153,7 @@ func main() {
 			joinAction{},
 			splitAction{},
 			echoConnectorAction{},
+			replaceAction{},
 		},
 		// "demo.connection@1" only exists to give connector_binding_demo.yaml
 		// a real, installed plugin to validate against (ADR-0022) — it isn't

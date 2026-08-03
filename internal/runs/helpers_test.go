@@ -61,6 +61,25 @@ func (f *fakeExecutor) ExecuteAction(_ context.Context, actionID string, _ map[s
 	return f.responses[actionID], nil
 }
 
+// echoValueExecutor returns {"value": input["value"]} for every call,
+// recording each call's input — used by foreach tests to assert each
+// iteration actually received its own resolved "${{ each }}" input,
+// something a fixed canned response (fakeExecutor) can't distinguish.
+type echoValueExecutor struct {
+	calls []map[string]any
+	errs  map[string]error // by the resolved "value" input, as a string
+}
+
+func (e *echoValueExecutor) ExecuteAction(_ context.Context, _ string, input map[string]any, _ *connectors.ResolvedConnector) (map[string]any, error) {
+	e.calls = append(e.calls, input)
+	if key, ok := input["value"].(string); ok {
+		if err, ok := e.errs[key]; ok {
+			return nil, err
+		}
+	}
+	return map[string]any{"value": input["value"]}, nil
+}
+
 func installTestWorkflow(t *testing.T, db *sql.DB, source string) *workflow.Definition {
 	t.Helper()
 	def, err := InstallWorkflow(context.Background(), db, []byte(source), knownActions)

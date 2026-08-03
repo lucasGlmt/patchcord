@@ -38,7 +38,10 @@ const persistTimeout = 10 * time.Second
 type ExecuteOptions struct {
 	// StepTimeout bounds each individual step's action call. Defaults to
 	// DefaultStepTimeout when zero. A step that times out fails the run
-	// (it is not treated as a user-requested cancellation).
+	// (it is not treated as a user-requested cancellation). For a foreach
+	// step, this budget covers the whole step — every item's action call
+	// combined, not one budget per item — so a long list needs a StepTimeout
+	// sized for all of its iterations together.
 	StepTimeout time.Duration
 }
 
@@ -47,6 +50,18 @@ func (o ExecuteOptions) withDefaults() ExecuteOptions {
 		o.StepTimeout = DefaultStepTimeout
 	}
 	return o
+}
+
+// resolveStepConnector resolves connector against exprCtx and, if it names
+// one, looks it up — shared by the regular step path and the foreach path,
+// since a step's bound connector is resolved once regardless of how many
+// times (zero, for an empty connector) its action ends up being called.
+func resolveStepConnector(ctx context.Context, db *sql.DB, connector string, exprCtx workflow.ExprContext) (*connectors.ResolvedConnector, error) {
+	connectorID, err := workflow.ResolveConnector(connector, exprCtx)
+	if err != nil || connectorID == "" {
+		return nil, err
+	}
+	return connectors.Resolve(ctx, db, connectorID, secrets.EnvStore{})
 }
 
 // stepFailureStatus reports the terminal status a step should record for
@@ -124,6 +139,20 @@ func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string
 // Steps run sequentially; the first one to fail — including timing out, or
 // ctx being cancelled — stops the run. Every step that never got a chance
 // to run is recorded as skipped, so no step is left dangling in "pending".
+// A step whose If resolves to false is also recorded as skipped, but does
+// not stop the run — the loop moves on to the next step exactly as if this
+// one had succeeded, only without an entry in stepOutputs (see
+// workflow.ResolveIf) — unless that step also sets StopIfFalse, in which
+// case every following step is recorded skipped too and the run ends
+// Succeeded, not Failed: a guard clause's early return, not an error. A
+// step whose ElseOf names an earlier step that actually ran is skipped
+// before its own If is even evaluated (see ranSteps below) — chaining
+// ElseOf onto consecutive steps builds an if/elseif/else without nesting.
+// A foreach step calls its action once per resolved item, sequentially,
+// sharing one StepTimeout budget across every iteration; the first item to
+// fail stops the run exactly like a regular step failure would, and the
+// step's recorded output is the per-item outputs collected into lists
+// under the action's own output keys (see workflow.ResolveForeach).
 // Continue only returns a non-nil error for a genuine persistence failure —
 // a step's own failure (or the run's ctx being cancelled) is captured in
 // the run's final status instead, never returned as an error here, exactly
@@ -135,8 +164,24 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 	defer cancelPersist()
 
 	stepOutputs := make(map[string]map[string]any, len(def.Steps))
+	// ranSteps tracks, per step, whether its branch of an if/elseif/else
+	// chain was "taken" — true when the step actually attempted its
+	// action (its own ElseOf, if any, let it through, and If, if any, was
+	// true), but *also* true when it was itself skipped via ElseOf,
+	// propagating the earlier link's "taken" status forward. That
+	// propagation is what makes chaining ElseOf across 3+ steps behave
+	// like a real elseif/else: a later step's ElseOf must see "was
+	// anything before me in this chain taken", not merely "did my direct
+	// predecessor literally run" — otherwise a final catch-all step would
+	// incorrectly run whenever its immediate predecessor was skipped, even
+	// if an earlier link further up the chain was the one actually taken.
+	// It is set independent of success/failure: a foreach or normal step
+	// failing still counts as having "run" (a failure stops the run
+	// outright anyway, so no later ElseOf ever gets to observe it).
+	ranSteps := make(map[string]bool, len(def.Steps))
 	var runOutputs map[string]any
 	var runErr error
+	stopped := false
 	nextPending := 0
 
 	for i, step := range def.Steps {
@@ -154,15 +199,132 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		exprCtx := workflow.ExprContext{Inputs: inputs, StepOutputs: stepOutputs, Bindings: bindings}
 
+		if step.ElseOf != "" && ranSteps[step.ElseOf] {
+			cancel()
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
+				return err
+			}
+			// Propagate "taken" through the chain: this step didn't run,
+			// but its branch is spoken for by the same earlier step that
+			// caused it to be skipped — so a later step chaining else_of
+			// onto *this* one must see it as taken too, not just "did not
+			// run". Without this, a 3+ link chain (elseif/elseif/else)
+			// would let its final "else" run even though an earlier link,
+			// not its immediate predecessor, was the one actually taken.
+			ranSteps[step.ID] = true
+			nextPending = i + 1
+			continue
+		}
+
+		runStep, ifErr := workflow.ResolveIf(step.If, exprCtx)
+		if ifErr != nil {
+			cancel()
+			runErr = fmt.Errorf("step %q: if: %w", step.ID, ifErr)
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil); err != nil {
+				return err
+			}
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr); err != nil {
+				return err
+			}
+			nextPending = i + 1
+			break
+		}
+
+		if !runStep {
+			cancel()
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
+				return err
+			}
+			nextPending = i + 1
+			if step.StopIfFalse {
+				stopped = true
+				break
+			}
+			continue
+		}
+
+		ranSteps[step.ID] = true
+
+		if step.Foreach != nil {
+			items, foreachErr := workflow.ResolveForeach(step.Foreach, exprCtx)
+
+			// The connector, unlike With, does not vary per item — resolve
+			// it once, the same way a non-foreach step does.
+			var resolvedConnector *connectors.ResolvedConnector
+			if foreachErr == nil {
+				resolvedConnector, foreachErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx)
+			}
+
+			if foreachErr != nil {
+				cancel()
+				runErr = fmt.Errorf("step %q: %w", step.ID, foreachErr)
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil); err != nil {
+					return err
+				}
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr); err != nil {
+					return err
+				}
+				nextPending = i + 1
+				break
+			}
+
+			// The raw item list, not each iteration's resolved With, is
+			// what gets persisted as this step's input: With differs per
+			// item, but the list being iterated is the one stable thing
+			// worth recording for replay/debugging.
+			foreachInput := map[string]any{"items": items}
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, foreachInput, nil, nil); err != nil {
+				cancel()
+				return err
+			}
+
+			aggregated := make(map[string]any)
+			var iterErr error
+			for idx, item := range items {
+				itemCtx := exprCtx
+				itemCtx.Each = item
+				itemCtx.HasEach = true
+
+				itemInput, err := workflow.ResolveInputs(step.With, itemCtx)
+				var itemOutput map[string]any
+				if err == nil {
+					itemOutput, err = executor.ExecuteAction(stepCtx, step.Uses, itemInput, resolvedConnector)
+				}
+				if err != nil {
+					iterErr = fmt.Errorf("item %d: %w", idx, err)
+					break
+				}
+				for key, value := range itemOutput {
+					list, _ := aggregated[key].([]any)
+					aggregated[key] = append(list, value)
+				}
+			}
+			cancel()
+
+			if iterErr != nil {
+				runErr = fmt.Errorf("step %q: %w", step.ID, iterErr)
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), foreachInput, nil, runErr); err != nil {
+					return err
+				}
+				nextPending = i + 1
+				break
+			}
+
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, foreachInput, aggregated, nil); err != nil {
+				return err
+			}
+
+			stepOutputs[step.ID] = aggregated
+			runOutputs = aggregated
+			nextPending = i + 1
+			continue
+		}
+
 		resolvedInput, resolveErr := workflow.ResolveInputs(step.With, exprCtx)
 
 		var resolvedConnector *connectors.ResolvedConnector
 		if resolveErr == nil {
-			var connectorID string
-			connectorID, resolveErr = workflow.ResolveConnector(step.Connector, exprCtx)
-			if resolveErr == nil && connectorID != "" {
-				resolvedConnector, resolveErr = connectors.Resolve(stepCtx, db, connectorID, secrets.EnvStore{})
-			}
+			resolvedConnector, resolveErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx)
 		}
 
 		if resolveErr != nil {
@@ -225,6 +387,16 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		for _, step := range def.Steps[nextPending:] {
 			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, skippedStatus, nil, nil, nil); err != nil {
+				return err
+			}
+		}
+	} else if stopped {
+		// A step's own If was false and StopIfFalse asked to end the run
+		// here — a guard clause's early return, not a failure: every step
+		// after it is recorded skipped, same as the failure path above, but
+		// the run itself finishes Succeeded.
+		for _, step := range def.Steps[nextPending:] {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
 				return err
 			}
 		}
