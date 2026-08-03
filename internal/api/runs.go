@@ -81,6 +81,7 @@ func writeJSON(w http.ResponseWriter, statusCode int, body any) {
 // @Param        id   path  string  true  "Run id"
 // @Success      200  {object}  runSummary
 // @Failure      404  {string}  string  "run not found"
+// @Security     BearerAuth
 // @Router       /runs/{id} [get]
 func handleGetRun(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -106,6 +107,7 @@ func handleGetRun(deps Deps) http.HandlerFunc {
 // @Produce      json
 // @Param        workflow_id  query  string  false  "Restrict to runs of this workflow id"
 // @Success      200  {array}  runSummary
+// @Security     BearerAuth
 // @Router       /runs [get]
 func handleListRuns(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -140,6 +142,7 @@ func handleListRuns(deps Deps) http.HandlerFunc {
 // @Success      200  {object}  runSummary
 // @Failure      404  {string}  string  "run not found"
 // @Failure      409  {string}  string  "run has already finished"
+// @Security     BearerAuth
 // @Router       /runs/{id}/cancel [post]
 func handleCancelRun(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

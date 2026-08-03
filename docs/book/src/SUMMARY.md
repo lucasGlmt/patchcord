@@ -14,6 +14,7 @@
     - [workflow](cli/commands/workflow.md)
     - [run](cli/commands/run.md)
     - [app](cli/commands/app.md)
+    - [auth](cli/commands/auth.md)
 
 # Plugins
 

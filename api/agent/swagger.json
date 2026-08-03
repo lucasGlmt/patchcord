@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability, connector CRUD and testing, application hosting, and a read-only plugin catalog listing; the rest of the vision document's API surface (actions, full plugin management) is not implemented yet.",
+        "description": "Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability, connector CRUD and testing, application hosting, and a read-only plugin catalog listing; the rest of the vision document's API surface (actions, full plugin management) is not implemented yet.\nEvery route marked with a lock icon below requires \"Authorization: Bearer \u003cadmin token\u003e\" — but only once at least one admin token has been created (`patchcord auth token create`); a fresh agent answers every request unauthenticated, exactly as before this existed (ADR-0036).",
         "title": "Patchcord Agent API",
         "contact": {},
         "version": "1"
@@ -10,6 +10,11 @@
     "paths": {
         "/apps": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns every installed application and the permissions its sessions are limited to.",
                 "produces": [
                     "application/json"
@@ -33,6 +38,11 @@
         },
         "/apps/{id}/sessions": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Issues a new session for the named application, limited to its manifest's declared permissions. The token is a bearer credential: pass it as \"Authorization: Bearer \u003ctoken\u003e\" to POST /workflows/{id}/run.",
                 "produces": [
                     "application/json"
@@ -68,6 +78,11 @@
         },
         "/connectors": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns every recorded connector, ordered by id. Never includes a resolved secret value — only each secret reference's logical type/key.",
                 "produces": [
                     "application/json"
@@ -89,6 +104,11 @@
                 }
             },
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Creates a new connector: a persistent, named configuration for accessing an external system. type must match a connector type declared by an installed plugin's manifest.",
                 "consumes": [
                     "application/json"
@@ -135,6 +155,11 @@
         },
         "/connectors/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns one connector's configuration and secret references (never a resolved secret value).",
                 "produces": [
                     "application/json"
@@ -168,6 +193,11 @@
                 }
             },
             "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Removes a connector. There is no update endpoint (ADR-0020) — a caller that wants to change one recreates it, which is exactly what the dashboard's \"Modifier\" does under the hood.",
                 "tags": [
                     "connectors"
@@ -197,6 +227,11 @@
         },
         "/connectors/{id}/test": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Resolves the connector's configuration and secrets, then asks the installed plugin that declares its type to actually attempt a connection. Unlike GET /connectors/{id}, this calls into a live plugin process. A connection attempt that runs but fails (e.g. wrong password) is reported as ok=false, not an HTTP error.",
                 "produces": [
                     "application/json"
@@ -238,6 +273,11 @@
         },
         "/plugins": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns every installed plugin and the connector types/action ids its manifest declares — enough for a client to build a connector-type picker without a copy of the CLI's own catalog logic.",
                 "produces": [
                     "application/json"
@@ -261,6 +301,11 @@
         },
         "/runs": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns every recorded run, most recently created first.",
                 "produces": [
                     "application/json"
@@ -292,6 +337,11 @@
         },
         "/runs/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns one run's current status, outputs and steps — the counterpart to POST /workflows/{id}/run's immediate response, letting a client poll a run or fetch its final result once GET /runs/{id}/events has closed.",
                 "produces": [
                     "application/json"
@@ -327,6 +377,11 @@
         },
         "/runs/{id}/cancel": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Marks a run still queued or running as cancelled. Does not interrupt a run actively executing within this same process — it only flips its recorded status; an in-flight step keeps running until its next persistence checkpoint, where it then stops cleanly.",
                 "produces": [
                     "application/json"
@@ -368,6 +423,11 @@
         },
         "/runs/{id}/events": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Streams a run's status changes, and its steps', as Server-Sent Events until the run reaches a terminal status or the client disconnects. The \"event:\" field is \"run.\u003cstatus\u003e\" or \"step.\u003cstatus\u003e\"; \"data:\" is a JSON-encoded event payload.",
                 "produces": [
                     "text/event-stream"
@@ -429,6 +489,11 @@
         },
         "/workflows": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns every installed workflow version, most recently installed first. The same workflow id can appear more than once if multiple versions are installed (workflows are immutable once published — installing a new version never replaces an old one).",
                 "produces": [
                     "application/json"
@@ -452,6 +517,11 @@
         },
         "/workflows/{id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns one workflow version's full definition: its steps and raw YAML source. Defaults to the latest installed version.",
                 "produces": [
                     "application/json"
@@ -499,6 +569,11 @@
         },
         "/workflows/{id}/run": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Starts a new run of the latest installed version of the named workflow and returns immediately with its id and initial status — it does not wait for any step to execute. Watch GET /runs/{id}/events or poll GET /runs/{id} for progress and the final result.",
                 "consumes": [
                     "application/json"
@@ -906,6 +981,14 @@
                     "type": "integer"
                 }
             }
+        }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Admin token, if any has been created (see the top-level description). Pass as \"Bearer \u003ctoken\u003e\".",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }

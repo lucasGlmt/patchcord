@@ -249,6 +249,7 @@ func toWorkflowDetail(def *workflow.Definition, source string, catalog []plugins
 // @Tags         workflows
 // @Produce      json
 // @Success      200  {array}  workflowSummary
+// @Security     BearerAuth
 // @Router       /workflows [get]
 func handleListWorkflows(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -281,6 +282,7 @@ func handleListWorkflows(deps Deps) http.HandlerFunc {
 // @Success      200  {object}  workflowDetail
 // @Failure      400  {string}  string  "version is not a valid integer"
 // @Failure      404  {string}  string  "workflow not found"
+// @Security     BearerAuth
 // @Router       /workflows/{id} [get]
 func handleGetWorkflow(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -360,6 +362,7 @@ func handleGetWorkflow(deps Deps) http.HandlerFunc {
 // @Failure      400  {string}  string  "malformed request body, or inputs don't satisfy the workflow's declared schema"
 // @Failure      404  {string}  string  "workflow not found"
 // @Failure      500  {string}  string  "no action executor configured, or a persistence failure"
+// @Security     BearerAuth
 // @Router       /workflows/{id}/run [post]
 func handleRunWorkflow(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

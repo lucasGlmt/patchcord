@@ -31,6 +31,15 @@ There is no forced-kill fallback beyond the shutdown timeout in this version —
 | `--listen` | `127.0.0.1:7331` | Address the HTTP API binds to. |
 | `--data-dir` | `./data` | Directory holding the SQLite database (created if missing). |
 
+## Admin authentication
+
+The public API answers every request unauthenticated until an admin token exists — see [`patchcord auth`](commands/auth.md) and [ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md). Create one before binding `--listen` to anything beyond `127.0.0.1`:
+
+```bash
+patchcord auth token create ci --data-dir ./data
+patchcord serve --listen 0.0.0.0:7331 --data-dir ./data
+```
+
 ## What's not here yet
 
-TLS, a config file, and authentication beyond the session mechanism used by [Apps](../apps/index.md) are not part of this phase — see the roadmap in `CLAUDE.md` section 9 (phase 6, "server deployment").
+TLS and a config file are not part of this phase yet — see the roadmap in `CLAUDE.md` section 9 (phase 6, "server deployment").

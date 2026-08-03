@@ -31,7 +31,7 @@ const client = new PatchcordClient({ baseUrl, token });
 const run = await client.workflows.run("hello_patchcord", { inputs: { text: "hi" } });
 ```
 
-Every request this second client makes sends `Authorization: Bearer <token>`. Only `POST /v1/workflows/{id}/run` currently checks it — the agent limits that call to the workflow ids the session's app manifest declared under `workflows_run`, rejecting anything else with `403` ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)). Every other route (listing runs, listing workflows, ...) behaves the same with or without a token today, since the agent has no broader authentication story yet — see [Hosting & Sessions](hosting-and-sessions.md).
+Every request this second client makes sends `Authorization: Bearer <token>`. Only `POST /v1/workflows/{id}/run` accepts an app session — the agent limits that call to the workflow ids the session's app manifest declared under `workflows_run`, rejecting anything else with `403` ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)). Every other route (listing runs, listing workflows, ...) requires a full admin token instead, once one exists ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) — an app session is intentionally not enough to call them. See [Hosting & Sessions](hosting-and-sessions.md).
 
 ## Full example
 

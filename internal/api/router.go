@@ -37,8 +37,9 @@ type Deps struct {
 	// Sessions issues and validates the limited sessions installed
 	// applications use (vision document, section 15.4). Only dereferenced
 	// when a request actually presents an "Authorization: Bearer" header
-	// (withOptionalAppSession) or calls POST /apps/{id}/sessions — left nil,
-	// every other existing route keeps working exactly as before this
+	// that isn't a valid admin token (withRunAuth) or calls
+	// POST /apps/{id}/sessions — left nil, every other existing route keeps
+	// working exactly as before this
 	// package existed.
 	Sessions *auth.Store
 	// ConnectorTester attempts a live connection through a resolved
@@ -64,26 +65,35 @@ func (d Deps) logger() *slog.Logger {
 }
 
 // NewRouter returns the agent's public HTTP API handler.
+// NewRouter wires every route behind withAdminAuth (ADR-0036) except three
+// deliberate exceptions: GET /v1/system/health (a liveness check has to
+// answer before any caller could prove who it is), GET /v1/openapi.json
+// (public API documentation, same convention as an authenticated API's docs
+// page), and GET /apps/{id}/ (serves an installed application's own static
+// UI to whichever end user's browser loads it — that end user is never
+// expected to hold an admin token). POST /v1/workflows/{id}/run and
+// POST /v1/apps/{id}/sessions get their own dedicated wrapping — see
+// withRunAuth and handleCreateAppSession's doc comment.
 func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
-	mux.HandleFunc("GET /v1/workflows", handleListWorkflows(deps))
-	mux.HandleFunc("GET /v1/workflows/{id}", handleGetWorkflow(deps))
-	mux.HandleFunc("POST /v1/workflows/{id}/run", withOptionalAppSession(deps, handleRunWorkflow(deps)))
-	mux.HandleFunc("GET /v1/runs", handleListRuns(deps))
-	mux.HandleFunc("GET /v1/runs/{id}", handleGetRun(deps))
-	mux.HandleFunc("POST /v1/runs/{id}/cancel", handleCancelRun(deps))
-	mux.HandleFunc("GET /v1/runs/{id}/events", handleRunEvents(deps))
+	mux.HandleFunc("GET /v1/workflows", withAdminAuth(deps, handleListWorkflows(deps)))
+	mux.HandleFunc("GET /v1/workflows/{id}", withAdminAuth(deps, handleGetWorkflow(deps)))
+	mux.HandleFunc("POST /v1/workflows/{id}/run", withRunAuth(deps, handleRunWorkflow(deps)))
+	mux.HandleFunc("GET /v1/runs", withAdminAuth(deps, handleListRuns(deps)))
+	mux.HandleFunc("GET /v1/runs/{id}", withAdminAuth(deps, handleGetRun(deps)))
+	mux.HandleFunc("POST /v1/runs/{id}/cancel", withAdminAuth(deps, handleCancelRun(deps)))
+	mux.HandleFunc("GET /v1/runs/{id}/events", withAdminAuth(deps, handleRunEvents(deps)))
 	mux.HandleFunc("GET /v1/openapi.json", handleOpenAPISpec())
-	mux.HandleFunc("GET /v1/apps", handleListApps(deps))
-	mux.HandleFunc("POST /v1/apps/{id}/sessions", handleCreateAppSession(deps))
+	mux.HandleFunc("GET /v1/apps", withAdminAuth(deps, handleListApps(deps)))
+	mux.HandleFunc("POST /v1/apps/{id}/sessions", withAdminAuth(deps, handleCreateAppSession(deps)))
 	mux.HandleFunc("GET /apps/{id}/", handleServeApp(deps))
-	mux.HandleFunc("GET /v1/connectors", handleListConnectors(deps))
-	mux.HandleFunc("POST /v1/connectors", handleCreateConnector(deps))
-	mux.HandleFunc("GET /v1/connectors/{id}", handleGetConnector(deps))
-	mux.HandleFunc("DELETE /v1/connectors/{id}", handleDeleteConnector(deps))
-	mux.HandleFunc("POST /v1/connectors/{id}/test", handleTestConnector(deps))
-	mux.HandleFunc("GET /v1/plugins", handleListPlugins(deps))
+	mux.HandleFunc("GET /v1/connectors", withAdminAuth(deps, handleListConnectors(deps)))
+	mux.HandleFunc("POST /v1/connectors", withAdminAuth(deps, handleCreateConnector(deps)))
+	mux.HandleFunc("GET /v1/connectors/{id}", withAdminAuth(deps, handleGetConnector(deps)))
+	mux.HandleFunc("DELETE /v1/connectors/{id}", withAdminAuth(deps, handleDeleteConnector(deps)))
+	mux.HandleFunc("POST /v1/connectors/{id}/test", withAdminAuth(deps, handleTestConnector(deps)))
+	mux.HandleFunc("GET /v1/plugins", withAdminAuth(deps, handleListPlugins(deps)))
 	return withCORS(mux)
 }
 

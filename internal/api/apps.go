@@ -36,6 +36,7 @@ func toAppSummary(app apps.App) appSummary {
 // @Tags         apps
 // @Produce      json
 // @Success      200  {array}  appSummary
+// @Security     BearerAuth
 // @Router       /apps [get]
 func handleListApps(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -56,10 +57,12 @@ func handleListApps(deps Deps) http.HandlerFunc {
 
 // handleCreateAppSession issues a new session for the named application,
 // limited to its manifest's declared permissions (vision document, section
-// 15.4). It requires no credential of its own — the agent has no
-// admin-level authentication anywhere else yet either (see withCORS's doc
-// comment), so this endpoint inherits that same, already-documented gap
-// rather than inventing a partial one just for applications (ADR-0026).
+// 15.4). Wrapped in withAdminAuth by the router: anyone able to mint a
+// session for an arbitrary installed app is exactly the gap ADR-0026 flagged
+// as needing to be closed once admin authentication existed (ADR-0036) — so
+// once at least one admin token has been created, only an admin may issue
+// one. Before then, this endpoint keeps ADR-0026's original, still-valid
+// default-open behavior.
 // @Summary      Issue an application session
 // @Description  Issues a new session for the named application, limited to its manifest's declared permissions. The token is a bearer credential: pass it as "Authorization: Bearer <token>" to POST /workflows/{id}/run.
 // @Tags         apps
@@ -67,6 +70,7 @@ func handleListApps(deps Deps) http.HandlerFunc {
 // @Param        id   path  string  true  "App id"
 // @Success      201  {object}  appSessionResponse
 // @Failure      404  {string}  string  "app not found"
+// @Security     BearerAuth
 // @Router       /apps/{id}/sessions [post]
 func handleCreateAppSession(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -131,36 +135,28 @@ func bearerToken(r *http.Request) (string, bool) {
 	return token, true
 }
 
-// withOptionalAppSession only checks an application session's permissions
-// when the request actually presents one — a request with no Authorization
-// header reaches next exactly as before this package existed. This keeps
-// the rest of the public API's current, already-documented lack of
-// authentication unchanged (ADR-0026) while giving an installed
-// application's session something real to be limited by.
-func withOptionalAppSession(deps Deps, next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token, ok := bearerToken(r)
-		if !ok {
-			next(w, r)
-			return
-		}
-		if deps.Sessions == nil {
-			http.Error(w, "app session: no session store configured", http.StatusInternalServerError)
-			return
-		}
-
-		session, err := deps.Sessions.Validate(token)
-		if err != nil {
-			http.Error(w, "app session: "+err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		workflowID := r.PathValue("id")
-		if !session.CanRunWorkflow(workflowID) {
-			http.Error(w, fmt.Sprintf("app %q is not permitted to run workflow %q", session.AppID, workflowID), http.StatusForbidden)
-			return
-		}
-
-		next(w, r)
+// appSessionAllowsRun validates token as an application session and reports
+// whether it is permitted to run the workflow named by the request's {id}
+// path value — the two ways it can say no are distinguished by status: an
+// unknown/expired token is 401, a valid session for the wrong workflow is
+// 403. Shared by withRunAuth (adminauth.go) between its "no admin token
+// exists yet" branch (ADR-0026's original behavior) and its "does this
+// bearer token happen to be a valid app session" fallback once admin
+// authentication is enabled (ADR-0036).
+func appSessionAllowsRun(deps Deps, r *http.Request, token string) (ok bool, status int, msg string) {
+	if deps.Sessions == nil {
+		return false, http.StatusInternalServerError, "app session: no session store configured"
 	}
+
+	session, err := deps.Sessions.Validate(token)
+	if err != nil {
+		return false, http.StatusUnauthorized, "app session: " + err.Error()
+	}
+
+	workflowID := r.PathValue("id")
+	if !session.CanRunWorkflow(workflowID) {
+		return false, http.StatusForbidden, fmt.Sprintf("app %q is not permitted to run workflow %q", session.AppID, workflowID)
+	}
+
+	return true, 0, ""
 }

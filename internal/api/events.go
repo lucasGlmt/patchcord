@@ -31,6 +31,7 @@ type runEventPayload struct {
 // @Param        id   path  string  true  "Run id"
 // @Success      200  {string}  string  "text/event-stream"
 // @Failure      404  {string}  string  "run not found"
+// @Security     BearerAuth
 // @Router       /runs/{id}/events [get]
 func handleRunEvents(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

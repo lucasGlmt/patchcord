@@ -71,6 +71,7 @@ type connectorTestResponse struct {
 // @Tags         connectors
 // @Produce      json
 // @Success      200  {array}  connectorSummary
+// @Security     BearerAuth
 // @Router       /connectors [get]
 func handleListConnectors(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +97,7 @@ func handleListConnectors(deps Deps) http.HandlerFunc {
 // @Param        id   path  string  true  "Connector id"
 // @Success      200  {object}  connectorSummary
 // @Failure      404  {string}  string  "connector not found"
+// @Security     BearerAuth
 // @Router       /connectors/{id} [get]
 func handleGetConnector(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +126,7 @@ func handleGetConnector(deps Deps) http.HandlerFunc {
 // @Success      201  {object}  connectorSummary
 // @Failure      400  {string}  string  "malformed request body, or the connector is invalid (empty id/type, unknown type, unsupported secret reference type)"
 // @Failure      409  {string}  string  "a connector with this id already exists"
+// @Security     BearerAuth
 // @Router       /connectors [post]
 func handleCreateConnector(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +171,7 @@ func handleCreateConnector(deps Deps) http.HandlerFunc {
 // @Param        id   path  string  true  "Connector id"
 // @Success      204  "deleted"
 // @Failure      404  {string}  string  "connector not found"
+// @Security     BearerAuth
 // @Router       /connectors/{id} [delete]
 func handleDeleteConnector(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -195,6 +199,7 @@ func handleDeleteConnector(deps Deps) http.HandlerFunc {
 // @Success      200  {object}  connectorTestResponse
 // @Failure      404  {string}  string  "connector not found"
 // @Failure      500  {string}  string  "no connector tester configured, a secret failed to resolve, or the plugin call itself failed"
+// @Security     BearerAuth
 // @Router       /connectors/{id}/test [post]
 func handleTestConnector(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

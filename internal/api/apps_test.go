@@ -124,6 +124,40 @@ func TestHandleCreateAppSession_IssuesATokenScopedToPermissions(t *testing.T) {
 	}
 }
 
+func TestHandleCreateAppSession_RequiresAdminTokenOnceOneExists(t *testing.T) {
+	db := openMigratedTestDB(t)
+	installTestApp(t, db, "dashboard", "hello_patchcord")
+	if _, _, err := auth.CreateToken(context.Background(), db, "ci"); err != nil {
+		t.Fatalf("CreateToken() error = %v", err)
+	}
+	router := NewRouter(Deps{DB: db, Sessions: auth.NewStore()})
+
+	t.Run("no Authorization header is rejected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/v1/apps/dashboard/sessions", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
+	})
+
+	t.Run("a valid admin token is accepted", func(t *testing.T) {
+		plaintext, _, err := auth.CreateToken(context.Background(), db, "second")
+		if err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/apps/dashboard/sessions", nil)
+		req.Header.Set("Authorization", "Bearer "+plaintext)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusCreated, rec.Body.String())
+		}
+	})
+}
+
 func TestHandleServeApp(t *testing.T) {
 	t.Run("serves the app's static files", func(t *testing.T) {
 		db := openMigratedTestDB(t)
@@ -160,8 +194,8 @@ func TestHandleServeApp(t *testing.T) {
 	})
 }
 
-func TestWithOptionalAppSession(t *testing.T) {
-	t.Run("no Authorization header reaches the handler unrestricted", func(t *testing.T) {
+func TestWithRunAuth(t *testing.T) {
+	t.Run("no Authorization header reaches the handler unrestricted while no admin token exists", func(t *testing.T) {
 		db := openMigratedTestDB(t)
 		knownActions := map[string]struct{}{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
@@ -179,7 +213,7 @@ func TestWithOptionalAppSession(t *testing.T) {
 		waitForRunToFinish(t, db, rec.Body)
 	})
 
-	t.Run("an invalid token is rejected", func(t *testing.T) {
+	t.Run("an invalid token is rejected even while no admin token exists", func(t *testing.T) {
 		db := openMigratedTestDB(t)
 		knownActions := map[string]struct{}{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
@@ -238,6 +272,95 @@ func TestWithOptionalAppSession(t *testing.T) {
 			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
 		}
 		waitForRunToFinish(t, db, rec.Body)
+	})
+
+	t.Run("once an admin token exists, no Authorization header is rejected", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		if _, _, err := auth.CreateToken(context.Background(), db, "ci"); err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: auth.NewStore()})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/hello_patchcord/run", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
+	})
+
+	t.Run("once an admin token exists, that admin token reaches the handler", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		plaintext, _, err := auth.CreateToken(context.Background(), db, "ci")
+		if err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: auth.NewStore()})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/hello_patchcord/run", nil)
+		req.Header.Set("Authorization", "Bearer "+plaintext)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		waitForRunToFinish(t, db, rec.Body)
+	})
+
+	t.Run("once an admin token exists, a scoped app session still reaches the handler", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		if _, _, err := auth.CreateToken(context.Background(), db, "ci"); err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		app := installTestApp(t, db, "dashboard", "hello_patchcord")
+		sessions := auth.NewStore()
+		session := sessions.Issue(*app)
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: sessions})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/hello_patchcord/run", nil)
+		req.Header.Set("Authorization", "Bearer "+session.Token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		waitForRunToFinish(t, db, rec.Body)
+	})
+
+	t.Run("once an admin token exists, an unrecognized bearer token is rejected", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		if _, _, err := auth.CreateToken(context.Background(), db, "ci"); err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: auth.NewStore()})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/hello_patchcord/run", nil)
+		req.Header.Set("Authorization", "Bearer not-a-real-token")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		}
 	})
 }
 

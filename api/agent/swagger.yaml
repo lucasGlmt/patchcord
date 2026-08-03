@@ -255,10 +255,9 @@ definitions:
     type: object
 info:
   contact: {}
-  description: Public HTTP API for the Patchcord agent (vision document, section 10.1).
-    Covers workflow triggering and run observability, connector CRUD and testing,
-    application hosting, and a read-only plugin catalog listing; the rest of the vision
-    document's API surface (actions, full plugin management) is not implemented yet.
+  description: |-
+    Public HTTP API for the Patchcord agent (vision document, section 10.1). Covers workflow triggering and run observability, connector CRUD and testing, application hosting, and a read-only plugin catalog listing; the rest of the vision document's API surface (actions, full plugin management) is not implemented yet.
+    Every route marked with a lock icon below requires "Authorization: Bearer <admin token>" — but only once at least one admin token has been created (`patchcord auth token create`); a fresh agent answers every request unauthenticated, exactly as before this existed (ADR-0036).
   title: Patchcord Agent API
   version: "1"
 paths:
@@ -275,6 +274,8 @@ paths:
             items:
               $ref: '#/definitions/api.appSummary'
             type: array
+      security:
+      - BearerAuth: []
       summary: List installed applications
       tags:
       - apps
@@ -300,6 +301,8 @@ paths:
           description: app not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Issue an application session
       tags:
       - apps
@@ -316,6 +319,8 @@ paths:
             items:
               $ref: '#/definitions/api.connectorSummary'
             type: array
+      security:
+      - BearerAuth: []
       summary: List connectors
       tags:
       - connectors
@@ -348,6 +353,8 @@ paths:
           description: a connector with this id already exists
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Create a connector
       tags:
       - connectors
@@ -369,6 +376,8 @@ paths:
           description: connector not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Delete a connector
       tags:
       - connectors
@@ -392,6 +401,8 @@ paths:
           description: connector not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Get a connector
       tags:
       - connectors
@@ -424,6 +435,8 @@ paths:
             or the plugin call itself failed
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Test a connector
       tags:
       - connectors
@@ -441,6 +454,8 @@ paths:
             items:
               $ref: '#/definitions/api.pluginSummary'
             type: array
+      security:
+      - BearerAuth: []
       summary: List installed plugins
       tags:
       - plugins
@@ -461,6 +476,8 @@ paths:
             items:
               $ref: '#/definitions/api.runSummary'
             type: array
+      security:
+      - BearerAuth: []
       summary: List runs
       tags:
       - runs
@@ -486,6 +503,8 @@ paths:
           description: run not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Get a run
       tags:
       - runs
@@ -516,6 +535,8 @@ paths:
           description: run has already finished
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Cancel a run
       tags:
       - runs
@@ -542,6 +563,8 @@ paths:
           description: run not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Stream a run's events
       tags:
       - runs
@@ -577,6 +600,8 @@ paths:
             items:
               $ref: '#/definitions/api.workflowSummary'
             type: array
+      security:
+      - BearerAuth: []
       summary: List installed workflows
       tags:
       - workflows
@@ -609,6 +634,8 @@ paths:
           description: workflow not found
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Get a workflow version's definition
       tags:
       - workflows
@@ -651,7 +678,16 @@ paths:
           description: no action executor configured, or a persistence failure
           schema:
             type: string
+      security:
+      - BearerAuth: []
       summary: Trigger a workflow run
       tags:
       - workflows
+securityDefinitions:
+  BearerAuth:
+    description: Admin token, if any has been created (see the top-level description).
+      Pass as "Bearer <token>".
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

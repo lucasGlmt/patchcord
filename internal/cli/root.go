@@ -20,6 +20,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newWorkflowCommand())
 	root.AddCommand(newRunCommand())
 	root.AddCommand(newAppCommand())
+	root.AddCommand(newAuthCommand())
 
 	return root
 }

@@ -2,7 +2,7 @@
 
 ## An app never gets the agent's full privileges
 
-Every request the public API serves today has no admin authentication at all ([ADR-0024](../../../adr/0024-declenchement-asynchrone-workflows-api-http.md), `internal/api/router.go`'s `withCORS` doc comment). Applications get something narrower, deliberately built to be additive rather than a workaround for that gap: a **session**, issued for one installed app id, carrying exactly the permissions that app's manifest declared — nothing else, and never the ability to do anything a session-less request couldn't already do ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)).
+Admin authentication ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) is opt-in — a fresh agent answers every request unauthenticated until an admin token exists — and full, unscoped access is not what an application should hold anyway. Applications get something narrower instead, deliberately built to be additive rather than a workaround for the admin-auth gap that predated it ([ADR-0024](../../../adr/0024-declenchement-asynchrone-workflows-api-http.md)): a **session**, issued for one installed app id, carrying exactly the permissions that app's manifest declared — nothing else, and never the ability to do anything a session-less request couldn't already do while admin auth is off ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)).
 
 ```text
 patchcord-app.yaml          →  AppPermissions{WorkflowsRun: [...]}

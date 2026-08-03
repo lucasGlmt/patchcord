@@ -26,6 +26,7 @@ func toPluginSummary(entry plugins.CatalogEntry) pluginSummary {
 // @Tags         plugins
 // @Produce      json
 // @Success      200  {array}  pluginSummary
+// @Security     BearerAuth
 // @Router       /plugins [get]
 func handleListPlugins(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
