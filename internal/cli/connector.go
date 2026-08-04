@@ -147,6 +147,7 @@ func newConnectorListCommand() *cobra.Command {
 
 func newConnectorInspectCommand() *cobra.Command {
 	var dataDir string
+	var secretsMasterKeyFile string
 
 	cmd := &cobra.Command{
 		Use:   "inspect <id>",
@@ -162,6 +163,11 @@ func newConnectorInspectCommand() *cobra.Command {
 				return err
 			}
 			defer db.Close()
+
+			store, err := secrets.BuildStore(dataDir, secretsMasterKeyFile)
+			if err != nil {
+				return fmt.Errorf("inspect connector: %w", err)
+			}
 
 			conn, err := connectors.Get(cmd.Context(), db, args[0])
 			if errors.Is(err, connectors.ErrNotFound) {
@@ -188,7 +194,6 @@ func newConnectorInspectCommand() *cobra.Command {
 			if len(conn.SecretRefs) == 0 {
 				fmt.Fprintln(out, "  (none)")
 			}
-			store := secrets.EnvStore{}
 			for _, name := range sortedSecretRefKeys(conn.SecretRefs) {
 				ref := conn.SecretRefs[name]
 				if _, err := store.Resolve(cmd.Context(), ref); err != nil {
@@ -203,12 +208,14 @@ func newConnectorInspectCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE)")
 
 	return cmd
 }
 
 func newConnectorTestCommand() *cobra.Command {
 	var dataDir string
+	var secretsMasterKeyFile string
 
 	cmd := &cobra.Command{
 		Use:   "test <id>",
@@ -229,7 +236,12 @@ func newConnectorTestCommand() *cobra.Command {
 			}
 			defer db.Close()
 
-			resolved, err := connectors.Resolve(cmd.Context(), db, args[0], secrets.EnvStore{})
+			store, err := secrets.BuildStore(dataDir, secretsMasterKeyFile)
+			if err != nil {
+				return fmt.Errorf("test connector: %w", err)
+			}
+
+			resolved, err := connectors.Resolve(cmd.Context(), db, args[0], store)
 			if errors.Is(err, connectors.ErrNotFound) {
 				return fmt.Errorf("test connector: %q was not found", args[0])
 			}
@@ -272,6 +284,7 @@ func newConnectorTestCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE)")
 
 	return cmd
 }

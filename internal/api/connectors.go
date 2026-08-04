@@ -210,7 +210,7 @@ func handleTestConnector(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		resolved, err := connectors.Resolve(r.Context(), deps.DB, id, secrets.EnvStore{})
+		resolved, err := connectors.Resolve(r.Context(), deps.DB, id, deps.secrets())
 		if errors.Is(err, connectors.ErrNotFound) {
 			http.Error(w, fmt.Sprintf("connector %q was not found", id), http.StatusNotFound)
 			return

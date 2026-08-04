@@ -407,7 +407,7 @@ func startRunAndRespond(w http.ResponseWriter, r *http.Request, deps Deps, workf
 	}
 
 	go func() {
-		if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, bindings, runs.ExecuteOptions{}); err != nil {
+		if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, bindings, runs.ExecuteOptions{Secrets: deps.secrets()}); err != nil {
 			deps.logger().Error("continue run",
 				slog.String("run_id", run.ID),
 				slog.String("workflow_id", workflowID),

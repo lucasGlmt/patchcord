@@ -18,6 +18,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/scheduler"
+	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -29,6 +30,11 @@ type Config struct {
 	ListenAddr string
 	// DataDir holds the agent's SQLite database, created if it doesn't exist.
 	DataDir string
+	// SecretsMasterKeyFile points to the file holding the base64 AES-256
+	// master key for the "file" secret store. Left empty, "file" secret
+	// references simply don't resolve on this agent — see
+	// secrets.BuildStore and ADR-0040.
+	SecretsMasterKeyFile string
 	// ShutdownTimeout bounds how long in-flight requests are given to
 	// complete once shutdown starts. Defaults to 10s when zero.
 	ShutdownTimeout time.Duration
@@ -75,6 +81,13 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("bind listen address %q: %w", cfg.ListenAddr, err)
 	}
 
+	secretStore, err := secrets.BuildStore(cfg.DataDir, cfg.SecretsMasterKeyFile)
+	if err != nil {
+		_ = listener.Close()
+		_ = db.Close()
+		return nil, fmt.Errorf("build secrets store: %w", err)
+	}
+
 	supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
 	if err := supervisor.Start(context.Background(), db); err != nil {
 		_ = listener.Close()
@@ -93,7 +106,7 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 	// The scheduler fires "schedule"-triggered workflows (ADR-0035) the same
 	// way handleRunWorkflow fires a manual one — under runCtx, so it shares
 	// the same shutdown-cancellation behavior.
-	go scheduler.NewRunner(db, supervisor, logger).Run(runCtx)
+	go scheduler.NewRunner(db, supervisor, logger, secretStore).Run(runCtx)
 
 	return &Agent{
 		cfg:    cfg,
@@ -105,6 +118,7 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 			Logger:          logger,
 			Sessions:        auth.NewStore(),
 			ConnectorTester: supervisor,
+			Secrets:         secretStore,
 		})},
 		listener:   listener,
 		db:         db,

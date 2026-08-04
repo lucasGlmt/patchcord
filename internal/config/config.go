@@ -17,8 +17,9 @@ import (
 )
 
 const (
-	envListen  = "PATCHCORD_LISTEN"
-	envDataDir = "PATCHCORD_DATA_DIR"
+	envListen               = "PATCHCORD_LISTEN"
+	envDataDir              = "PATCHCORD_DATA_DIR"
+	envSecretsMasterKeyFile = "PATCHCORD_SECRETS_MASTER_KEY_FILE"
 )
 
 // Config holds the subset of runtime.Config that can come from a file or
@@ -27,6 +28,11 @@ const (
 type Config struct {
 	Listen  string `yaml:"listen"`
 	DataDir string `yaml:"data_dir"`
+	// SecretsMasterKeyFile points to the file holding the base64 AES-256
+	// master key for the "file" secret store (secrets.FileStore). Left
+	// empty, the "file" secret reference type is simply not available on
+	// this agent — see ADR-0040.
+	SecretsMasterKeyFile string `yaml:"secrets_master_key_file"`
 }
 
 // Load reads and parses a YAML config file. Unknown top-level keys are
@@ -50,13 +56,15 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// FromEnv reads PATCHCORD_LISTEN and PATCHCORD_DATA_DIR. An unset variable
-// leaves the corresponding field empty, so Merge falls through to a
-// lower-precedence source for it.
+// FromEnv reads PATCHCORD_LISTEN, PATCHCORD_DATA_DIR and
+// PATCHCORD_SECRETS_MASTER_KEY_FILE. An unset variable leaves the
+// corresponding field empty, so Merge falls through to a lower-precedence
+// source for it.
 func FromEnv() Config {
 	return Config{
-		Listen:  os.Getenv(envListen),
-		DataDir: os.Getenv(envDataDir),
+		Listen:               os.Getenv(envListen),
+		DataDir:              os.Getenv(envDataDir),
+		SecretsMasterKeyFile: os.Getenv(envSecretsMasterKeyFile),
 	}
 }
 
@@ -70,6 +78,9 @@ func Merge(base, override Config) Config {
 	}
 	if override.DataDir != "" {
 		base.DataDir = override.DataDir
+	}
+	if override.SecretsMasterKeyFile != "" {
+		base.SecretsMasterKeyFile = override.SecretsMasterKeyFile
 	}
 	return base
 }

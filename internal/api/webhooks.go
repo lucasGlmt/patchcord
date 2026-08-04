@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	"github.com/lucasglmt/patchcord/internal/runs"
-	"github.com/lucasglmt/patchcord/internal/secrets"
 )
 
 // webhookTokenHeader is the header an inbound webhook request must present
@@ -61,7 +60,7 @@ func handleWebhookTrigger(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		expected, err := (secrets.EnvStore{}).Resolve(r.Context(), def.Trigger.SecretRef)
+		expected, err := deps.secrets().Resolve(r.Context(), def.Trigger.SecretRef)
 		if err != nil {
 			http.Error(w, "webhook trigger: resolve secret_ref: "+err.Error(), http.StatusInternalServerError)
 			return

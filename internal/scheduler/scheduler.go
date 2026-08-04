@@ -17,6 +17,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -111,14 +112,22 @@ type Runner struct {
 	db       *sql.DB
 	executor runs.ActionExecutor
 	logger   *slog.Logger
+	secrets  secrets.Store
 }
 
-// NewRunner builds a Runner. logger defaults to slog.Default() when nil.
-func NewRunner(db *sql.DB, executor runs.ActionExecutor, logger *slog.Logger) *Runner {
+// NewRunner builds a Runner. logger defaults to slog.Default() when nil,
+// secretStore to secrets.EnvStore{} when nil — same default a directly
+// built runs.ExecuteOptions{} falls back to, so a scheduled run resolves
+// connector secrets exactly like a manual one unless the caller wires in
+// the agent's configured secrets.MultiStore (internal/runtime.NewAgent).
+func NewRunner(db *sql.DB, executor runs.ActionExecutor, logger *slog.Logger, secretStore secrets.Store) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Runner{db: db, executor: executor, logger: logger}
+	if secretStore == nil {
+		secretStore = secrets.EnvStore{}
+	}
+	return &Runner{db: db, executor: executor, logger: logger, secrets: secretStore}
 }
 
 // Run polls for due schedules immediately, then every pollInterval, until
@@ -236,7 +245,7 @@ func (r *Runner) fire(ctx context.Context, s scheduleRow, now time.Time) {
 	}
 
 	go func() {
-		if _, err := runs.Execute(ctx, r.db, r.executor, s.WorkflowID, map[string]any{}, map[string]string{}, runs.ExecuteOptions{}); err != nil {
+		if _, err := runs.Execute(ctx, r.db, r.executor, s.WorkflowID, map[string]any{}, map[string]string{}, runs.ExecuteOptions{Secrets: r.secrets}); err != nil {
 			r.logger.Error("scheduled run failed", slog.String("workflow_id", s.WorkflowID), slog.String("error", err.Error()))
 		}
 	}()

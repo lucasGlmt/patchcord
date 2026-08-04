@@ -43,11 +43,20 @@ type ExecuteOptions struct {
 	// combined, not one budget per item — so a long list needs a StepTimeout
 	// sized for all of its iterations together.
 	StepTimeout time.Duration
+	// Secrets resolves a step's bound connector's secret references.
+	// Defaults to secrets.EnvStore{} when nil, so existing callers that
+	// build ExecuteOptions{} directly (or only set StepTimeout) keep
+	// resolving "env" references exactly as before secrets.MultiStore
+	// existed.
+	Secrets secrets.Store
 }
 
 func (o ExecuteOptions) withDefaults() ExecuteOptions {
 	if o.StepTimeout <= 0 {
 		o.StepTimeout = DefaultStepTimeout
+	}
+	if o.Secrets == nil {
+		o.Secrets = secrets.EnvStore{}
 	}
 	return o
 }
@@ -56,12 +65,12 @@ func (o ExecuteOptions) withDefaults() ExecuteOptions {
 // one, looks it up — shared by the regular step path and the foreach path,
 // since a step's bound connector is resolved once regardless of how many
 // times (zero, for an empty connector) its action ends up being called.
-func resolveStepConnector(ctx context.Context, db *sql.DB, connector string, exprCtx workflow.ExprContext) (*connectors.ResolvedConnector, error) {
+func resolveStepConnector(ctx context.Context, db *sql.DB, connector string, exprCtx workflow.ExprContext, store secrets.Store) (*connectors.ResolvedConnector, error) {
 	connectorID, err := workflow.ResolveConnector(connector, exprCtx)
 	if err != nil || connectorID == "" {
 		return nil, err
 	}
-	return connectors.Resolve(ctx, db, connectorID, secrets.EnvStore{})
+	return connectors.Resolve(ctx, db, connectorID, store)
 }
 
 // stepFailureStatus reports the terminal status a step should record for
@@ -252,7 +261,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 			// it once, the same way a non-foreach step does.
 			var resolvedConnector *connectors.ResolvedConnector
 			if foreachErr == nil {
-				resolvedConnector, foreachErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx)
+				resolvedConnector, foreachErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets)
 			}
 
 			if foreachErr != nil {
@@ -324,7 +333,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		var resolvedConnector *connectors.ResolvedConnector
 		if resolveErr == nil {
-			resolvedConnector, resolveErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx)
+			resolvedConnector, resolveErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets)
 		}
 
 		if resolveErr != nil {

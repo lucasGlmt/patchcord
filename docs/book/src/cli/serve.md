@@ -30,7 +30,8 @@ There is no forced-kill fallback beyond the shutdown timeout in this version —
 |---|---|---|
 | `--listen` | `127.0.0.1:7331` | Address the HTTP API binds to. Also settable via `PATCHCORD_LISTEN` or a `--config` file's `listen` key — see [Configuration](configuration.md). |
 | `--data-dir` | `./data` | Directory holding the SQLite database (created if missing). Also settable via `PATCHCORD_DATA_DIR` or a `--config` file's `data_dir` key. |
-| `--config` | (none) | Path to a YAML file providing `listen`/`data_dir` — the lowest-precedence source; a flag or environment variable always overrides it. See [Configuration](configuration.md). |
+| `--secrets-master-key-file` | (none) | Path to the file holding the base64 AES-256 master key for the `file` secret store. Also settable via `PATCHCORD_SECRETS_MASTER_KEY_FILE` or a `--config` file's `secrets_master_key_file` key. Left unset, `file` secret references don't resolve. See [Configuration](configuration.md) and [ADR-0040](../../../adr/0040-secret-providers-keychain-et-fichier-aes.md). |
+| `--config` | (none) | Path to a YAML file providing `listen`/`data_dir`/`secrets_master_key_file` — the lowest-precedence source; a flag or environment variable always overrides it. See [Configuration](configuration.md). |
 
 ## Admin authentication
 
@@ -61,6 +62,18 @@ docker compose restart patchcord   # picks up the newly installed plugin
 ```
 
 See [ADR-0039](../../../adr/0039-image-docker-multi-stage-distroless.md) for the full set of packaging decisions (base image, why nothing is baked in beyond the binary and the default config, why `./bin/plugins` rather than `./plugins`).
+
+### Secrets in a container
+
+A `keychain` secret reference (see [Secrets & Validation](../plugins/connectors/secrets-and-validation.md)) typically fails to resolve in a container — no Secret Service daemon runs in a headless Linux image. Use `file` instead:
+
+```bash
+patchcord secret keygen > ./data/secrets.key
+docker compose exec patchcord patchcord secret set --type file PG_PASSWORD \
+  --data-dir /data --secrets-master-key-file /data/secrets.key
+```
+
+...then pass `--secrets-master-key-file /data/secrets.key` (or `PATCHCORD_SECRETS_MASTER_KEY_FILE`) to the `patchcord serve` command the container runs, so the running agent can resolve `file:PG_PASSWORD` references too.
 
 ## What's not here yet
 

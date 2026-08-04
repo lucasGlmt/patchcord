@@ -15,6 +15,7 @@
     - [run](cli/commands/run.md)
     - [app](cli/commands/app.md)
     - [auth](cli/commands/auth.md)
+    - [secret](cli/commands/secret.md)
 
 # Plugins
 

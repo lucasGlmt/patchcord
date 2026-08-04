@@ -22,6 +22,7 @@ func newServeCommand() *cobra.Command {
 	var listenAddr string
 	var dataDir string
 	var configPath string
+	var secretsMasterKeyFile string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -51,9 +52,16 @@ func newServeCommand() *cobra.Command {
 			if cmd.Flags().Changed("data-dir") {
 				flagCfg.DataDir = dataDir
 			}
+			if cmd.Flags().Changed("secrets-master-key-file") {
+				flagCfg.SecretsMasterKeyFile = secretsMasterKeyFile
+			}
 			resolved = config.Merge(resolved, flagCfg)
 
-			cfg := runtime.Config{ListenAddr: resolved.Listen, DataDir: resolved.DataDir}
+			cfg := runtime.Config{
+				ListenAddr:           resolved.Listen,
+				DataDir:              resolved.DataDir,
+				SecretsMasterKeyFile: resolved.SecretsMasterKeyFile,
+			}
 			agent, err := runtime.NewAgent(cfg, logger)
 			if err != nil {
 				return fmt.Errorf("create agent: %w", err)
@@ -69,6 +77,7 @@ func newServeCommand() *cobra.Command {
 	cmd.Flags().StringVar(&listenAddr, "listen", defaultListenAddr, "address the agent's HTTP API listens on (env PATCHCORD_LISTEN)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&configPath, "config", "", "path to a YAML config file — lowest-precedence source, see docs/book/src/cli/configuration.md")
+	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE) — see `patchcord secret keygen`")
 
 	return cmd
 }

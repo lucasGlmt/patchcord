@@ -29,6 +29,18 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("parses secrets_master_key_file", func(t *testing.T) {
+		path := writeConfigFile(t, "secrets_master_key_file: /run/secrets/patchcord-key\n")
+
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.SecretsMasterKeyFile != "/run/secrets/patchcord-key" {
+			t.Fatalf("SecretsMasterKeyFile = %q, want /run/secrets/patchcord-key", cfg.SecretsMasterKeyFile)
+		}
+	})
+
 	t.Run("a missing file is an error", func(t *testing.T) {
 		if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
 			t.Fatal("expected an error for a missing config file, got nil")
@@ -67,17 +79,18 @@ func TestFromEnv(t *testing.T) {
 	t.Run("reads set variables", func(t *testing.T) {
 		t.Setenv(envListen, "0.0.0.0:7331")
 		t.Setenv(envDataDir, "/data")
+		t.Setenv(envSecretsMasterKeyFile, "/run/secrets/patchcord-key")
 
 		cfg := FromEnv()
-		if cfg.Listen != "0.0.0.0:7331" || cfg.DataDir != "/data" {
-			t.Fatalf("FromEnv() = %+v, want Listen=0.0.0.0:7331 DataDir=/data", cfg)
+		if cfg.Listen != "0.0.0.0:7331" || cfg.DataDir != "/data" || cfg.SecretsMasterKeyFile != "/run/secrets/patchcord-key" {
+			t.Fatalf("FromEnv() = %+v, want Listen=0.0.0.0:7331 DataDir=/data SecretsMasterKeyFile=/run/secrets/patchcord-key", cfg)
 		}
 	})
 
 	t.Run("leaves fields empty when unset", func(t *testing.T) {
 		cfg := FromEnv()
-		if cfg.Listen != "" || cfg.DataDir != "" {
-			t.Fatalf("FromEnv() = %+v, want both fields empty", cfg)
+		if cfg.Listen != "" || cfg.DataDir != "" || cfg.SecretsMasterKeyFile != "" {
+			t.Fatalf("FromEnv() = %+v, want all fields empty", cfg)
 		}
 	})
 }
@@ -106,6 +119,12 @@ func TestMerge(t *testing.T) {
 			base:     Config{Listen: "127.0.0.1:7331", DataDir: "./data"},
 			override: Config{},
 			want:     Config{Listen: "127.0.0.1:7331", DataDir: "./data"},
+		},
+		{
+			name:     "override's secrets_master_key_file replaces base's",
+			base:     Config{SecretsMasterKeyFile: "/old/key"},
+			override: Config{SecretsMasterKeyFile: "/new/key"},
+			want:     Config{SecretsMasterKeyFile: "/new/key"},
 		},
 	}
 

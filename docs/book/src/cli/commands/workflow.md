@@ -48,6 +48,7 @@ Runs the latest installed version of a workflow synchronously in this process. T
 - `--input key=value` (repeatable) sets a workflow input.
 - `--binding name=connector-id` (repeatable) resolves a `${{ bindings.<name> }}` expression used by a step's `connector:` field — see [ADR-0021](../../../../adr/0021-binding-connecteur-workflow-protocole.md).
 - `--step-timeout` bounds each individual step's action call (default: `runs.DefaultStepTimeout`).
+- `--secrets-master-key-file` is needed if any bound connector has a `file`-typed secret reference (see [Configuration](../configuration.md)).
 - `Ctrl+C` cancels the run: remaining steps are marked `cancelled` rather than the process being killed mid-write.
 
 Prints the run ID, final status, error (if any), and outputs. A run that finishes `failed` is not a command error — `workflow run` exits 0 either way, the same distinction `connector test` makes between a failed test and a failed command.

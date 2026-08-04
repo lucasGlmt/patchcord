@@ -245,7 +245,7 @@ func TestRunner_fire(t *testing.T) {
 			}
 
 			executor := newRecordingExecutor()
-			r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 			row := scheduleRow{WorkflowID: def.ID, Cron: expr, OnMissed: tt.onMissed, NextRunAt: tt.nextRunAt}
 			r.fire(ctx, row, tt.now)
@@ -287,7 +287,7 @@ func TestRunner_tick_firesDueSchedule(t *testing.T) {
 	}
 
 	executor := newRecordingExecutor()
-	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	r.tick(ctx)
 
@@ -304,7 +304,7 @@ func TestRunner_tick_ignoresNotYetDueSchedule(t *testing.T) {
 	}
 
 	executor := newRecordingExecutor()
-	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 
 	r.tick(ctx)
 

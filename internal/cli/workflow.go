@@ -14,6 +14,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/scheduler"
+	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -208,6 +209,7 @@ func newWorkflowRunCommand() *cobra.Command {
 	var inputFlags map[string]string
 	var bindingFlags map[string]string
 	var stepTimeout time.Duration
+	var secretsMasterKeyFile string
 
 	cmd := &cobra.Command{
 		Use:   "run <workflow-id>",
@@ -250,7 +252,12 @@ func newWorkflowRunCommand() *cobra.Command {
 				inputs[k] = v
 			}
 
-			run, err := runs.Execute(ctx, db, supervisor, args[0], inputs, bindingFlags, runs.ExecuteOptions{StepTimeout: stepTimeout})
+			secretStore, err := secrets.BuildStore(dataDir, secretsMasterKeyFile)
+			if err != nil {
+				return fmt.Errorf("run workflow: %w", err)
+			}
+
+			run, err := runs.Execute(ctx, db, supervisor, args[0], inputs, bindingFlags, runs.ExecuteOptions{StepTimeout: stepTimeout, Secrets: secretStore})
 			if err != nil {
 				return fmt.Errorf("run workflow: %w", err)
 			}
@@ -271,6 +278,7 @@ func newWorkflowRunCommand() *cobra.Command {
 	cmd.Flags().StringToStringVar(&inputFlags, "input", nil, "workflow input as key=value, repeatable")
 	cmd.Flags().StringToStringVar(&bindingFlags, "binding", nil, "connector binding as name=connector-id, repeatable (see a step's connector: field)")
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", runs.DefaultStepTimeout, "maximum duration of a single step's action call")
+	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE)")
 
 	return cmd
 }

@@ -12,6 +12,8 @@ func TestValidateType(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "accepts env", typ: "env"},
+		{name: "accepts keychain", typ: "keychain"},
+		{name: "accepts file", typ: "file"},
 		{name: "rejects an unknown type", typ: "vault", wantErr: true},
 		{name: "rejects an empty type", typ: "", wantErr: true},
 		{name: "rejects a near-miss typo", typ: "emv", wantErr: true},

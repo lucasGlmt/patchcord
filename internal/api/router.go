@@ -9,6 +9,7 @@ import (
 	"github.com/lucasglmt/patchcord/api/agent"
 	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/secrets"
 )
 
 // Deps holds the dependencies the public HTTP API needs to serve requests.
@@ -48,6 +49,18 @@ type Deps struct {
 	// POST /connectors/{id}/test — left nil, that one endpoint fails clearly
 	// rather than panicking.
 	ConnectorTester ConnectorTester
+	// Secrets resolves connector and webhook trigger secret references.
+	// Defaults to secrets.EnvStore{} when nil, so existing callers that
+	// build Deps{DB: db} directly keep resolving "env" references exactly
+	// as before secrets.MultiStore existed (ADR-0040).
+	Secrets secrets.Store
+}
+
+func (d Deps) secrets() secrets.Store {
+	if d.Secrets != nil {
+		return d.Secrets
+	}
+	return secrets.EnvStore{}
 }
 
 func (d Deps) runCtx() context.Context {

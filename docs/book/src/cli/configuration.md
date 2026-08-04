@@ -1,6 +1,6 @@
 # Configuration
 
-`patchcord serve` accepts its settings from four layered sources, in increasing order of precedence: a built-in default, a `--config` YAML file, a `PATCHCORD_*` environment variable, then an explicitly passed flag ([ADR-0038](../../../adr/0038-configuration-serveur-fichier-yaml-precedence.md)). A flag you actually typed always wins over everything else; an unset flag falls through to the next source. Every other command (`plugin`, `connector`, `workflow`, `run`, `app`) only takes `--data-dir` as a plain flag — no file, no environment variable — see below.
+`patchcord serve` accepts its settings from four layered sources, in increasing order of precedence: a built-in default, a `--config` YAML file, a `PATCHCORD_*` environment variable, then an explicitly passed flag ([ADR-0038](../../../adr/0038-configuration-serveur-fichier-yaml-precedence.md)). A flag you actually typed always wins over everything else; an unset flag falls through to the next source. Every other command (`plugin`, `connector`, `workflow`, `run`, `app`, `secret`) only takes `--data-dir` (and, where relevant, `--secrets-master-key-file`) as plain flags — no file, no environment variable, except where noted below.
 
 ## `serve`'s layered settings
 
@@ -8,6 +8,7 @@
 |---|---|---|---|---|
 | Listen address | `--listen` | `PATCHCORD_LISTEN` | `listen` | `127.0.0.1:7331` |
 | Data directory | `--data-dir` | `PATCHCORD_DATA_DIR` | `data_dir` | `./data` |
+| Secrets master key file | `--secrets-master-key-file` | `PATCHCORD_SECRETS_MASTER_KEY_FILE` | `secrets_master_key_file` | *(unset — `file` secret references don't resolve)* |
 
 ```yaml
 # config.yaml
@@ -44,9 +45,13 @@ patchcord plugin list --data-dir ./data
 patchcord serve --data-dir ./data
 ```
 
+## `--secrets-master-key-file`
+
+Present on `serve` (layered, see above) and on the commands that resolve a `file` secret reference directly (`connector inspect`, `connector test`, `workflow run`, `secret set --type file`, `secret remove --type file`) — on these, a plain flag only, same convention as `--data-dir` outside of `serve`. Points at the file holding the base64 AES-256 master key `secrets.FileStore` decrypts `<data-dir>/secrets.vault` with (see [Plugins → Connectors → Secrets & Validation](../plugins/connectors/secrets-and-validation.md) and [ADR-0040](../../../adr/0040-secret-providers-keychain-et-fichier-aes.md)). Generate one with `patchcord secret keygen > /path/to/key`. Left unset, `file` secret references simply don't resolve — `env` and `keychain` are unaffected.
+
 ## Secret references
 
-The only other environment variable convention in the CLI is whatever a connector's or a workflow trigger's own secret reference points at (see [Plugins → Connectors → Secrets & Validation](../plugins/connectors/secrets-and-validation.md)) — unrelated to `serve`'s own configuration above.
+Beyond `--secrets-master-key-file`, the only other environment variable convention in the CLI is whatever an `env`-type connector's or workflow trigger's own secret reference points at (see [Plugins → Connectors → Secrets & Validation](../plugins/connectors/secrets-and-validation.md)) — unrelated to `serve`'s own configuration above.
 
 ## Command-specific flags
 
