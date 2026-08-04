@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/lucasglmt/patchcord/internal/apps"
+	"github.com/lucasglmt/patchcord/internal/signing"
+	"github.com/lucasglmt/patchcord/internal/trust"
 )
 
 func newAppCommand() *cobra.Command {
@@ -29,6 +32,7 @@ func newAppCommand() *cobra.Command {
 
 func newAppInstallCommand() *cobra.Command {
 	var dataDir string
+	var requireSignature bool
 
 	cmd := &cobra.Command{
 		Use:   "install <dir-or-package>",
@@ -52,12 +56,21 @@ func newAppInstallCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("install app: %w", err)
 			}
+			if requireSignature && info.IsDir() {
+				return fmt.Errorf("install app: --require-signature was given but %q is a directory, not a package — nothing to verify", args[0])
+			}
+
+			out := cmd.OutOrStdout()
 
 			var app *apps.App
 			if info.IsDir() {
 				app, err = apps.Install(cmd.Context(), db, args[0])
 			} else {
-				app, err = apps.InstallPackage(cmd.Context(), db, dataDir, args[0])
+				var policy trust.PolicyResult
+				app, policy, err = apps.InstallPackage(cmd.Context(), db, dataDir, args[0], requireSignature)
+				if err == nil {
+					defer printVerificationStatus(out, app.ID, policy)
+				}
 			}
 			if errors.Is(err, apps.ErrAlreadyExists) {
 				return fmt.Errorf("install app: %w", err)
@@ -66,13 +79,14 @@ func newAppInstallCommand() *cobra.Command {
 				return fmt.Errorf("install app: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed %s (%s)\n", app.ID, app.Version)
+			fmt.Fprintf(out, "Installed %s (%s)\n", app.ID, app.Version)
 
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
 }
@@ -115,18 +129,29 @@ func newAppDevCommand() *cobra.Command {
 
 func newAppPackCommand() *cobra.Command {
 	var output string
+	var signKeyPath string
 
 	cmd := &cobra.Command{
 		Use:   "pack <dir>",
 		Short: "Package an application directory into a .patchcord-app archive",
 		Long: "Packs dir (which must contain a patchcord-app.yaml manifest) into a\n" +
 			".patchcord-app archive (vision document, section 9.3) that `app install`\n" +
-			"can install directly.",
+			"can install directly. The result always carries a checksums.json;\n" +
+			"--sign-key (a private key from `patchcord key generate`) additionally\n" +
+			"signs it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifest, err := apps.LoadManifest(args[0])
 			if err != nil {
 				return fmt.Errorf("pack app: %w", err)
+			}
+
+			var key ed25519.PrivateKey
+			if signKeyPath != "" {
+				key, err = signing.LoadPrivateKey(signKeyPath)
+				if err != nil {
+					return fmt.Errorf("pack app: %w", err)
+				}
 			}
 
 			out := output
@@ -140,7 +165,7 @@ func newAppPackCommand() *cobra.Command {
 			}
 			defer f.Close()
 
-			if err := apps.Pack(args[0], f); err != nil {
+			if err := apps.Pack(args[0], key, f); err != nil {
 				return fmt.Errorf("pack app: %w", err)
 			}
 
@@ -151,6 +176,7 @@ func newAppPackCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>-<version>.patchcord-app in the current directory)")
+	cmd.Flags().StringVar(&signKeyPath, "sign-key", "", "path to a private key (from `patchcord key generate`) to sign the package with")
 
 	return cmd
 }

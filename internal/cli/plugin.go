@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/ed25519"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
+	"github.com/lucasglmt/patchcord/internal/signing"
+	"github.com/lucasglmt/patchcord/internal/trust"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -85,6 +88,7 @@ func isPackageArchive(path string) (bool, error) {
 
 func newPluginInstallCommand() *cobra.Command {
 	var dataDir string
+	var requireSignature bool
 
 	cmd := &cobra.Command{
 		Use:   "install <path>",
@@ -96,7 +100,10 @@ func newPluginInstallCommand() *cobra.Command {
 			"    agent's data directory, so the package file itself does not need\n" +
 			"    to stick around afterwards.\n\n" +
 			"The two are told apart by sniffing the file's content (gzip magic\n" +
-			"bytes), not its extension.",
+			"bytes), not its extension. --require-signature only applies to a\n" +
+			"package: it rejects one that is unsigned or signed by a key not yet\n" +
+			"`patchcord trust add`ed for its id, and errors immediately (nothing\n" +
+			"to verify) if path turns out to be a raw executable.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
@@ -109,10 +116,19 @@ func newPluginInstallCommand() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
 			}
+			if requireSignature && !isPackage {
+				return fmt.Errorf("install plugin: --require-signature was given but %q is a raw executable, not a package — nothing to verify", args[0])
+			}
+
+			out := cmd.OutOrStdout()
 
 			var entry *plugins.CatalogEntry
 			if isPackage {
-				entry, err = plugins.InstallPackage(cmd.Context(), db, dataDir, args[0])
+				var policy trust.PolicyResult
+				entry, policy, err = plugins.InstallPackage(cmd.Context(), db, dataDir, args[0], requireSignature)
+				if err == nil {
+					defer printVerificationStatus(out, entry.PluginID, policy)
+				}
 			} else {
 				entry, err = plugins.Install(cmd.Context(), db, args[0])
 			}
@@ -120,7 +136,6 @@ func newPluginInstallCommand() *cobra.Command {
 				return fmt.Errorf("install plugin: %w", err)
 			}
 
-			out := cmd.OutOrStdout()
 			fmt.Fprintf(out, "Installed %s@%s\n", entry.PluginID, entry.Version)
 			fmt.Fprintf(out, "  actions:     %s\n", joinOrNone(entry.Actions))
 			fmt.Fprintf(out, "  connectors:  %s\n", joinOrNone(entry.Connectors))
@@ -132,12 +147,14 @@ func newPluginInstallCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
 }
 
 func newPluginPackCommand() *cobra.Command {
 	var output string
+	var signKeyPath string
 
 	cmd := &cobra.Command{
 		Use:   "pack <dir>",
@@ -147,12 +164,22 @@ func newPluginPackCommand() *cobra.Command {
 			"a .patchcord-plugin archive that `plugin install` can install\n" +
 			"directly. Building the per-platform executables under dir (e.g. via\n" +
 			"GOOS/GOARCH cross-compilation) is left to the plugin's own build\n" +
-			"tooling — pack only archives what is already there.",
+			"tooling — pack only archives what is already there. The result\n" +
+			"always carries a checksums.json; --sign-key (a private key from\n" +
+			"`patchcord key generate`) additionally signs it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifest, err := plugins.LoadPackageManifest(args[0])
 			if err != nil {
 				return fmt.Errorf("pack plugin: %w", err)
+			}
+
+			var key ed25519.PrivateKey
+			if signKeyPath != "" {
+				key, err = signing.LoadPrivateKey(signKeyPath)
+				if err != nil {
+					return fmt.Errorf("pack plugin: %w", err)
+				}
 			}
 
 			out := output
@@ -166,7 +193,7 @@ func newPluginPackCommand() *cobra.Command {
 			}
 			defer f.Close()
 
-			if err := plugins.Pack(args[0], f); err != nil {
+			if err := plugins.Pack(args[0], key, f); err != nil {
 				return fmt.Errorf("pack plugin: %w", err)
 			}
 
@@ -177,6 +204,7 @@ func newPluginPackCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>-<version>.patchcord-plugin in the current directory)")
+	cmd.Flags().StringVar(&signKeyPath, "sign-key", "", "path to a private key (from `patchcord key generate`) to sign the package with")
 
 	return cmd
 }

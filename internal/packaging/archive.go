@@ -26,7 +26,25 @@ func Archive(sourceDir string, w io.Writer) error {
 	gz := gzip.NewWriter(w)
 	tw := tar.NewWriter(gz)
 
-	walkErr := filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
+	if err := writeDirToTar(tw, sourceDir); err != nil {
+		return fmt.Errorf("archive %q: %w", sourceDir, err)
+	}
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("archive %q: %w", sourceDir, err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("archive %q: %w", sourceDir, err)
+	}
+
+	return nil
+}
+
+// writeDirToTar walks sourceDir and writes every entry to tw, without
+// opening or closing tw itself — the shared core of Archive and
+// SignedArchive (sign.go), which differ only in what else they write to tw
+// before closing it.
+func writeDirToTar(tw *tar.Writer, sourceDir string) error {
+	return filepath.WalkDir(sourceDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -43,7 +61,7 @@ func Archive(sourceDir string, w io.Writer) error {
 			return err
 		}
 		if !info.Mode().IsRegular() && !d.IsDir() {
-			return fmt.Errorf("archive: %s: unsupported file type", rel)
+			return fmt.Errorf("%s: unsupported file type", rel)
 		}
 
 		header, err := tar.FileInfoHeader(info, "")
@@ -70,17 +88,22 @@ func Archive(sourceDir string, w io.Writer) error {
 		_, err = io.Copy(tw, f)
 		return err
 	})
-	if walkErr != nil {
-		return fmt.Errorf("archive %q: %w", sourceDir, walkErr)
-	}
-	if err := tw.Close(); err != nil {
-		return fmt.Errorf("archive %q: %w", sourceDir, err)
-	}
-	if err := gz.Close(); err != nil {
-		return fmt.Errorf("archive %q: %w", sourceDir, err)
-	}
+}
 
-	return nil
+// writeFileToTar writes a single synthetic regular-file entry (name,
+// content) to tw — used to inject checksums.json/signature.json, which
+// exist only in memory, never on disk in a package's source directory.
+func writeFileToTar(tw *tar.Writer, name string, content []byte) error {
+	header := &tar.Header{
+		Name: name,
+		Mode: 0o644,
+		Size: int64(len(content)),
+	}
+	if err := tw.WriteHeader(header); err != nil {
+		return err
+	}
+	_, err := tw.Write(content)
+	return err
 }
 
 // Extract extracts a gzip-compressed tar stream (as produced by Archive)

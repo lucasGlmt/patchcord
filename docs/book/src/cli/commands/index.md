@@ -10,4 +10,6 @@ Every command below accepts `--data-dir` (default `./data`); see [Configuration]
 | [`run`](run.md) | `list`, `inspect <run-id>`, `logs <run-id>`, `cancel <run-id>` |
 | [`app`](app.md) | `install <dir-or-package>`, `dev <dir>`, `pack <dir>`, `list`, `remove <id>` |
 | [`bundle`](bundle.md) | `install <path>`, `pack <dir>`, `list`, `inspect <id>` |
+| [`key`](key.md) | `generate` |
+| [`trust`](trust.md) | `add <id> <pubkey-path>`, `list [id]`, `remove <id> <pubkey-path>` |
 | [`auth`](auth.md) | `token create <name>`, `token list`, `token revoke <id>` |

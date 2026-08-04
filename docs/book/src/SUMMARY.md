@@ -8,6 +8,7 @@
 - [Installation](cli/installation.md)
 - [Configuration](cli/configuration.md)
 - [Serving the Agent](cli/serve.md)
+- [Package Signing & Trust](cli/package-signing.md)
 - [Command Reference](cli/commands/index.md)
     - [plugin](cli/commands/plugin.md)
     - [connector](cli/commands/connector.md)
@@ -15,6 +16,8 @@
     - [run](cli/commands/run.md)
     - [app](cli/commands/app.md)
     - [bundle](cli/commands/bundle.md)
+    - [key](cli/commands/key.md)
+    - [trust](cli/commands/trust.md)
     - [auth](cli/commands/auth.md)
     - [secret](cli/commands/secret.md)
 

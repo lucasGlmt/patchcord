@@ -10,13 +10,16 @@ patchcord bundle install my-bundle-1.0.0.patchcord-bundle
 
 Installs a `.patchcord-bundle` package produced by `bundle pack`. Every entry in the manifest's `requires_plugins` (`id@version`) must already be installed at that exact version — install does not fetch missing plugin dependencies automatically. The embedded app (if any) and workflows are installed exactly as `app install` and `workflow install` would. A failure partway through (e.g. the app installs but a workflow fails validation) is not rolled back — the error names which step failed.
 
+`--require-signature` rejects a package that is unsigned or signed by a key not yet trusted for its id — this covers the embedded app and workflows too, they are not separately re-verified. See [Package Signing & Trust](../package-signing.md).
+
 ## `pack <dir>`
 
 ```bash
 patchcord bundle pack ./my-bundle -o my-bundle-1.0.0.patchcord-bundle
+patchcord bundle pack ./my-bundle --sign-key my-signing-key
 ```
 
-Packs `dir` — which must contain a `bundle.yaml` manifest, plus the app directory and workflow files it references — into a `.patchcord-bundle` archive. `-o/--output` defaults to `<id>-<version>.patchcord-bundle` in the current directory.
+Packs `dir` — which must contain a `bundle.yaml` manifest, plus the app directory and workflow files it references — into a `.patchcord-bundle` archive. `-o/--output` defaults to `<id>-<version>.patchcord-bundle` in the current directory. The result always carries integrity checksums; `--sign-key` additionally signs it (covering the embedded app and workflows) — see [Package Signing & Trust](../package-signing.md).
 
 `bundle.yaml`:
 

@@ -22,6 +22,11 @@ vendor/
 *.local.yaml
 *.local.yml
 
+# Package signing private keys (never commit — ADR-0043). The public key
+# (*.pub) is meant to be shared and is intentionally not ignored here.
+patchcord-signing-key
+*-signing-key
+
 # Node (sdk/typescript, apps/examples)
 node_modules/
 dist/

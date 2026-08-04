@@ -254,3 +254,114 @@ func TestPluginPackCommand_ThenInstall(t *testing.T) {
 		t.Fatalf("inspect output = %q, want it to mention the plugin's action", inspectOut.String())
 	}
 }
+
+// TestPluginInstallCommand_SigningAndTrustLifecycle exercises the full
+// signing/verification story through the CLI, exactly as a user would type
+// it: pack a signed package, install it and see a warning about the
+// untrusted key, trust that key, reinstall silently, then prove
+// --require-signature actually gates on trust rather than just signedness.
+func TestPluginInstallCommand_SigningAndTrustLifecycle(t *testing.T) {
+	sourceDir := t.TempDir()
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	relExecutable := filepath.Join("binaries", platform, "plugin")
+	execPath := filepath.Join(sourceDir, relExecutable)
+	if err := os.MkdirAll(filepath.Dir(execPath), 0o755); err != nil {
+		t.Fatalf("mkdir binaries dir: %v", err)
+	}
+	body, err := os.ReadFile(examplePluginPath)
+	if err != nil {
+		t.Fatalf("read example plugin binary: %v", err)
+	}
+	if err := os.WriteFile(execPath, body, 0o755); err != nil {
+		t.Fatalf("write staged executable: %v", err)
+	}
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 1,
+		"kind": "plugin",
+		"id": "io.patchcord.example-text",
+		"version": "1.0.0",
+		"protocolVersion": 1,
+		"permissions": [],
+		"executables": {%q: %q}
+	}`, platform, filepath.ToSlash(relExecutable))
+	if err := os.WriteFile(filepath.Join(sourceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.json: %v", err)
+	}
+
+	keyPath := filepath.Join(t.TempDir(), "signing-key")
+	keygen := newKeyGenerateCommand()
+	keygen.SetArgs([]string{"--output", keyPath})
+	keygen.SetContext(context.Background())
+	if err := keygen.Execute(); err != nil {
+		t.Fatalf("key generate error = %v", err)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "text-1.0.0.patchcord-plugin")
+	pack := newPluginPackCommand()
+	pack.SetArgs([]string{sourceDir, "--output", packagePath, "--sign-key", keyPath})
+	pack.SetContext(context.Background())
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("plugin pack --sign-key error = %v", err)
+	}
+
+	t.Run("install without trust warns but succeeds", func(t *testing.T) {
+		dataDir := t.TempDir()
+		install := newPluginInstallCommand()
+		install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+		install.SetContext(context.Background())
+		var out bytes.Buffer
+		install.SetOut(&out)
+		if err := install.Execute(); err != nil {
+			t.Fatalf("plugin install error = %v", err)
+		}
+		if !strings.Contains(out.String(), "untrusted key") {
+			t.Fatalf("install output = %q, want a warning about an untrusted key", out.String())
+		}
+	})
+
+	t.Run("install --require-signature fails before trust add", func(t *testing.T) {
+		dataDir := t.TempDir()
+		install := newPluginInstallCommand()
+		install.SetArgs([]string{packagePath, "--data-dir", dataDir, "--require-signature"})
+		install.SetContext(context.Background())
+		if err := install.Execute(); err == nil {
+			t.Fatal("expected an error for an untrusted signed package with --require-signature, got nil")
+		}
+	})
+
+	t.Run("install --require-signature succeeds and is silent after trust add", func(t *testing.T) {
+		dataDir := t.TempDir()
+
+		add := newTrustAddCommand()
+		add.SetArgs([]string{"io.patchcord.example-text", keyPath + ".pub", "--data-dir", dataDir})
+		add.SetContext(context.Background())
+		if err := add.Execute(); err != nil {
+			t.Fatalf("trust add error = %v", err)
+		}
+
+		install := newPluginInstallCommand()
+		install.SetArgs([]string{packagePath, "--data-dir", dataDir, "--require-signature"})
+		install.SetContext(context.Background())
+		var out bytes.Buffer
+		install.SetOut(&out)
+		if err := install.Execute(); err != nil {
+			t.Fatalf("plugin install --require-signature error = %v", err)
+		}
+		if strings.Contains(out.String(), "untrusted") || strings.Contains(out.String(), "not signed") {
+			t.Fatalf("install output = %q, want no warning once the key is trusted", out.String())
+		}
+	})
+
+	t.Run("--require-signature on a raw executable errors immediately", func(t *testing.T) {
+		install := newPluginInstallCommand()
+		install.SetArgs([]string{examplePluginPath, "--data-dir", t.TempDir(), "--require-signature"})
+		install.SetContext(context.Background())
+		err := install.Execute()
+		if err == nil {
+			t.Fatal("expected an error for --require-signature on a raw executable, got nil")
+		}
+		if !strings.Contains(err.Error(), "nothing to verify") {
+			t.Fatalf("error = %q, want it to explain there is nothing to verify", err.Error())
+		}
+	})
+}

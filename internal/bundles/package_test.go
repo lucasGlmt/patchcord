@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"database/sql"
 	"errors"
 	"io"
@@ -18,6 +20,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/trust"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -121,14 +124,14 @@ func TestPackAndInstallPackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create package file: %v", err)
 	}
-	if err := Pack(sourceDir, f); err != nil {
+	if err := Pack(sourceDir, nil, f); err != nil {
 		t.Fatalf("Pack() error = %v", err)
 	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("close package file: %v", err)
 	}
 
-	b, err := InstallPackage(context.Background(), db, dataDir, packagePath, knownActions)
+	b, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, knownActions, false)
 	if err != nil {
 		t.Fatalf("InstallPackage() error = %v", err)
 	}
@@ -168,14 +171,14 @@ func TestInstallPackage_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create package file: %v", err)
 	}
-	if err := Pack(sourceDir, f); err != nil {
+	if err := Pack(sourceDir, nil, f); err != nil {
 		t.Fatalf("Pack() error = %v", err)
 	}
 	if err := f.Close(); err != nil {
 		t.Fatalf("close package file: %v", err)
 	}
 
-	if _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}); err == nil {
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}, false); err == nil {
 		t.Fatal("expected an error for a missing required plugin, got nil")
 	}
 
@@ -184,10 +187,63 @@ func TestInstallPackage_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	}
 }
 
+func TestInstallPackage_SignatureAndTrustPolicy(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	sourceDir := newTestBundleSourceDir(t)
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("GenerateKey() error = %v", err)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "bundle.patchcord-bundle")
+	f, err := os.Create(packagePath)
+	if err != nil {
+		t.Fatalf("create package file: %v", err)
+	}
+	if err := Pack(sourceDir, priv, f); err != nil {
+		t.Fatalf("Pack() error = %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close package file: %v", err)
+	}
+
+	t.Run("signed but untrusted key: rejected with requireSignature", func(t *testing.T) {
+		if _, _, err := InstallPackage(context.Background(), db, t.TempDir(), packagePath, knownActions, true); !errors.Is(err, trust.ErrSignatureRequired) {
+			t.Fatalf("InstallPackage() error = %v, want ErrSignatureRequired", err)
+		}
+	})
+
+	t.Run("signed and trusted: accepted with requireSignature", func(t *testing.T) {
+		if err := trust.Add(context.Background(), db, "io.patchcord.example-bundle", pub, "test"); err != nil {
+			t.Fatalf("trust.Add() error = %v", err)
+		}
+
+		b, policy, err := InstallPackage(context.Background(), db, t.TempDir(), packagePath, knownActions, true)
+		if err != nil {
+			t.Fatalf("InstallPackage() error = %v", err)
+		}
+		if b.ID != "io.patchcord.example-bundle" {
+			t.Fatalf("ID = %q, want %q", b.ID, "io.patchcord.example-bundle")
+		}
+		if !policy.Trusted {
+			t.Fatal("Trusted = false, want true")
+		}
+	})
+}
+
 func TestPack_RejectsAnInvalidManifest(t *testing.T) {
 	dir := t.TempDir() // no bundle.yaml
 
-	if err := Pack(dir, io.Discard); err == nil {
+	if err := Pack(dir, nil, io.Discard); err == nil {
 		t.Fatal("expected an error for a directory with no manifest, got nil")
 	}
 }
@@ -222,7 +278,7 @@ func TestExtractPackage_RejectsPathTraversal(t *testing.T) {
 		t.Fatalf("write package file: %v", err)
 	}
 
-	if _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}); err == nil {
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}, false); err == nil {
 		t.Fatal("expected an error for a path-traversal entry, got nil")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dataDir), "escaped.txt")); !os.IsNotExist(err) {

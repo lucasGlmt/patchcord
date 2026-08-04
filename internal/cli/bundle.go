@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/bundles"
 	"github.com/lucasglmt/patchcord/internal/plugins"
+	"github.com/lucasglmt/patchcord/internal/signing"
 )
 
 func newBundleCommand() *cobra.Command {
@@ -28,6 +30,7 @@ func newBundleCommand() *cobra.Command {
 
 func newBundleInstallCommand() *cobra.Command {
 	var dataDir string
+	var requireSignature bool
 
 	cmd := &cobra.Command{
 		Use:   "install <path>",
@@ -37,7 +40,9 @@ func newBundleInstallCommand() *cobra.Command {
 			"requires_plugins must already be installed at the exact version\n" +
 			"named — install does not fetch missing dependencies automatically.\n" +
 			"The embedded app and workflows are installed exactly as `app install`\n" +
-			"and `workflow install` would.",
+			"and `workflow install` would, covered by the bundle's own signature\n" +
+			"(--require-signature rejects an unsigned or untrusted bundle; it is\n" +
+			"not re-checked separately for the embedded app or workflows).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
@@ -51,36 +56,51 @@ func newBundleInstallCommand() *cobra.Command {
 				return fmt.Errorf("install bundle: list known actions: %w", err)
 			}
 
-			b, err := bundles.InstallPackage(cmd.Context(), db, dataDir, args[0], knownActions)
+			b, policy, err := bundles.InstallPackage(cmd.Context(), db, dataDir, args[0], knownActions, requireSignature)
 			if err != nil {
 				return fmt.Errorf("install bundle: %w", err)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Installed %s (%s)\n", b.ID, b.Version)
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "Installed %s (%s)\n", b.ID, b.Version)
+			printVerificationStatus(out, b.ID, policy)
 
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
 }
 
 func newBundlePackCommand() *cobra.Command {
 	var output string
+	var signKeyPath string
 
 	cmd := &cobra.Command{
 		Use:   "pack <dir>",
 		Short: "Package a bundle directory into a .patchcord-bundle archive",
 		Long: "Packs dir (which must contain a bundle.yaml manifest, plus the app\n" +
 			"and workflow files it references) into a .patchcord-bundle archive\n" +
-			"that `bundle install` can install directly.",
+			"that `bundle install` can install directly. The result always\n" +
+			"carries a checksums.json; --sign-key (a private key from `patchcord\n" +
+			"key generate`) additionally signs it — covering the embedded app and\n" +
+			"workflows too.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifest, err := bundles.LoadManifest(args[0])
 			if err != nil {
 				return fmt.Errorf("pack bundle: %w", err)
+			}
+
+			var key ed25519.PrivateKey
+			if signKeyPath != "" {
+				key, err = signing.LoadPrivateKey(signKeyPath)
+				if err != nil {
+					return fmt.Errorf("pack bundle: %w", err)
+				}
 			}
 
 			out := output
@@ -94,7 +114,7 @@ func newBundlePackCommand() *cobra.Command {
 			}
 			defer f.Close()
 
-			if err := bundles.Pack(args[0], f); err != nil {
+			if err := bundles.Pack(args[0], key, f); err != nil {
 				return fmt.Errorf("pack bundle: %w", err)
 			}
 
@@ -105,6 +125,7 @@ func newBundlePackCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>-<version>.patchcord-bundle in the current directory)")
+	cmd.Flags().StringVar(&signKeyPath, "sign-key", "", "path to a private key (from `patchcord key generate`) to sign the package with")
 
 	return cmd
 }
