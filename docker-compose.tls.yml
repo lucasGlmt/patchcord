@@ -1,0 +1,42 @@
+# TLS via reverse proxy example (ADR-0041) — the vision document's §13.4 is
+# explicit that Patchcord runs *behind* TLS, never terminating it itself
+# (internal/api.NewRouter stays plain HTTP, always). Caddy here gets and
+# renews a Let's Encrypt certificate automatically for PATCHCORD_DOMAIN and
+# reverse-proxies to the patchcord service over the internal Docker network
+# — patchcord itself publishes nothing to the host.
+#
+# Requires: PATCHCORD_DOMAIN's DNS pointing at this host, and ports 80/443
+# reachable from the internet (ACME HTTP-01 challenge). Run with:
+#
+#   PATCHCORD_DOMAIN=agent.example.com docker compose -f docker-compose.tls.yml up --build
+#
+# Create an admin token before exposing this publicly — see
+# docs/book/src/cli/commands/auth.md and ADR-0036.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - patchcord
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      PATCHCORD_DOMAIN: ${PATCHCORD_DOMAIN:?set PATCHCORD_DOMAIN to the public domain pointing at this host}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+  patchcord:
+    build: .
+    restart: unless-stopped
+    expose:
+      - "7331"
+    volumes:
+      - ./data:/data
+      - ./bin/plugins:/plugins
+
+volumes:
+  caddy_data:
+  caddy_config:

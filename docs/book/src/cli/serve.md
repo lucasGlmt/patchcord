@@ -75,6 +75,26 @@ docker compose exec patchcord patchcord secret set --type file PG_PASSWORD \
 
 ...then pass `--secrets-master-key-file /data/secrets.key` (or `PATCHCORD_SECRETS_MASTER_KEY_FILE`) to the `patchcord serve` command the container runs, so the running agent can resolve `file:PG_PASSWORD` references too.
 
-## What's not here yet
+## TLS
 
-TLS termination is not part of this phase yet — see the roadmap in `CLAUDE.md` section 9 (phase 6, "server deployment").
+`serve` never terminates TLS itself — `internal/api.NewRouter` is always served over plain HTTP, on `127.0.0.1` or `0.0.0.0` alike. The vision document is explicit that Patchcord runs *behind* a reverse proxy for TLS (§13.4), not that it grows a certificate stack of its own ([ADR-0041](../../../adr/0041-tls-via-reverse-proxy.md)).
+
+`docker-compose.tls.yml` (repo root) is the reference example: [Caddy](https://caddyserver.com) terminates TLS, obtaining and renewing a Let's Encrypt certificate automatically via ACME, and reverse-proxies to the `patchcord` service over the internal Docker network — `patchcord` itself publishes nothing to the host, only `expose: [7331]` inside the compose network. Requires a domain whose DNS already points at this host, and ports 80/443 reachable from the internet (the ACME HTTP-01 challenge needs both):
+
+```bash
+PATCHCORD_DOMAIN=agent.example.com make docker-run-tls
+# equivalent to:
+PATCHCORD_DOMAIN=agent.example.com docker compose -f docker-compose.tls.yml up --build
+```
+
+The Caddyfile driving this (`docker/Caddyfile`) is three lines — Caddy's whole pitch is that automatic HTTPS needs no more than that:
+
+```caddyfile
+{$PATCHCORD_DOMAIN} {
+	reverse_proxy patchcord:7331
+}
+```
+
+No public domain, or a fully offline/internal deployment? Put any TLS-terminating reverse proxy you already run (nginx, Traefik, an internal load balancer with your own CA) in front of `patchcord serve` the same way — proxy to its plain-HTTP listen address, nothing in the agent itself needs to know TLS is involved.
+
+**Create an admin token before exposing `serve` behind a public domain** — see [Admin authentication](#admin-authentication) above. TLS protects the connection in transit; it does nothing to stop an unauthenticated request from reaching an API that still defaults to open ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)).

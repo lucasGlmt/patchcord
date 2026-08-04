@@ -1,0 +1,10 @@
+# Minimal Caddyfile for docker-compose.tls.yml (ADR-0041). Caddy obtains and
+# renews a Let's Encrypt certificate for {$PATCHCORD_DOMAIN} automatically
+# (ACME HTTP-01, ports 80/443 must be reachable from the internet, and
+# PATCHCORD_DOMAIN's DNS must point at this host) and reverse-proxies
+# everything to the patchcord service over the internal Docker network —
+# patchcord's own HTTP server never sees TLS, it stays plain HTTP
+# (internal/api.NewRouter), exactly as it does without this compose file.
+{$PATCHCORD_DOMAIN} {
+	reverse_proxy patchcord:7331
+}

@@ -58,6 +58,10 @@ docker-build: ## Build the agent's Docker image (see Dockerfile, ADR-0039)
 docker-run: ## Run the agent via docker compose (build first with docker-build if needed)
 	docker compose up --build
 
+.PHONY: docker-run-tls
+docker-run-tls: ## Run the agent behind Caddy with automatic HTTPS (see docker-compose.tls.yml, ADR-0041); requires PATCHCORD_DOMAIN
+	docker compose -f docker-compose.tls.yml up --build
+
 .PHONY: docs-build
 docs-build: ## Build the mdBook documentation (requires `cargo install mdbook`)
 	mdbook build docs/book
