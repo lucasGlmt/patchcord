@@ -1,0 +1,48 @@
+# Two-step workflow: enrich via HTTP, then persist to PostgreSQL. The
+# postgresql step is deliberately the *last* one — a run's final outputs
+# are always only the last executed step's output (internal/runs/runner.go
+# overwrites it every step, never merges), so ending on the RETURNING
+# insert is what lets the caller read the newly created row straight off
+# run.outputs.rows[0].
+schema_version: 1
+
+id: lead_enrichment
+version: 1
+
+trigger:
+  type: manual
+
+inputs:
+  - name: name
+    type: string
+    required: true
+    description: The lead's full name.
+  - name: email
+    type: string
+    required: true
+    description: The lead's email address.
+  - name: company
+    type: string
+    required: true
+    description: The lead's company name.
+
+steps:
+  - id: enrich
+    uses: http.request@1
+    connector: "${{ bindings.enrichment }}"
+    with:
+      path: /users/1
+
+  - id: save
+    uses: postgresql.query@1
+    connector: "${{ bindings.db }}"
+    with:
+      sql: >-
+        INSERT INTO leads (name, email, company, enrichment_raw)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, name, email, company, enrichment_raw, created_at
+      args:
+        - "${{ workflow.inputs.name }}"
+        - "${{ workflow.inputs.email }}"
+        - "${{ workflow.inputs.company }}"
+        - "${{ steps.enrich.outputs.body }}"

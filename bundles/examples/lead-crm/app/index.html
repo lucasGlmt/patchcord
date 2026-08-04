@@ -1,0 +1,248 @@
+<!doctype html>
+<!--
+  Patchcord's first complete business application (see bundle.yaml for the
+  full setup sequence): a mini-CRM that submits a lead, enriches it via
+  http.request@1, and stores it via postgresql.query@1, then lists
+  stored leads. No build step on purpose — install it via the bundle:
+
+    patchcord bundle install lead-crm.patchcord-bundle
+    patchcord serve
+
+  then open http://127.0.0.1:7331/apps/lead-crm/.
+
+  DB_BINDING/ENRICHMENT_BINDING below name the exact connector ids this
+  page expects — bundle.yaml's header comment has the `connector create`
+  commands to set them up.
+
+  This page requests its own session and polls run status with no admin
+  credential, relying on the agent's default, no-admin-token-yet state
+  (ADR-0036) — the same precedent apps/examples/greeter and
+  apps/examples/users_list already rely on. Once an admin token exists,
+  both the session request and the client-side polling below start
+  returning 401.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Patchcord Lead CRM (demo)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, sans-serif;
+      }
+      body {
+        max-width: 720px;
+        margin: 3rem auto;
+        padding: 0 1rem;
+      }
+      form {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr auto;
+        gap: 0.5rem;
+        align-items: end;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        opacity: 0.75;
+        margin-bottom: 0.25rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.4rem;
+        box-sizing: border-box;
+      }
+      button {
+        font-size: 1rem;
+        padding: 0.5rem 1.2rem;
+        cursor: pointer;
+      }
+      .status {
+        margin-top: 1rem;
+        opacity: 0.75;
+        min-height: 1.5em;
+      }
+      .status.error {
+        color: #d33;
+        opacity: 1;
+      }
+      table {
+        width: 100%;
+        margin-top: 1.5rem;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid #8884;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Lead CRM</h1>
+    <p>Submit a lead — a workflow enriches it and stores it in PostgreSQL, through a session limited to exactly these two workflows.</p>
+
+    <form id="lead-form">
+      <div>
+        <label for="name">Name</label>
+        <input id="name" name="name" required />
+      </div>
+      <div>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" required />
+      </div>
+      <div>
+        <label for="company">Company</label>
+        <input id="company" name="company" required />
+      </div>
+      <button type="submit">Add lead</button>
+    </form>
+
+    <p class="status" id="status"></p>
+
+    <table id="leads">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Company</th>
+          <th>Enrichment</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <script>
+      const DB_BINDING = "leads-db";
+      const ENRICHMENT_BINDING = "lead-enrichment-api";
+
+      const statusEl = document.querySelector("#status");
+      const tbody = document.querySelector("#leads tbody");
+      const form = document.querySelector("#lead-form");
+
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void submitLead();
+      });
+
+      async function getSession() {
+        const res = await fetch("/v1/apps/lead-crm/sessions", { method: "POST" });
+        if (!res.ok) {
+          throw new Error(`could not get a session (${res.status})`);
+        }
+        return res.json();
+      }
+
+      async function runWorkflow(workflowId, session, body) {
+        const res = await fetch(`/v1/workflows/${workflowId}/run`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.token}`,
+          },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          throw new Error(`run failed (${res.status})`);
+        }
+        let run = await res.json();
+
+        while (run.status === "queued" || run.status === "running") {
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          run = await (await fetch(`/v1/runs/${run.id}`)).json();
+        }
+
+        if (run.status !== "succeeded") {
+          throw new Error(run.error || `run ended as ${run.status}`);
+        }
+
+        return run;
+      }
+
+      // Builds a <tr> with textContent-only cells — never innerHTML with
+      // lead-derived strings, since name/email/company come straight from
+      // the form (a self-XSS risk otherwise).
+      function renderRow(lead, prepend) {
+        const tr = document.createElement("tr");
+
+        let enrichedVia = "";
+        try {
+          const parsed = JSON.parse(lead.enrichment_raw);
+          enrichedVia = parsed?.company?.name ? `jsonplaceholder (${parsed.company.name})` : "jsonplaceholder";
+        } catch {
+          // enrichment_raw wasn't JSON, or is absent — leave blank.
+        }
+
+        for (const value of [lead.name, lead.email, lead.company, enrichedVia, lead.created_at]) {
+          const td = document.createElement("td");
+          td.textContent = value ?? "";
+          tr.appendChild(td);
+        }
+
+        if (prepend) {
+          tbody.prepend(tr);
+        } else {
+          tbody.appendChild(tr);
+        }
+      }
+
+      async function loadLeads() {
+        try {
+          statusEl.classList.remove("error");
+          statusEl.textContent = "Loading leads…";
+          const session = await getSession();
+          const run = await runWorkflow("list_leads", session, { bindings: { db: DB_BINDING } });
+
+          tbody.innerHTML = "";
+          for (const row of run.outputs?.rows ?? []) {
+            renderRow(row, false);
+          }
+          statusEl.textContent = "";
+        } catch (err) {
+          statusEl.textContent = `Error: ${err.message}`;
+          statusEl.classList.add("error");
+        }
+      }
+
+      async function submitLead() {
+        const submitButton = form.querySelector("button");
+        submitButton.disabled = true;
+        statusEl.classList.remove("error");
+
+        try {
+          const data = new FormData(form);
+
+          statusEl.textContent = "Requesting a session…";
+          const session = await getSession();
+
+          statusEl.textContent = "Enriching and saving…";
+          const run = await runWorkflow("lead_enrichment", session, {
+            inputs: {
+              name: data.get("name"),
+              email: data.get("email"),
+              company: data.get("company"),
+            },
+            bindings: { db: DB_BINDING, enrichment: ENRICHMENT_BINDING },
+          });
+
+          const row = run.outputs?.rows?.[0];
+          if (row) {
+            renderRow(row, true);
+          }
+          form.reset();
+          statusEl.textContent = "Lead added.";
+        } catch (err) {
+          statusEl.textContent = `Error: ${err.message}`;
+          statusEl.classList.add("error");
+        } finally {
+          submitButton.disabled = false;
+        }
+      }
+
+      void loadLeads();
+    </script>
+  </body>
+</html>

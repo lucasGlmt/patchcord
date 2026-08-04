@@ -14,6 +14,8 @@ An application is a client of the agent per the [vocabulary](../introduction.md#
 | `dashboard` | An operator console built with React, MUI, `react-router-dom` and the TypeScript SDK: browse and run installed workflows (with a `<select>` per connector binding, filled from the connectors compatible with that step's inferred type), browse run history, CRUD connectors, and browse installed applications. Deliberately calls the API without an app session — see [Building an App with the TS SDK](building-with-sdk-ts.md#an-app-that-deliberately-skips-sessions). |
 | `users_list` | Another static, no-build-step example, permitted to run `http_api_task` — a second data point for the "plain HTML" end of the spectrum alongside `greeter`. |
 
+For a complete business use case combining an app, two workflows, and two connector-consuming plugins into one installable package, see the lead-crm example bundle (`bundles/examples/lead-crm/`) — [Bundles](../bundles/index.md).
+
 ## Where to go next
 
 - [Concepts](concepts.md) — the session-limited hosting model.

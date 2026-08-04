@@ -1,0 +1,7 @@
+id: lead-crm
+version: "0.1.0"
+permissions:
+  workflows:
+    run:
+      - lead_enrichment
+      - list_leads

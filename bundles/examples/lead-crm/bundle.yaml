@@ -1,0 +1,67 @@
+# Patchcord's first complete business application (CLAUDE.md §9 phase 7 —
+# écosystème; vision document §19, "première application métier
+# complète"): a mini-CRM that submits a lead, enriches it via an HTTP
+# call, stores it in PostgreSQL, and lists stored leads — composing an
+# app + two workflows + two connector-consuming plugins into one
+# .patchcord-bundle (ADR-0042, ADR-0044).
+#
+# This needs a real PostgreSQL server you control — same caveat as
+# workflows/examples/postgresql_query_demo.yaml, there is no public demo
+# database. Run these, in order, before installing this bundle:
+#
+#   # 1. Create the table this bundle's workflows read/write.
+#   psql -h localhost -U admin -d app -c '
+#     CREATE TABLE leads (
+#       id SERIAL PRIMARY KEY,
+#       name TEXT NOT NULL,
+#       email TEXT NOT NULL,
+#       company TEXT NOT NULL,
+#       enrichment_raw TEXT,
+#       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+#     );'
+#
+#   # 2. Install both plugin dependencies — a bundle never auto-installs
+#   #    requires_plugins (ADR-0042's explicit deferral).
+#   make build-plugins
+#   patchcord plugin install ./bin/plugins/http
+#   patchcord plugin install ./bin/plugins/postgresql
+#
+#   # 3. Create the two connectors, under the exact ids app/index.html
+#   #    hardcodes. The enrichment connector points at
+#   #    https://jsonplaceholder.typicode.com, a free public fake-data API
+#   #    standing in for a real lead-enrichment provider — the same *kind*
+#   #    of public demo service workflows/examples/http_httpbin_demo.yaml
+#   #    already uses httpbin.org for, though this is a distinct new
+#   #    external dependency, not literal reuse of that one.
+#   patchcord connector create leads-db --type "postgresql.connection@1" \
+#       --config host=localhost --config port=5432 \
+#       --config database=app --config user=admin \
+#       --secret password=env:PG_PASSWORD
+#   patchcord connector create lead-enrichment-api --type "http.connection@1" \
+#       --config base_url=https://jsonplaceholder.typicode.com
+#   patchcord connector test leads-db
+#
+#   # 4. Pack and install the bundle.
+#   patchcord bundle pack bundles/examples/lead-crm -o lead-crm.patchcord-bundle
+#   patchcord bundle install lead-crm.patchcord-bundle
+#
+#   # 5. Serve and open it.
+#   patchcord serve
+#   # -> http://127.0.0.1:7331/apps/lead-crm/
+#
+# app/index.html requests its own session and polls run status with no
+# admin credential — relying on the agent's default, no-admin-token-yet
+# state (ADR-0036), the same precedent apps/examples/greeter and
+# apps/examples/users_list already rely on. Create an admin token
+# (`patchcord auth token create`) only once you're done exercising this
+# locally: doing so earlier 401s both the session request and the
+# client-side polling.
+id: io.patchcord.example-lead-crm
+version: "0.1.0"
+app: app
+workflows:
+  - workflows/lead_enrichment.yaml
+  - workflows/list_leads.yaml
+requires_plugins:
+  - io.patchcord.example-http@1.0.0
+  - io.patchcord.example-postgresql@1.0.0

@@ -21,6 +21,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newRunCommand())
 	root.AddCommand(newAppCommand())
 	root.AddCommand(newBundleCommand())
+	root.AddCommand(newRegistryCommand())
 	root.AddCommand(newKeyCommand())
 	root.AddCommand(newTrustCommand())
 	root.AddCommand(newAuthCommand())

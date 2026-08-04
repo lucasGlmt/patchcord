@@ -11,15 +11,28 @@ patchcord bundle new io.patchcord.example-bundle -o my-bundle --version 1.0.0
 
 Scaffolds a minimal `bundle.yaml` into `-o/--output` (default: the id's last `.`-separated segment), plus an embedded app (`app/`) and workflow (`workflows/main.yaml`) — ready for `bundle pack`/`bundle install` as-is. `requires_plugins` starts empty: there is no way to know ahead of time what plugin your bundle should depend on, add entries to `bundle.yaml` yourself. The scaffolded workflow uses `text.uppercase@1` (the reference plugin) as a working example, the same convention [`workflow new`](workflow.md) uses. Fails if the target directory already exists and is not empty.
 
-## `install <path>`
+## `install <path-or-ref>`
 
 ```bash
 patchcord bundle install my-bundle-1.0.0.patchcord-bundle
+patchcord bundle install io.patchcord.example-bundle
+patchcord bundle install io.patchcord.example-bundle@1.0.0
 ```
 
 Installs a `.patchcord-bundle` package produced by `bundle pack`. Every entry in the manifest's `requires_plugins` (`id@version`) must already be installed at that exact version — install does not fetch missing plugin dependencies automatically. The embedded app (if any) and workflows are installed exactly as `app install` and `workflow install` would. A failure partway through (e.g. the app installs but a workflow fails validation) is not rolled back — the error names which step failed.
 
+If the argument does not name an existing local file, it is resolved instead as a registry reference — a bare `id` (the registry's declared latest version) or `id@version` — against every configured registry. See [`patchcord registry`](registry.md). Re-installing an already-installed bundle id, from either a local path or a registry reference, updates it in place — `bundle update` (below) is the more convenient way to do that by id alone.
+
 `--require-signature` rejects a package that is unsigned or signed by a key not yet trusted for its id — this covers the embedded app and workflows too, they are not separately re-verified. See [Package Signing & Trust](../package-signing.md).
+
+## `update <id>[@version]`
+
+```bash
+patchcord bundle update io.patchcord.example-bundle
+patchcord bundle update io.patchcord.example-bundle@1.2.0
+```
+
+Resolves `id`'s latest version (or the pinned `@version`, if given) against every configured registry, and installs it exactly as `bundle install` would — but only if the resolved version differs from the one currently installed. `id` must already be installed (`bundle update` errors, pointing at `bundle install`, otherwise). If the resolved version matches what's installed, this is a no-op: `<id> is already up to date (<version>)`. On an actual update, prints `Updated <id>: <old> -> <new>`.
 
 ## `pack <dir>`
 

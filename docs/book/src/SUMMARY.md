@@ -16,6 +16,7 @@
     - [run](cli/commands/run.md)
     - [app](cli/commands/app.md)
     - [bundle](cli/commands/bundle.md)
+    - [registry](cli/commands/registry.md)
     - [key](cli/commands/key.md)
     - [trust](cli/commands/trust.md)
     - [auth](cli/commands/auth.md)

@@ -42,12 +42,16 @@ func Pack(sourceDir string, key ed25519.PrivateKey, w io.Writer) error {
 //
 //  1. every "id@version" entry in requires_plugins must already be present
 //     in the plugin catalog — a bundle never auto-installs its plugin
-//     dependencies (that is the registry/update tasks' job, later in phase
-//     7);
+//     dependencies (see ADR-0044: this stays deferred even once a
+//     registry exists);
 //  2. the embedded app (if any) is moved to its permanent location under
-//     dataDir/apps/<app-id>/<app-version> and installed via apps.Install,
-//     the same choreography apps.InstallPackage uses for a standalone
-//     .patchcord-app archive;
+//     dataDir/apps/<app-id>/<app-version> and installed via
+//     apps.InstallOrUpdate — unlike apps.InstallPackage's own standalone
+//     .patchcord-app flow (which stays strict, see apps.Install), a
+//     bundle install has always been upsert-by-design at the top level
+//     (record(), below): re-running `bundle install`/`bundle update` on an
+//     already-installed bundle id must succeed and replace its embedded
+//     app in place, not fail with apps.ErrAlreadyExists (ADR-0044);
 //  3. each embedded workflow file is installed via runs.InstallWorkflow —
 //     workflow definitions need no on-disk home of their own, they live in
 //     the workflow_versions table (ADR-0008).
@@ -157,9 +161,10 @@ func checkPluginDependencies(ctx context.Context, db *sql.DB, requires []string)
 
 // installEmbeddedApp moves the bundle's embedded app subtree out of staging
 // to its permanent location under dataDir/apps/<app-id>/<app-version> and
-// installs it — the same two-step apps.InstallPackage uses for a
-// standalone .patchcord-app archive, applied here to an already-extracted
-// directory instead of a fresh archive.
+// installs it via apps.InstallOrUpdate, so that re-installing/updating a
+// bundle whose app id is already recorded replaces it in place instead of
+// failing with apps.ErrAlreadyExists (ADR-0044) — consistent with
+// record()'s own always-upsert behavior for the bundle's provenance row.
 func installEmbeddedApp(ctx context.Context, db *sql.DB, dataDir, staging, relApp string) error {
 	appStagingDir, err := packaging.SafeJoin(staging, relApp)
 	if err != nil {
@@ -182,7 +187,7 @@ func installEmbeddedApp(ctx context.Context, db *sql.DB, dataDir, staging, relAp
 		return fmt.Errorf("move extracted app to %q: %w", appTarget, err)
 	}
 
-	if _, err := apps.Install(ctx, db, appTarget); err != nil {
+	if _, err := apps.InstallOrUpdate(ctx, db, appTarget); err != nil {
 		_ = os.RemoveAll(appTarget)
 		return err
 	}

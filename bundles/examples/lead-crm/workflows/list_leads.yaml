@@ -1,0 +1,17 @@
+schema_version: 1
+
+id: list_leads
+version: 1
+
+trigger:
+  type: manual
+
+steps:
+  - id: fetch
+    uses: postgresql.query@1
+    connector: "${{ bindings.db }}"
+    with:
+      sql: >-
+        SELECT id, name, email, company, enrichment_raw, created_at
+        FROM leads
+        ORDER BY created_at DESC
