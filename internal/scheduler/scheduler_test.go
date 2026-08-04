@@ -310,3 +310,43 @@ func TestRunner_tick_ignoresNotYetDueSchedule(t *testing.T) {
 
 	executor.expectNoCall(t)
 }
+
+// TestRunner_Run_ticksImmediatelyThenStopsOnCancel exercises Run itself
+// (0% covered before this test — only its private tick helper was called
+// directly elsewhere), without waiting out the real pollInterval (30s):
+// Run ticks once synchronously before entering its select loop, so a
+// schedule backdated to already be due fires without needing the ticker to
+// fire at all. Cancelling ctx right after must make Run return promptly,
+// proving the ctx.Done() branch is reached rather than only ever the
+// ticker one.
+func TestRunner_Run_ticksImmediatelyThenStopsOnCancel(t *testing.T) {
+	db := openTestDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	def := installScheduledWorkflow(t, db)
+
+	if err := Sync(context.Background(), db, def); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if _, err := db.ExecContext(context.Background(), `UPDATE schedules SET next_run_at = ? WHERE workflow_id = ?`,
+		time.Now().Add(-time.Second), def.ID); err != nil {
+		t.Fatalf("backdate schedules row: %v", err)
+	}
+
+	executor := newRecordingExecutor()
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+
+	done := make(chan struct{})
+	go func() {
+		r.Run(ctx)
+		close(done)
+	}()
+
+	executor.expectCall(t)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run() did not return after ctx cancellation")
+	}
+}

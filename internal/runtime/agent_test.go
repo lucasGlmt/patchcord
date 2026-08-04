@@ -55,6 +55,37 @@ func TestNewAgent_InvalidListenAddress(t *testing.T) {
 	}
 }
 
+// TestNewAgent_DataDirIsARegularFile exercises NewAgent's "open database"
+// error branch: persistence.Open's os.MkdirAll(dataDir) fails when dataDir
+// already exists as a regular file rather than a directory.
+func TestNewAgent_DataDirIsARegularFile(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(dataDir, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write blocking file: %v", err)
+	}
+
+	cfg := Config{ListenAddr: "127.0.0.1:0", DataDir: dataDir}
+	_, err := NewAgent(cfg, testLogger())
+	if err == nil {
+		t.Fatal("expected an error when DataDir is a regular file, got nil")
+	}
+}
+
+// TestNewAgent_InvalidSecretsMasterKeyFile exercises NewAgent's "build
+// secrets store" error branch: secrets.BuildStore fails when
+// SecretsMasterKeyFile is set but doesn't point at a readable key file.
+func TestNewAgent_InvalidSecretsMasterKeyFile(t *testing.T) {
+	cfg := Config{
+		ListenAddr:           "127.0.0.1:0",
+		DataDir:              t.TempDir(),
+		SecretsMasterKeyFile: filepath.Join(t.TempDir(), "does-not-exist"),
+	}
+	_, err := NewAgent(cfg, testLogger())
+	if err == nil {
+		t.Fatal("expected an error for an unreadable secrets master key file, got nil")
+	}
+}
+
 func TestAgent_RunServesHealthAndShutsDownOnCancel(t *testing.T) {
 	cfg := Config{ListenAddr: "127.0.0.1:0", DataDir: t.TempDir()}
 	agent, err := NewAgent(cfg, testLogger())

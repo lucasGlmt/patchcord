@@ -110,7 +110,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("DELETE /v1/connectors/{id}", withAdminAuth(deps, handleDeleteConnector(deps)))
 	mux.HandleFunc("POST /v1/connectors/{id}/test", withAdminAuth(deps, handleTestConnector(deps)))
 	mux.HandleFunc("GET /v1/plugins", withAdminAuth(deps, handleListPlugins(deps)))
-	return withCORS(mux)
+	return withCORS(deps, mux)
 }
 
 // handleOpenAPISpec serves the OpenAPI (Swagger 2.0) document generated
@@ -123,18 +123,33 @@ func handleOpenAPISpec() http.HandlerFunc {
 	}
 }
 
-// withCORS wraps handler with a permissive CORS policy — reflecting any
-// Origin, allowing GET/POST/DELETE and a JSON Content-Type, and answering
-// preflight OPTIONS requests directly. This exists solely so a Vite dev
-// server (a different origin than the agent) can call this API during
-// application development; it is NOT a security boundary and must not be
-// read as one — see ADR-0024. Real origin restriction and the vision
-// document's "sessions limitées" are deferred.
-func withCORS(handler http.Handler) http.Handler {
+// withCORS wraps handler with a CORS policy that tracks the same opt-in
+// flag withAdminAuth already gates on (auth.AnyTokensExist, ADR-0036): with
+// no admin token ever created, it stays exactly as permissive as before
+// (reflecting any Origin) so a Vite dev server can call this API during
+// application development. Once an operator creates the first admin token,
+// permissive headers stop going out entirely — a browser then refuses to
+// let any cross-origin page read a response even though withAdminAuth would
+// otherwise leave "no token presented" ambiguous with "not a browser at
+// all". Before ADR-0045, the wildcard was unconditional: a page open in any
+// tab could script requests against a freshly installed, not-yet-token'd
+// agent and read the JSON back, which is exactly the state ADR-0036 was
+// meant to close off. Same-origin callers (curl, the CLI, an app served
+// from /apps/{id}/ itself) are unaffected either way — browsers don't
+// consult CORS headers for same-origin requests. See ADR-0045.
+func withCORS(deps Deps, handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		enforced, err := auth.AnyTokensExist(r.Context(), deps.DB)
+		// A lookup failure fails closed (no permissive headers): the
+		// underlying handler hits the same auth.AnyTokensExist call via
+		// withAdminAuth/withRunAuth and reports the real 500 to the caller;
+		// this layer just shouldn't hand out cross-origin readability on
+		// top of an already-broken auth check.
+		if err == nil && !enforced {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		}
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

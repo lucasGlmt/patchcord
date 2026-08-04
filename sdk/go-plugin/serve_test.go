@@ -89,6 +89,25 @@ func TestNewServer(t *testing.T) {
 	}
 }
 
+// TestServe_ReturnsNewServerErrorWithoutBlocking exercises Serve's own
+// "srv, err := newServer(plugin)" branch — the only part of Serve that
+// returns without binding a real listener or blocking forever, so it's the
+// only part of Serve a test can call directly and expect back. The rest of
+// Serve (net.Listen on a real port, registering the gRPC/health services,
+// printing the ready message, then grpcServer.Serve blocking until the
+// process is killed) is exercised indirectly by every example plugin
+// process the agent actually launches (internal/plugins.Supervisor's
+// tests) rather than in-process here, the same reason
+// internal/runtime.Agent.Run and internal/scheduler.Runner.Run don't reach
+// 100% either: it has no listener/context hook a test could use to
+// unblock it cleanly.
+func TestServe_ReturnsNewServerErrorWithoutBlocking(t *testing.T) {
+	err := Serve(Plugin{Manifest: Manifest{Version: "1.0.0"}}) // missing ID
+	if err == nil {
+		t.Fatal("expected an error for a plugin with no manifest id, got nil")
+	}
+}
+
 // dialServer starts an in-memory gRPC server backed by srv and returns a
 // client connected to it.
 func dialServer(t *testing.T, srv *server) pluginv1.PluginServiceClient {

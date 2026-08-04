@@ -111,15 +111,30 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 	return &Agent{
 		cfg:    cfg,
 		logger: logger,
-		server: &http.Server{Handler: api.NewRouter(api.Deps{
-			DB:              db,
-			Executor:        supervisor,
-			RunCtx:          runCtx,
-			Logger:          logger,
-			Sessions:        auth.NewStore(),
-			ConnectorTester: supervisor,
-			Secrets:         secretStore,
-		})},
+		server: &http.Server{
+			Handler: api.NewRouter(api.Deps{
+				DB:              db,
+				Executor:        supervisor,
+				RunCtx:          runCtx,
+				Logger:          logger,
+				Sessions:        auth.NewStore(),
+				ConnectorTester: supervisor,
+				Secrets:         secretStore,
+			}),
+			// ReadHeaderTimeout bounds how long a client may take sending
+			// its request headers — standard Go hardening against a
+			// slow-header (Slowloris-style) client tying up a handler
+			// goroutine indefinitely; it does not touch reading the body
+			// or writing the response. IdleTimeout bounds how long a
+			// keep-alive connection may sit idle between requests. Neither
+			// is a ReadTimeout/WriteTimeout: GET /v1/runs/{id}/events
+			// (see internal/api/events.go) deliberately holds its response
+			// open, streaming Server-Sent Events for as long as a run
+			// takes — a blanket WriteTimeout would sever that connection
+			// mid-run.
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
+		},
 		listener:   listener,
 		db:         db,
 		supervisor: supervisor,

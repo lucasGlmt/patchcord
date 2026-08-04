@@ -13,11 +13,16 @@ patchcord-app.yaml          →  AppPermissions{WorkflowsRun: [...]}
 
 ## What a session actually restricts
 
-Today, exactly one thing: `POST /v1/workflows/{id}/run`. `withOptionalAppSession` (`internal/api/apps.go`) wraps that route; `Session.CanRunWorkflow(workflowID)` checks the requested workflow id against `Permissions.WorkflowsRun`. Every other route (listing runs, listing workflows, reading a connector, ...) behaves identically whether or not a token is presented — there is no broader enforcement point yet. This mirrors a pattern already established for plugins: `plugins.CatalogEntry.Permissions` is recorded but unchecked too — declaring a permission ahead of an enforcement point that doesn't exist yet would be validation with nothing to validate.
+Today, exactly one thing: `POST /v1/workflows/{id}/run`. `withRunAuth` (`internal/api/adminauth.go`) wraps that route; `Session.CanRunWorkflow(workflowID)` checks the requested workflow id against `Permissions.WorkflowsRun`. Every other route (listing runs, listing workflows, reading a connector, ...) is admin-gated by `withAdminAuth` instead and never even looks at a session — there is no broader session-based enforcement point yet. This mirrors a pattern already established for plugins: `plugins.CatalogEntry.Permissions` is recorded but unchecked too — declaring a permission ahead of an enforcement point that doesn't exist yet would be validation with nothing to validate.
 
-## Additive, never a new gate
+## Additive, never a new gate — until admin auth is opted into
 
-A request with no `Authorization` header behaves exactly as it did before sessions existed — `withOptionalAppSession` only checks anything when a bearer token is actually present. A present-but-invalid token is `401`; a valid token requesting a workflow outside its permissions is `403`; a valid, permitted token passes through to the handler unchanged. No existing, unauthenticated caller of the public API is affected by an application session ever being issued to someone else.
+`withRunAuth` has two modes, tracking the same `auth.AnyTokensExist` flag `withAdminAuth` gates on ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)):
+
+- **No admin token created yet** (the default): a request with no `Authorization` header behaves exactly as it did before sessions existed — `withRunAuth` only checks anything when a bearer token is actually present. A present-but-invalid token is `401`; a valid session requesting a workflow outside its permissions is `403`; a valid, permitted session passes through unchanged.
+- **At least one admin token exists**: `POST /v1/workflows/{id}/run` now requires *some* credential — an admin token (full access, no permission check) or a valid app session scoped to that workflow. No credential at all is `401` in this mode, unlike the default one.
+
+Either way, no existing caller of the public API is affected by an application session ever being issued to someone else — a session only ever narrows what its own bearer token can do, never what anyone else's request is allowed.
 
 ## Sessions are not durable
 

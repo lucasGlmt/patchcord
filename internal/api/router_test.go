@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	_ "modernc.org/sqlite"
+
+	"github.com/lucasglmt/patchcord/internal/auth"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
@@ -110,7 +113,7 @@ func TestRouter_Health(t *testing.T) {
 // every other test here since none of them go through a browser's actual
 // CORS preflight enforcement, only this response header.
 func TestRouter_CORSAllowsDelete(t *testing.T) {
-	router := NewRouter(Deps{DB: openTestDB(t)})
+	router := NewRouter(Deps{DB: openMigratedTestDB(t)})
 
 	req := httptest.NewRequest(http.MethodOptions, "/v1/connectors/my_api", nil)
 	rec := httptest.NewRecorder()
@@ -121,6 +124,34 @@ func TestRouter_CORSAllowsDelete(t *testing.T) {
 	}
 	if allow := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(allow, "DELETE") {
 		t.Fatalf("Access-Control-Allow-Methods = %q, want it to contain DELETE", allow)
+	}
+}
+
+// TestRouter_CORSStopsBeingPermissiveOnceAnAdminTokenExists guards
+// ADR-0045: a wildcard Access-Control-Allow-Origin on a not-yet-token'd
+// agent lets any page open in the same browser script requests against it
+// and read the response back. withAdminAuth already refuses to leave that
+// window open once an operator creates a first token; withCORS must stop
+// handing out the headers that would let a browser ignore that refusal.
+func TestRouter_CORSStopsBeingPermissiveOnceAnAdminTokenExists(t *testing.T) {
+	db := openMigratedTestDB(t)
+	if _, _, err := auth.CreateToken(context.Background(), db, "ci"); err != nil {
+		t.Fatalf("CreateToken() error = %v", err)
+	}
+	router := NewRouter(Deps{DB: db})
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/connectors/my_api", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want it unset once an admin token exists", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Methods"); got != "" {
+		t.Fatalf("Access-Control-Allow-Methods = %q, want it unset once an admin token exists", got)
 	}
 }
 

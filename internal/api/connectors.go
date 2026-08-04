@@ -11,6 +11,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/plugins"
+	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/secrets"
 )
 
@@ -220,7 +221,16 @@ func handleTestConnector(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		ok, message, err := deps.ConnectorTester.TestConnector(r.Context(), resolved)
+		// Bounded the same way a workflow step's action call is (ADR-0018,
+		// runs.DefaultStepTimeout): without this, a connector pointed at
+		// an unreachable host (firewalled, wrong port, a database that
+		// never completes its TCP handshake) leaves TestConnector blocked
+		// on the request's own context, which by itself carries no
+		// deadline — the request would hang until the client gives up.
+		testCtx, cancel := context.WithTimeout(r.Context(), runs.DefaultStepTimeout)
+		defer cancel()
+
+		ok, message, err := deps.ConnectorTester.TestConnector(testCtx, resolved)
 		if err != nil {
 			http.Error(w, "test connector: "+err.Error(), http.StatusInternalServerError)
 			return

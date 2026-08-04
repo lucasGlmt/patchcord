@@ -45,6 +45,8 @@ curl -X POST http://127.0.0.1:7331/v1/apps/greeter/sessions
 # {"token":"...", "app_id":"greeter", "workflows_run":["hello_patchcord"], "issued_at":"..."}
 ```
 
-`POST /v1/apps/{id}/sessions` (`handleCreateAppSession`) issues a token via `auth.Store.Issue`, carrying exactly the permissions from the app's manifest — see [Concepts](concepts.md) for what that restricts and what it doesn't. Present it as `Authorization: Bearer <token>` on `POST /v1/workflows/{id}/run`; every other route ignores it. Requesting a session itself requires an admin token once one exists ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) — before then, no credential is required, consistent with the agent having no admin authentication yet (ADR-0026).
+`POST /v1/apps/{id}/sessions` (`handleCreateAppSession`) issues a token via `auth.Store.Issue`, carrying exactly the permissions from the app's manifest — see [Concepts](concepts.md) for what that restricts and what it doesn't. Present it as `Authorization: Bearer <token>` on `POST /v1/workflows/{id}/run`; every other route ignores it. Requesting a session itself follows the same opt-in rule every other route does ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)): it requires a valid admin token once at least one has been created, and no credential at all before then — the state a fresh agent starts in ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)).
+
+A session itself has no expiry and cannot be revoked before the agent restarts (`internal/auth/session.go`) — its blast radius is bounded by the manifest's `workflows_run` permissions, not by a lifecycle. Treat a leaked session token accordingly: it stays valid, for that one app's declared workflows only, until the next restart.
 
 In application code, prefer the TypeScript SDK over calling this endpoint by hand — see [Building an App with the TS SDK](building-with-sdk-ts.md#acquiring-a-session).

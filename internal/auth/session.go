@@ -5,11 +5,14 @@
 //
 // This is the minimal first slice (ADR-0026): sessions live only in
 // memory, are never persisted, never expire, and cannot be revoked before
-// the agent restarts. That is an explicit, temporary scope cut, not an
-// oversight — there is no admin-level authentication anywhere else in the
-// agent yet either (internal/api/router.go's withCORS doc comment already
-// notes this), so a hardened session lifecycle would be disproportionate
-// to what it would actually be protecting today.
+// the agent restarts. That was an explicit, temporary scope cut when
+// written, on the grounds that there was no admin-level authentication
+// anywhere else in the agent either — ADR-0036 has since added one, so a
+// session's blast radius is now bounded by its own permissions (never more
+// than one application's declared workflows_run) rather than by "nothing
+// else is protected today either". Expiry/revocation before restart remain
+// unimplemented; a leaked session token is a smaller, scoped risk than a
+// leaked admin token, not a nonexistent one.
 package auth
 
 import (

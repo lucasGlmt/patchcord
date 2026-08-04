@@ -223,6 +223,48 @@ func TestHandleTestConnector_ReportsTheTesterResult(t *testing.T) {
 	}
 }
 
+// deadlineObservingConnectorTester records whether the ctx it was called
+// with carried a deadline, without ever blocking — proving
+// handleTestConnector bounds the call (ADR-0018-style) without an actual
+// multi-second test.
+type deadlineObservingConnectorTester struct {
+	hadDeadline *bool
+}
+
+func (d deadlineObservingConnectorTester) TestConnector(ctx context.Context, _ *connectors.ResolvedConnector) (bool, string, error) {
+	_, ok := ctx.Deadline()
+	*d.hadDeadline = ok
+	return true, "", nil
+}
+
+// TestHandleTestConnector_BoundsTheCallWithADeadline guards against a
+// connector pointed at an unreachable host hanging the request forever: a
+// request's own context carries no deadline by itself
+// (net/http.Server.Serve wires request contexts to server shutdown, not to
+// a per-request timeout), so handleTestConnector must add one itself
+// before calling the tester.
+func TestHandleTestConnector_BoundsTheCallWithADeadline(t *testing.T) {
+	db := openMigratedTestDB(t)
+	insertTestPlugin(t, db, "io.patchcord.http", []string{"http.request@1"}, nil)
+
+	var hadDeadline bool
+	router := NewRouter(Deps{DB: db, ConnectorTester: deadlineObservingConnectorTester{hadDeadline: &hadDeadline}})
+
+	create := httptest.NewRequest(http.MethodPost, "/v1/connectors", strings.NewReader(`{"id":"my_api","type":"http.request@1"}`))
+	router.ServeHTTP(httptest.NewRecorder(), create)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/connectors/my_api/test", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if !hadDeadline {
+		t.Fatal("ConnectorTester.TestConnector was called with a ctx that had no deadline")
+	}
+}
+
 func TestHandleTestConnector_UnknownIDReturns404(t *testing.T) {
 	db := openMigratedTestDB(t)
 	router := NewRouter(Deps{DB: db, ConnectorTester: fakeConnectorTester{ok: true}})

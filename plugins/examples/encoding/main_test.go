@@ -163,3 +163,27 @@ func TestUUIDGenerateAction_Run(t *testing.T) {
 		t.Fatal("two calls to Run() produced the same UUID")
 	}
 }
+
+// TestActionIDs guards against an ID() left stale after a copy-paste: the
+// plugin routes an incoming call by matching the action ID a workflow's
+// `uses:` declares against Action.ID() (see sdk/go-plugin), so an action
+// whose ID() doesn't match its own doc comment/registration would silently
+// run under the wrong name — or never run at all, shadowed by whichever
+// other action does claim that ID.
+func TestActionIDs(t *testing.T) {
+	tests := []struct {
+		action patchcord.Action
+		want   string
+	}{
+		{base64EncodeAction{}, "base64.encode@1"},
+		{base64DecodeAction{}, "base64.decode@1"},
+		{sha256Action{}, "hash.sha256@1"},
+		{uuidGenerateAction{}, "uuid.generate@1"},
+	}
+
+	for _, tt := range tests {
+		if got := tt.action.ID(); got != tt.want {
+			t.Errorf("%T.ID() = %q, want %q", tt.action, got, tt.want)
+		}
+	}
+}

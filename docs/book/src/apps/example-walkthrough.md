@@ -41,8 +41,8 @@ then open `http://127.0.0.1:7331/apps/greeter/` — `handleServeApp` resolves `g
 
 Clicking "Say hello" runs `sayHello()` (`apps/examples/greeter/index.html`'s inline script):
 
-1. `POST /v1/apps/greeter/sessions` — no credential needed to ask; the response's `token` carries exactly `{"workflows_run": ["hello_patchcord"]}`, read straight from the manifest installed in step 2.
-2. `POST /v1/workflows/hello_patchcord/run`, with `Authorization: Bearer <token>`. `withOptionalAppSession` validates the token, then `Session.CanRunWorkflow("hello_patchcord")` checks it against the session's permissions — `true`, so the request reaches `handleRunWorkflow` and a run starts.
+1. `POST /v1/apps/greeter/sessions` — no credential needed to ask on a fresh agent (no admin token created yet, [ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)); the response's `token` carries exactly `{"workflows_run": ["hello_patchcord"]}`, read straight from the manifest installed in step 2.
+2. `POST /v1/workflows/hello_patchcord/run`, with `Authorization: Bearer <token>`. `withRunAuth` validates the token as a session, then `Session.CanRunWorkflow("hello_patchcord")` checks it against the session's permissions — `true`, so the request reaches `handleRunWorkflow` and a run starts.
 3. The page polls `GET /v1/runs/{id}` every 150ms until the run leaves `queued`/`running`, then reads `run.outputs.value` — `text.uppercase@1`'s output for the input `"Welcome Patchcord"` — into the page.
 
 ## 5. See the permission actually enforced
