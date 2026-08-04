@@ -18,6 +18,8 @@ These terms are used with a precise meaning throughout the API, the CLI, and thi
 | **Workflow** | A declarative orchestration of actions, versioned and immutable once published, serialized as YAML/JSON. |
 | **Application** | A client of the agent (web, desktop, ...) using only the public API and the TypeScript SDK. Never runs with full admin privileges. |
 | **Run** | An execution instance of a workflow. States: `queued`, `running`, `succeeded`, `failed`, `cancelled`. |
+| **Package** | A distributable archive of a plugin (`.patchcord-plugin`) or application (`.patchcord-app`) that `plugin install`/`app install` can install directly, produced by `plugin pack`/`app pack`. A workflow's package (`.patchcord-workflow`) is just its plain YAML file — no archive involved. |
+| **Bundle** | A `.patchcord-bundle` package that groups an application, its workflows, and its plugin dependencies into one installable unit. See [Bundles](bundles/index.md). |
 
 ## How this book is organized
 
@@ -28,6 +30,7 @@ This book covers the parts of Patchcord you build against or operate day to day:
 - **[Workflows](workflows/index.md)** — the workflow format, run lifecycle, triggering, and real-time events.
 - **[SDK TypeScript](sdk-ts/index.md)** — the official TypeScript client for the public API.
 - **[Apps](apps/index.md)** — building and hosting applications on top of the agent.
+- **[Bundles](bundles/index.md)** — grouping an app, its workflows, and its plugin dependencies into one installable package.
 
 ## What this book is not
 

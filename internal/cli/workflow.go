@@ -172,11 +172,16 @@ func newWorkflowValidateCommand() *cobra.Command {
 func newWorkflowExportCommand() *cobra.Command {
 	var dataDir string
 	var version int
+	var output string
 
 	cmd := &cobra.Command{
 		Use:   "export <workflow-id>",
 		Short: "Print a workflow version's YAML source",
-		Args:  cobra.ExactArgs(1),
+		Long: "Prints a workflow version's YAML source to stdout, or writes it to a\n" +
+			"file with --output — conventionally named <id>-v<version>" + workflow.FileExtension + "\n" +
+			"(vision document, section 9.3: a workflow package is exactly this\n" +
+			"declarative YAML, no archive involved).",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
 			if err != nil {
@@ -192,7 +197,15 @@ func newWorkflowExportCommand() *cobra.Command {
 				return fmt.Errorf("export workflow: %w", err)
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), source)
+			if output == "" {
+				fmt.Fprint(cmd.OutOrStdout(), source)
+				return nil
+			}
+
+			if err := os.WriteFile(output, []byte(source), 0o644); err != nil {
+				return fmt.Errorf("export workflow: write %q: %w", output, err)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Exported %s into %s\n", args[0], output)
 
 			return nil
 		},
@@ -200,6 +213,7 @@ func newWorkflowExportCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
 	cmd.Flags().IntVar(&version, "version", 0, "workflow version to export (defaults to the latest)")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "write to this file instead of stdout")
 
 	return cmd
 }

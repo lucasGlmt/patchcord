@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ func newPluginCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newPluginInstallCommand())
+	cmd.AddCommand(newPluginPackCommand())
 	cmd.AddCommand(newPluginListCommand())
 	cmd.AddCommand(newPluginInspectCommand())
 	cmd.AddCommand(newPluginUninstallCommand())
@@ -54,13 +56,48 @@ func newPluginCommand() *cobra.Command {
 	return cmd
 }
 
+// gzipMagic is the two-byte prefix of every gzip stream (RFC 1952), which a
+// raw plugin executable never starts with — used to tell a .patchcord-plugin
+// archive apart from a plain executable path without relying on a file
+// extension (ADR-0027: "the format of a content is never guessed from its
+// extension").
+var gzipMagic = [2]byte{0x1f, 0x8b}
+
+// isPackageArchive reports whether the file at path starts with the gzip
+// magic bytes.
+func isPackageArchive(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	var prefix [2]byte
+	if _, err := io.ReadFull(f, prefix[:]); err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return prefix == gzipMagic, nil
+}
+
 func newPluginInstallCommand() *cobra.Command {
 	var dataDir string
 
 	cmd := &cobra.Command{
 		Use:   "install <path>",
-		Short: "Install a plugin from a local executable path",
-		Args:  cobra.ExactArgs(1),
+		Short: "Install a plugin from a local executable or a .patchcord-plugin package",
+		Long: "Installs a plugin from either:\n\n" +
+			"  - a raw executable path, launched directly for the current platform;\n" +
+			"  - a .patchcord-plugin package produced by `plugin pack` — the\n" +
+			"    executable matching the current platform is extracted under the\n" +
+			"    agent's data directory, so the package file itself does not need\n" +
+			"    to stick around afterwards.\n\n" +
+			"The two are told apart by sniffing the file's content (gzip magic\n" +
+			"bytes), not its extension.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			db, err := openDataStore(dataDir)
 			if err != nil {
@@ -68,7 +105,17 @@ func newPluginInstallCommand() *cobra.Command {
 			}
 			defer db.Close()
 
-			entry, err := plugins.Install(cmd.Context(), db, args[0])
+			isPackage, err := isPackageArchive(args[0])
+			if err != nil {
+				return fmt.Errorf("install plugin: %w", err)
+			}
+
+			var entry *plugins.CatalogEntry
+			if isPackage {
+				entry, err = plugins.InstallPackage(cmd.Context(), db, dataDir, args[0])
+			} else {
+				entry, err = plugins.Install(cmd.Context(), db, args[0])
+			}
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
 			}
@@ -85,6 +132,51 @@ func newPluginInstallCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+
+	return cmd
+}
+
+func newPluginPackCommand() *cobra.Command {
+	var output string
+
+	cmd := &cobra.Command{
+		Use:   "pack <dir>",
+		Short: "Package a plugin directory into a .patchcord-plugin archive",
+		Long: "Packs dir (which must contain a manifest.json declaring one\n" +
+			"executable per supported platform, vision document section 9.1) into\n" +
+			"a .patchcord-plugin archive that `plugin install` can install\n" +
+			"directly. Building the per-platform executables under dir (e.g. via\n" +
+			"GOOS/GOARCH cross-compilation) is left to the plugin's own build\n" +
+			"tooling — pack only archives what is already there.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			manifest, err := plugins.LoadPackageManifest(args[0])
+			if err != nil {
+				return fmt.Errorf("pack plugin: %w", err)
+			}
+
+			out := output
+			if out == "" {
+				out = fmt.Sprintf("%s-%s%s", manifest.ID, manifest.Version, plugins.PackageExtension)
+			}
+
+			f, err := os.Create(out)
+			if err != nil {
+				return fmt.Errorf("pack plugin: %w", err)
+			}
+			defer f.Close()
+
+			if err := plugins.Pack(args[0], f); err != nil {
+				return fmt.Errorf("pack plugin: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Packed %s (%s) into %s\n", manifest.ID, manifest.Version, out)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>-<version>.patchcord-plugin in the current directory)")
 
 	return cmd
 }

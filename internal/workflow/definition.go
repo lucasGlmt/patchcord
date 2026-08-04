@@ -11,6 +11,15 @@ import (
 	"github.com/lucasglmt/patchcord/internal/secrets"
 )
 
+// FileExtension is the conventional file extension for a workflow
+// definition file (vision document, section 9.3: ".patchcord-workflow" —
+// "définition déclarative seule"). Unlike .patchcord-app or
+// .patchcord-plugin, a workflow package is not an archive: it is exactly
+// the plain YAML Definition below, and `workflow install`/`workflow
+// export` read and write it without looking at this extension at all — it
+// is a pure naming convention.
+const FileExtension = ".patchcord-workflow"
+
 // Definition is a parsed, declarative workflow, as described in the vision
 // document (section 7.5). It is serialized as YAML.
 type Definition struct {

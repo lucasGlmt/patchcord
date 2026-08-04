@@ -14,6 +14,7 @@
     - [workflow](cli/commands/workflow.md)
     - [run](cli/commands/run.md)
     - [app](cli/commands/app.md)
+    - [bundle](cli/commands/bundle.md)
     - [auth](cli/commands/auth.md)
     - [secret](cli/commands/secret.md)
 
@@ -58,3 +59,7 @@
 - [Hosting & Sessions](apps/hosting-and-sessions.md)
 - [Building an App with the TS SDK](apps/building-with-sdk-ts.md)
 - [Example Walkthrough](apps/example-walkthrough.md)
+
+# Bundles
+
+- [Overview](bundles/index.md)

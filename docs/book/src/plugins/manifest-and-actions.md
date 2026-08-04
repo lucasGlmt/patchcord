@@ -1,6 +1,11 @@
 # Manifest & Actions
 
-A plugin's manifest is what it returns from the [handshake](protocol.md#handshake): its ID, version, contributed actions, contributed connector types, and permissions. There is no separate manifest file — it's a live RPC response, computed from what a `patchcord.Plugin` (Go SDK) declares in code.
+A plugin has two distinct manifests, serving different moments in its lifecycle:
+
+- **The handshake manifest** is what a running plugin process returns from the [handshake](protocol.md#handshake): its ID, version, contributed actions, contributed connector types, and permissions. It is a live RPC response, computed from what a `patchcord.Plugin` (Go SDK) declares in code — the source of truth once the process is actually launched.
+- **The package manifest** (`manifest.json`, only present for a plugin distributed as a `.patchcord-plugin` package) is a static, declarative file: ID, version, protocol version, declared permissions, and one executable path per supported platform. It exists so the agent can show permissions and pick the right platform executable *before* ever launching the process ([ADR-0042](../../../adr/0042-formats-de-package-plugin-workflow-bundle.md)). A plugin installed from a raw executable path has no package manifest at all — see [`patchcord plugin`](../cli/commands/plugin.md).
+
+Both describe the same plugin, but neither replaces the other: the package manifest gets you to a safe launch, the handshake manifest tells you what actually got launched.
 
 ## What an action declares
 

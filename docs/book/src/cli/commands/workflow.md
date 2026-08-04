@@ -32,7 +32,7 @@ Runs the same checks as `install` but never publishes anything — useful before
 patchcord workflow export hello_patchcord --version 2
 ```
 
-Prints a workflow version's YAML source as-is. `--version` defaults to the latest.
+Prints a workflow version's YAML source as-is to stdout. `--version` defaults to the latest. `-o/--output <path>` writes it to a file instead — conventionally named `<id>-v<version>.patchcord-workflow`, a pure naming convention with no archive format behind it: a workflow package is exactly this declarative YAML (vision document, section 9.3). See [ADR-0042](../../../../adr/0042-formats-de-package-plugin-workflow-bundle.md).
 
 ## `run <workflow-id>`
 

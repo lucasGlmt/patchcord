@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 const helloPatchcordYAML = `
@@ -246,6 +248,26 @@ func TestWorkflowLifecycle_HelloPatchcordEndToEnd(t *testing.T) {
 	}
 	if exportOut.String() != helloPatchcordYAML {
 		t.Fatalf("exported source = %q, want the original source back verbatim", exportOut.String())
+	}
+
+	exportPath := filepath.Join(t.TempDir(), "hello_patchcord"+workflow.FileExtension)
+	exportToFileCmd := newWorkflowExportCommand()
+	exportToFileCmd.SetArgs([]string{"hello_patchcord", "--data-dir", dataDir, "--output", exportPath})
+	exportToFileCmd.SetContext(context.Background())
+	var exportToFileOut bytes.Buffer
+	exportToFileCmd.SetOut(&exportToFileOut)
+	if err := exportToFileCmd.Execute(); err != nil {
+		t.Fatalf("workflow export --output error = %v", err)
+	}
+	if !strings.Contains(exportToFileOut.String(), exportPath) {
+		t.Fatalf("export --output output = %q, want it to mention %q", exportToFileOut.String(), exportPath)
+	}
+	exportedBody, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatalf("read exported file: %v", err)
+	}
+	if string(exportedBody) != helloPatchcordYAML {
+		t.Fatalf("exported file content = %q, want the original source back verbatim", exportedBody)
 	}
 
 	runList := newRunListCommand()

@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -56,7 +58,7 @@ func TestMain(m *testing.M) {
 func TestNewRootCommand_HasPluginSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
-	for _, name := range []string{"install", "list", "inspect", "uninstall"} {
+	for _, name := range []string{"install", "pack", "list", "inspect", "uninstall"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := root.Find([]string{"plugin", name})
 			if err != nil {
@@ -177,5 +179,78 @@ func TestPluginCommands_FullLifecycle(t *testing.T) {
 	inspectAgain.SetContext(context.Background())
 	if err := inspectAgain.Execute(); err == nil {
 		t.Fatal("expected plugin inspect to fail after uninstall, got nil error")
+	}
+}
+
+// TestPluginPackCommand_ThenInstall exercises `plugin pack` followed by
+// `plugin install` against the resulting .patchcord-plugin archive, proving
+// that install correctly tells a gzip archive apart from a raw executable
+// (isPackageArchive) and routes it through plugins.InstallPackage.
+func TestPluginPackCommand_ThenInstall(t *testing.T) {
+	sourceDir := t.TempDir()
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	relExecutable := filepath.Join("binaries", platform, "plugin")
+
+	execPath := filepath.Join(sourceDir, relExecutable)
+	if err := os.MkdirAll(filepath.Dir(execPath), 0o755); err != nil {
+		t.Fatalf("mkdir binaries dir: %v", err)
+	}
+	body, err := os.ReadFile(examplePluginPath)
+	if err != nil {
+		t.Fatalf("read example plugin binary: %v", err)
+	}
+	if err := os.WriteFile(execPath, body, 0o755); err != nil {
+		t.Fatalf("write staged executable: %v", err)
+	}
+
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 1,
+		"kind": "plugin",
+		"id": "io.patchcord.example-text",
+		"version": "1.0.0",
+		"protocolVersion": 1,
+		"permissions": [],
+		"executables": {%q: %q}
+	}`, platform, filepath.ToSlash(relExecutable))
+	if err := os.WriteFile(filepath.Join(sourceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.json: %v", err)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "text-1.0.0.patchcord-plugin")
+	pack := newPluginPackCommand()
+	pack.SetArgs([]string{sourceDir, "--output", packagePath})
+	pack.SetContext(context.Background())
+	var packOut bytes.Buffer
+	pack.SetOut(&packOut)
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("plugin pack error = %v", err)
+	}
+	if !strings.Contains(packOut.String(), packagePath) {
+		t.Fatalf("pack output = %q, want it to mention %q", packOut.String(), packagePath)
+	}
+
+	dataDir := t.TempDir()
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	var installOut bytes.Buffer
+	install.SetOut(&installOut)
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+	if !strings.Contains(installOut.String(), "io.patchcord.example-text") {
+		t.Fatalf("install output = %q, want it to mention the installed plugin id", installOut.String())
+	}
+
+	inspect := newPluginInspectCommand()
+	inspect.SetArgs([]string{"io.patchcord.example-text", "--data-dir", dataDir})
+	inspect.SetContext(context.Background())
+	var inspectOut bytes.Buffer
+	inspect.SetOut(&inspectOut)
+	if err := inspect.Execute(); err != nil {
+		t.Fatalf("plugin inspect error = %v", err)
+	}
+	if !strings.Contains(inspectOut.String(), "text.uppercase@1") {
+		t.Fatalf("inspect output = %q, want it to mention the plugin's action", inspectOut.String())
 	}
 }
