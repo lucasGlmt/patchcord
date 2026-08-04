@@ -5,7 +5,11 @@
 // internal/runs's job, orchestrating on top of this package.
 package workflow
 
-import "gopkg.in/yaml.v3"
+import (
+	"gopkg.in/yaml.v3"
+
+	"github.com/lucasglmt/patchcord/internal/secrets"
+)
 
 // Definition is a parsed, declarative workflow, as described in the vision
 // document (section 7.5). It is serialized as YAML.
@@ -45,9 +49,10 @@ type InputDef struct {
 	Enum []string `yaml:"enum,omitempty"`
 }
 
-// Trigger declares how a workflow starts: "manual" (the default so far) or
-// "schedule", fired unattended by internal/scheduler on a cron cadence.
-// Webhook and event triggers remain a later phase.
+// Trigger declares how a workflow starts: "manual" (the default so far),
+// "schedule" (fired unattended by internal/scheduler on a cron cadence,
+// ADR-0035), or "webhook" (fired by an inbound HTTP request, ADR-0037).
+// Event triggers remain a later phase.
 type Trigger struct {
 	Type string `yaml:"type"`
 	// Cron is a standard 5-field cron expression ("minute hour dom month
@@ -61,6 +66,11 @@ type Trigger struct {
 	// occurrence, then resumes normal cadence. Only meaningful when Type is
 	// "schedule". See ADR-0035.
 	OnMissed string `yaml:"on_missed,omitempty"`
+	// SecretRef is a reference (never the secret's actual value — ADR-0009)
+	// resolved at request time to check an inbound webhook request's shared
+	// secret header. Required when Type is "webhook", rejected otherwise.
+	// See ADR-0037.
+	SecretRef secrets.Reference `yaml:"secret_ref,omitempty"`
 }
 
 // Step is one action invocation within a workflow.

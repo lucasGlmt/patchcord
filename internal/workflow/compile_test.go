@@ -1,6 +1,10 @@
 package workflow
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/lucasglmt/patchcord/internal/secrets"
+)
 
 func validDefinition() *Definition {
 	return &Definition{
@@ -361,6 +365,62 @@ func TestValidate(t *testing.T) {
 			name: "rejects a schedule trigger with a connector-bound step",
 			mutate: func(d *Definition) {
 				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *"}
+				d.Steps[0].Connector = "${{ bindings.ai_provider }}"
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a well-formed webhook trigger",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
+			},
+		},
+		{
+			name: "rejects a webhook trigger with no secret_ref",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a webhook trigger with an unsupported secret_ref type",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook", SecretRef: secrets.Reference{Type: "vault", Key: "WEBHOOK_TOKEN"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a webhook trigger declaring a cron expression",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook", Cron: "*/5 * * * *", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a manual trigger declaring a secret_ref",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "manual", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a schedule trigger declaring a secret_ref",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "schedule", Cron: "*/5 * * * *", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
+			},
+			wantErr: true,
+		},
+		{
+			name: "accepts a webhook trigger with a required input lacking a default",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
+				d.Inputs = []InputDef{{Name: "name", Required: true}}
+			},
+		},
+		{
+			name: "rejects a webhook trigger with a connector-bound step",
+			mutate: func(d *Definition) {
+				d.Trigger = Trigger{Type: "webhook", SecretRef: secrets.Reference{Type: "env", Key: "WEBHOOK_TOKEN"}}
 				d.Steps[0].Connector = "${{ bindings.ai_provider }}"
 			},
 			wantErr: true,

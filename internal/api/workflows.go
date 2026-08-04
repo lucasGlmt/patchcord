@@ -374,34 +374,46 @@ func handleRunWorkflow(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		if deps.Executor == nil {
-			http.Error(w, "run workflow: no action executor configured", http.StatusInternalServerError)
-			return
-		}
-
-		def, run, preparedInputs, err := runs.Start(r.Context(), deps.DB, workflowID, body.Inputs)
-		if errors.Is(err, runs.ErrWorkflowNotFound) {
-			http.Error(w, fmt.Sprintf("workflow %q was not found", workflowID), http.StatusNotFound)
-			return
-		}
-		if errors.Is(err, workflow.ErrInvalidInputs) {
-			http.Error(w, "run workflow: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err != nil {
-			http.Error(w, "run workflow: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		go func() {
-			if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, body.Bindings, runs.ExecuteOptions{}); err != nil {
-				deps.logger().Error("continue run",
-					slog.String("run_id", run.ID),
-					slog.String("workflow_id", workflowID),
-					slog.String("error", err.Error()))
-			}
-		}()
-
-		writeJSON(w, http.StatusAccepted, toRunSummary(run, nil))
+		startRunAndRespond(w, r, deps, workflowID, body.Inputs, body.Bindings)
 	}
+}
+
+// startRunAndRespond starts a new run of workflowID's latest installed
+// version with inputs/bindings, continues it in a background goroutine
+// bound to deps.RunCtx (so it keeps going after this handler has already
+// responded and the request is gone — see handleRunWorkflow's doc
+// comment), and responds 202 with the run's initial status. Shared by
+// handleRunWorkflow and handleWebhookTrigger (webhooks.go, ADR-0037), which
+// differ only in how they authenticate the caller and where inputs/bindings
+// come from.
+func startRunAndRespond(w http.ResponseWriter, r *http.Request, deps Deps, workflowID string, inputs map[string]any, bindings map[string]string) {
+	if deps.Executor == nil {
+		http.Error(w, "run workflow: no action executor configured", http.StatusInternalServerError)
+		return
+	}
+
+	def, run, preparedInputs, err := runs.Start(r.Context(), deps.DB, workflowID, inputs)
+	if errors.Is(err, runs.ErrWorkflowNotFound) {
+		http.Error(w, fmt.Sprintf("workflow %q was not found", workflowID), http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, workflow.ErrInvalidInputs) {
+		http.Error(w, "run workflow: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, "run workflow: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	go func() {
+		if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, bindings, runs.ExecuteOptions{}); err != nil {
+			deps.logger().Error("continue run",
+				slog.String("run_id", run.ID),
+				slog.String("workflow_id", workflowID),
+				slog.String("error", err.Error()))
+		}
+	}()
+
+	writeJSON(w, http.StatusAccepted, toRunSummary(run, nil))
 }

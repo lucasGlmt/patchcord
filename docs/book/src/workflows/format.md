@@ -43,7 +43,7 @@ steps:
 | `schema_version` | Must equal `workflow.SupportedSchemaVersion` (currently `1`) — the only version this engine understands. |
 | `id` | The workflow's stable id, referenced by `patchcord workflow run <id>` and `POST /v1/workflows/{id}/run`. |
 | `version` | A positive integer. Installing a workflow never overwrites an existing `(id, version)` — see [Concepts](concepts.md). |
-| `trigger.type` | `"manual"` or `"schedule"`. Webhook and event triggers remain a later phase (CLAUDE.md §9). See [Schedule trigger](#schedule-trigger). |
+| `trigger.type` | `"manual"`, `"schedule"` or `"webhook"`. Event triggers remain a later phase (CLAUDE.md §9). See [Schedule trigger](#schedule-trigger) and [Webhook trigger](#webhook-trigger). |
 | `inputs` | Optional — the workflow's declared input schema. See [Declared inputs](#declared-inputs). A workflow with no `inputs` accepts any `${{ workflow.inputs.<key> }}` key, unvalidated, exactly as before this field existed. |
 | `steps` | A non-empty list of steps, executed strictly in order. |
 
@@ -64,7 +64,7 @@ Each step:
 
 `workflow.Validate` (`internal/workflow/compile.go`) checks a parsed `Definition` before it can be installed or run (vision document, section 12.5):
 
-- `schema_version` is supported, `id` is non-empty, `version` is positive, `trigger.type` is `"manual"` or `"schedule"` — see [Schedule trigger](#schedule-trigger) for the extra rules a `"schedule"` trigger must satisfy;
+- `schema_version` is supported, `id` is non-empty, `version` is positive, `trigger.type` is `"manual"`, `"schedule"` or `"webhook"` — see [Schedule trigger](#schedule-trigger) and [Webhook trigger](#webhook-trigger) for the extra rules each must satisfy;
 - at least one step; every step id is non-empty and unique;
 - every `uses` is in `knownActions` — the set of action ids currently installed plugins contribute (`plugins.KnownActions`), passed in by the caller so this package stays free of any persistence or process dependency;
 - every `${{ ... }}` expression in `with`, `connector`, `if` or `foreach` has a supported shape (below), and every `steps.<id>.outputs...` reference points at a step defined **earlier** in the same list — a forward reference or a typo'd step id is rejected at install time, not at run time;
@@ -139,6 +139,40 @@ If the agent was offline past a scheduled firing, `on_missed` decides what happe
 Missing exactly one occurrence (the ordinary case — the agent was running continuously and the schedule simply came due) always fires, independent of `on_missed`; the policy only kicks in once more than one occurrence has gone by, which only happens after a stretch of downtime.
 
 `GET /v1/workflows/{id}` exposes the resolved state for a client: `trigger_type`, `trigger_cron`, `trigger_on_missed` (always the effective policy — `"skip"` even when the YAML left it implicit), and `next_run_at` (from the `schedules` table, so it reflects the live schedule even when viewing an older installed version).
+
+## Webhook trigger
+
+`trigger: { type: webhook, secret_ref: { type: ..., key: ... } }` fires a workflow when an inbound `POST /v1/webhooks/<id>` request arrives, instead of a manual run or a cron cadence (`workflow.Trigger`, `internal/api/webhooks.go`, [ADR-0037](../../../adr/0037-trigger-webhook-secret-partage.md)):
+
+```yaml
+trigger:
+  type: webhook
+  secret_ref:
+    type: env
+    key: WEBHOOK_DEMO_TOKEN
+```
+
+(`workflows/examples/webhook_demo.yaml`. Install it, set the referenced environment variable, then fire it from outside the agent:)
+
+```bash
+patchcord workflow install workflows/examples/webhook_demo.yaml
+WEBHOOK_DEMO_TOKEN=s3cr3t patchcord serve
+curl -X POST http://127.0.0.1:7331/v1/webhooks/webhook_demo \
+  -H "X-Patchcord-Webhook-Token: s3cr3t" \
+  -d '{"name": "world"}'
+```
+
+| Field | Meaning |
+|---|---|
+| `secret_ref` | A reference (never the secret's actual value — [ADR-0009](../../../adr/0009-secrets-jamais-dans-workflows.md)), the same `type`/`key` shape a connector's secret references use. Required, resolved at request time and compared against the `X-Patchcord-Webhook-Token` header. |
+
+**Authentication is per-request, not an admin token.** `POST /v1/webhooks/{id}` is never gated by `withAdminAuth` ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) — an external sender (GitHub, Stripe, a custom script...) will never hold one. Instead, the resolved `secret_ref` value must match `X-Patchcord-Webhook-Token` exactly (compared in constant time); a missing or incorrect header is `401`, an unknown workflow or one whose trigger isn't `"webhook"` is `404`.
+
+**The request body becomes the run's inputs directly.** Unlike `POST /v1/workflows/{id}/run`'s `{"inputs": ..., "bindings": ...}` envelope, the webhook endpoint treats the request's top-level JSON object as `workflow.inputs` itself — `${{ workflow.inputs.name }}` above resolves to the top-level `"name"` key of whatever the sender posts. No real webhook sender wraps its payload in `{"inputs": ...}` for Patchcord's convenience, so the endpoint doesn't ask for that. A non-object body (an array, a bare string, invalid JSON) is `400`.
+
+**A real caller, unlike `"schedule"`.** Because an inbound request is a real caller supplying real data, `Validate` does **not** reject a required input without a default for a `"webhook"` trigger the way it does for `"schedule"` — a missing required field is instead a normal `400` from `workflow.ErrInvalidInputs`, exactly like a manual run missing a required input. A connector-bound step is still rejected, same as `"schedule"`: there is no `bindings` map for an anonymous sender to fill in.
+
+`internal/api`'s `handleWebhookTrigger` calls the same `runs.Start`/`runs.Continue` path every other trigger uses (via a shared `startRunAndRespond` helper) and responds `202 Accepted` immediately, exactly like `POST /v1/workflows/{id}/run` — most webhook senders expect a fast acknowledgement and retry on timeout, so waiting for the run to finish before responding would be the wrong tradeoff.
 
 ## Expressions
 

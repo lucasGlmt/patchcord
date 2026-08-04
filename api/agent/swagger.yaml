@@ -585,6 +585,49 @@ paths:
       summary: Check agent health
       tags:
       - system
+  /webhooks/{id}:
+    post:
+      consumes:
+      - application/json
+      description: 'Starts a new run of the latest installed version of the named
+        workflow, if it declares a "webhook" trigger — the request body''s top-level
+        JSON object becomes the run''s inputs directly, not wrapped in {"inputs":
+        ...}. Requires "X-Patchcord-Webhook-Token: <the trigger''s resolved secret_ref>"
+        — never an admin token.'
+      parameters:
+      - description: Workflow id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/api.runSummary'
+        "400":
+          description: the body isn't a JSON object, or its fields don't satisfy the
+            workflow's declared input schema
+          schema:
+            type: string
+        "401":
+          description: missing or incorrect X-Patchcord-Webhook-Token
+          schema:
+            type: string
+        "404":
+          description: workflow not found, or its trigger isn't \"webhook\
+          schema:
+            type: string
+        "500":
+          description: no action executor configured, the secret_ref doesn't resolve,
+            or a persistence failure
+          schema:
+            type: string
+      summary: Trigger a workflow via its webhook
+      tags:
+      - webhooks
   /workflows:
     get:
       description: Returns every installed workflow version, most recently installed

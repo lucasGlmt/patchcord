@@ -64,16 +64,18 @@ func (d Deps) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// NewRouter returns the agent's public HTTP API handler.
-// NewRouter wires every route behind withAdminAuth (ADR-0036) except three
-// deliberate exceptions: GET /v1/system/health (a liveness check has to
-// answer before any caller could prove who it is), GET /v1/openapi.json
-// (public API documentation, same convention as an authenticated API's docs
-// page), and GET /apps/{id}/ (serves an installed application's own static
-// UI to whichever end user's browser loads it — that end user is never
-// expected to hold an admin token). POST /v1/workflows/{id}/run and
-// POST /v1/apps/{id}/sessions get their own dedicated wrapping — see
-// withRunAuth and handleCreateAppSession's doc comment.
+// NewRouter returns the agent's public HTTP API handler, wiring every route
+// behind withAdminAuth (ADR-0036) except three deliberate exceptions:
+// GET /v1/system/health (a liveness check has to answer before any caller
+// could prove who it is), GET /v1/openapi.json (public API documentation,
+// same convention as an authenticated API's docs page), and GET /apps/{id}/
+// (serves an installed application's own static UI to whichever end user's
+// browser loads it — that end user is never expected to hold an admin
+// token). Three routes get their own dedicated wrapping instead:
+// POST /v1/workflows/{id}/run and POST /v1/apps/{id}/sessions (see
+// withRunAuth and handleCreateAppSession's doc comment), and
+// POST /v1/webhooks/{id} (never admin-gated at all — see
+// handleWebhookTrigger's doc comment, ADR-0037).
 func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
@@ -85,6 +87,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /v1/runs/{id}/cancel", withAdminAuth(deps, handleCancelRun(deps)))
 	mux.HandleFunc("GET /v1/runs/{id}/events", withAdminAuth(deps, handleRunEvents(deps)))
 	mux.HandleFunc("GET /v1/openapi.json", handleOpenAPISpec())
+	mux.HandleFunc("POST /v1/webhooks/{id}", handleWebhookTrigger(deps))
 	mux.HandleFunc("GET /v1/apps", withAdminAuth(deps, handleListApps(deps)))
 	mux.HandleFunc("POST /v1/apps/{id}/sessions", withAdminAuth(deps, handleCreateAppSession(deps)))
 	mux.HandleFunc("GET /apps/{id}/", handleServeApp(deps))

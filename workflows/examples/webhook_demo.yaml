@@ -1,0 +1,40 @@
+# A "webhook" trigger (ADR-0037): fires on an inbound HTTP request instead
+# of a manual `workflow run` or a cron cadence. Install it, set
+# WEBHOOK_DEMO_TOKEN, then fire it from outside the agent:
+#
+#   patchcord workflow install workflows/examples/webhook_demo.yaml
+#   WEBHOOK_DEMO_TOKEN=s3cr3t patchcord serve
+#   curl -X POST http://127.0.0.1:7331/v1/webhooks/webhook_demo \
+#     -H "X-Patchcord-Webhook-Token: s3cr3t" \
+#     -d '{"name": "world"}'
+#
+# The request body's top-level JSON object becomes the run's inputs
+# directly — not wrapped in {"inputs": ...} like a manual run's body, since
+# a real webhook sender (GitHub, Stripe, a custom app...) posts its own
+# payload shape, not ours. Unlike "schedule", a webhook has a real caller
+# (the inbound request), so a required input without a default is fine —
+# see "Schedule trigger" vs "Webhook trigger" in
+# docs/book/src/workflows/format.md. A connector-bound step is still
+# rejected: there is no bindings map for an anonymous sender to fill in.
+schema_version: 1
+
+id: webhook_demo
+version: 1
+
+trigger:
+  type: webhook
+  secret_ref:
+    type: env
+    key: WEBHOOK_DEMO_TOKEN
+
+inputs:
+  - name: name
+    type: string
+    required: true
+    description: Value the workflow will uppercase.
+
+steps:
+  - id: transform
+    uses: text.uppercase@1
+    with:
+      value: "${{ workflow.inputs.name }}"

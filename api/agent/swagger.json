@@ -487,6 +487,62 @@
                 }
             }
         },
+        "/webhooks/{id}": {
+            "post": {
+                "description": "Starts a new run of the latest installed version of the named workflow, if it declares a \"webhook\" trigger — the request body's top-level JSON object becomes the run's inputs directly, not wrapped in {\"inputs\": ...}. Requires \"X-Patchcord-Webhook-Token: \u003cthe trigger's resolved secret_ref\u003e\" — never an admin token.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "webhooks"
+                ],
+                "summary": "Trigger a workflow via its webhook",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workflow id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/api.runSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "the body isn't a JSON object, or its fields don't satisfy the workflow's declared input schema",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "missing or incorrect X-Patchcord-Webhook-Token",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "workflow not found, or its trigger isn't \\\"webhook\\",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "no action executor configured, the secret_ref doesn't resolve, or a persistence failure",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/workflows": {
             "get": {
                 "security": [

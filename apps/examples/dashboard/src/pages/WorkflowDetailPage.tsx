@@ -152,6 +152,14 @@ export default function WorkflowDetailPage({ client }: { client: PatchcordClient
               <Chip label={`${detail.steps.length} step${detail.steps.length === 1 ? "" : "s"}`} size="small" variant="outlined" />
             </Stack>
 
+            {detail.triggerType === "webhook" && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Fires on <code>POST /v1/webhooks/{detail.id}</code> with header{" "}
+                <code>X-Patchcord-Webhook-Token: &lt;resolved secret_ref&gt;</code>. The request body's top-level JSON
+                object becomes this workflow&apos;s inputs directly — not wrapped in <code>{"{"}"inputs": ...{"}"}</code>.
+              </Alert>
+            )}
+
             <StaggerList>
               <Stack spacing={1}>
                 {detail.steps.map((step, i) => (

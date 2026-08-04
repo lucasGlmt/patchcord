@@ -9,6 +9,6 @@ The engine lives in `internal/workflow/` (parsing, validation, expressions, the 
 - [Concepts](concepts.md) — versioning and immutability.
 - [Workflow Format](format.md) — the YAML structure, validation, and the expression language.
 - [Runs](runs.md) — the `Run` and `Step` state machines.
-- [Triggering Workflows](triggering.md) — `patchcord workflow run` vs. the HTTP trigger endpoint.
+- [Triggering Workflows](triggering.md) — manual (CLI/HTTP), `schedule` and `webhook` triggers.
 - [Events](events.md) — watching a run's progress in real time.
 - [Timeouts & Cancellation](timeouts-and-cancellation.md) — how a step is bounded and how a run stops early.
