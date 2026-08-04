@@ -21,11 +21,46 @@ func newAppCommand() *cobra.Command {
 		Short: "Manage applications",
 	}
 
+	cmd.AddCommand(newAppNewCommand())
 	cmd.AddCommand(newAppInstallCommand())
 	cmd.AddCommand(newAppDevCommand())
 	cmd.AddCommand(newAppPackCommand())
 	cmd.AddCommand(newAppListCommand())
 	cmd.AddCommand(newAppRemoveCommand())
+
+	return cmd
+}
+
+func newAppNewCommand() *cobra.Command {
+	var output string
+	var version string
+
+	cmd := &cobra.Command{
+		Use:   "new <id>",
+		Short: "Scaffold a new application",
+		Long: "Writes a minimal patchcord-app.yaml and index.html into --output —\n" +
+			"ready for `app pack`/`app install` as-is. Fails if the target\n" +
+			"directory already exists and is not empty.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			dir := output
+			if dir == "" {
+				dir = scaffoldDirName(id)
+			}
+
+			if err := apps.Scaffold(dir, id, version); err != nil {
+				return fmt.Errorf("app new: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Scaffolded %s (%s) into %s\n", id, version, dir)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory (default: the id's last \".\"-separated segment)")
+	cmd.Flags().StringVar(&version, "version", "0.1.0", "version to scaffold")
 
 	return cmd
 }

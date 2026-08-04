@@ -365,3 +365,72 @@ func TestPluginInstallCommand_SigningAndTrustLifecycle(t *testing.T) {
 		}
 	})
 }
+
+// TestPluginNewCommand_ThenPackThenInstall exercises `plugin new` through
+// to a real install, exactly as a user would: scaffold, go build, pack,
+// install, inspect. It must run from a directory inside the repo (not
+// t.TempDir(), which lives under the OS temp dir) because a scaffolded
+// plugin has no go.mod of its own and relies on the repo's root module —
+// see internal/plugins/scaffold_test.go for the same constraint.
+func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
+	dir, err := os.MkdirTemp(".", "plugin-new-test-*")
+	if err != nil {
+		t.Fatalf("create scaffold dir inside the repo: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	if err := os.Remove(dir); err != nil { // `plugin new` expects to create it
+		t.Fatalf("remove placeholder dir: %v", err)
+	}
+
+	id := "io.patchcord.scaffold-test"
+	newCmd := newPluginNewCommand()
+	newCmd.SetArgs([]string{id, "--output", dir})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("plugin new error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), id) {
+		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), id)
+	}
+
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	binRelPath := filepath.Join("binaries", platform, "plugin")
+	// -o is resolved against build.Dir, not this test process's own
+	// working directory — it must stay relative to dir, not be joined
+	// with it, or go build ends up writing to a doubly-nested path.
+	build := exec.Command("go", "build", "-o", binRelPath, ".")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build error = %v\n%s", err, out)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "scaffold-test.patchcord-plugin")
+	pack := newPluginPackCommand()
+	pack.SetArgs([]string{dir, "--output", packagePath})
+	pack.SetContext(context.Background())
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("plugin pack error = %v", err)
+	}
+
+	dataDir := t.TempDir()
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+
+	inspect := newPluginInspectCommand()
+	inspect.SetArgs([]string{id, "--data-dir", dataDir})
+	inspect.SetContext(context.Background())
+	var inspectOut bytes.Buffer
+	inspect.SetOut(&inspectOut)
+	if err := inspect.Execute(); err != nil {
+		t.Fatalf("plugin inspect error = %v", err)
+	}
+	if !strings.Contains(inspectOut.String(), "example.echo@1") {
+		t.Fatalf("inspect output = %q, want it to mention the scaffolded action", inspectOut.String())
+	}
+}

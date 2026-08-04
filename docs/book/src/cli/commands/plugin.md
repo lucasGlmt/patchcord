@@ -2,6 +2,17 @@
 
 Manage the plugin catalog. See [Plugins](../../plugins/index.md) for what a plugin is, and [ADR-0015](../../../../adr/0015-catalogue-greffons-effet-au-redemarrage.md) for why these commands never talk to a running `patchcord serve` — a change here takes effect the next time the agent (or `workflow run` / `connector test`) starts.
 
+## `new <id>`
+
+```bash
+patchcord plugin new io.patchcord.example-text
+patchcord plugin new io.patchcord.example-text -o my-plugin --version 1.0.0
+```
+
+Scaffolds a minimal Go plugin into `-o/--output` (default: the id's last `.`-separated segment): `main.go` with one example action, and a `manifest.json` already declaring an executable for the current platform — enough to `go build` then `plugin pack` without hand-editing the manifest. See its generated `README.md` for the exact next commands. Fails if the target directory already exists and is not empty — `new` never overwrites.
+
+The scaffolded plugin has no `go.mod` of its own: it's meant to live inside this repository (like `plugins/examples/*`), not as a standalone module, consistent with the monorepo phase (ADR-0006).
+
 ## `install <path>`
 
 ```bash

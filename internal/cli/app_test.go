@@ -205,3 +205,50 @@ func TestAppPackAndInstallCommands(t *testing.T) {
 		t.Fatalf("list output = %q, want it to mention the app installed from a package", listOut.String())
 	}
 }
+
+// TestAppNewCommand_ThenPackThenInstall exercises `app new` through to a
+// real install: scaffold, pack, install, list.
+func TestAppNewCommand_ThenPackThenInstall(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+	id := "scaffold-test-app"
+
+	newCmd := newAppNewCommand()
+	newCmd.SetArgs([]string{id, "--output", dir})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("app new error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), id) {
+		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), id)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "scaffold-test.patchcord-app")
+	pack := newAppPackCommand()
+	pack.SetArgs([]string{dir, "--output", packagePath})
+	pack.SetContext(context.Background())
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("app pack error = %v", err)
+	}
+
+	dataDir := t.TempDir()
+	install := newAppInstallCommand()
+	install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	if err := install.Execute(); err != nil {
+		t.Fatalf("app install error = %v", err)
+	}
+
+	list := newAppListCommand()
+	list.SetArgs([]string{"--data-dir", dataDir})
+	list.SetContext(context.Background())
+	var listOut bytes.Buffer
+	list.SetOut(&listOut)
+	if err := list.Execute(); err != nil {
+		t.Fatalf("app list error = %v", err)
+	}
+	if !strings.Contains(listOut.String(), id) {
+		t.Fatalf("list output = %q, want it to mention the scaffolded app", listOut.String())
+	}
+}

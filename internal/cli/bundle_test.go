@@ -179,3 +179,56 @@ func TestBundleInspectCommand_UnknownBundle(t *testing.T) {
 		t.Fatalf("error = %q, want it to mention the bundle was not found", err.Error())
 	}
 }
+
+// TestBundleNewCommand_ThenPackThenInstall exercises `bundle new` through
+// to a real install. requires_plugins starts empty, so no plugin needs to
+// be installed first.
+func TestBundleNewCommand_ThenPackThenInstall(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+	id := "io.patchcord.scaffold-test-bundle"
+
+	newCmd := newBundleNewCommand()
+	newCmd.SetArgs([]string{id, "--output", dir})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("bundle new error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), id) {
+		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), id)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "scaffold-test.patchcord-bundle")
+	pack := newBundlePackCommand()
+	pack.SetArgs([]string{dir, "--output", packagePath})
+	pack.SetContext(context.Background())
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("bundle pack error = %v", err)
+	}
+
+	dataDir := t.TempDir()
+
+	// The scaffolded workflow's step uses text.uppercase@1 (see
+	// internal/workflow/scaffold.go) — install the reference plugin first
+	// so `bundle install`'s workflow validation has that action to check
+	// against.
+	pluginInstall := newPluginInstallCommand()
+	pluginInstall.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
+	pluginInstall.SetContext(context.Background())
+	if err := pluginInstall.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+
+	install := newBundleInstallCommand()
+	install.SetArgs([]string{packagePath, "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	var installOut bytes.Buffer
+	install.SetOut(&installOut)
+	if err := install.Execute(); err != nil {
+		t.Fatalf("bundle install error = %v", err)
+	}
+	if !strings.Contains(installOut.String(), id) {
+		t.Fatalf("install output = %q, want it to mention %q", installOut.String(), id)
+	}
+}

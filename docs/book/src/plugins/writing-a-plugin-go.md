@@ -2,6 +2,8 @@
 
 This walks through building a plugin with `sdk/go-plugin`, the official Go SDK. A plugin built this way depends only on this SDK and the public protocol (`api/plugin/v1`) — never on any `internal/` package of the agent (non-negotiable #4, `CLAUDE.md` section 1).
 
+`patchcord plugin new <id>` (see [`patchcord plugin`](../cli/commands/plugin.md)) scaffolds the boilerplate below for you — a `main.go` with one example action and a `manifest.json` ready for `plugin pack`. This page walks through what it generates and why, useful whether you use the scaffold or write it by hand.
+
 ## 1. Implement one or more actions
 
 An action implements the `patchcord.Action` interface — see [Manifest & Actions](manifest-and-actions.md) for the full contract:

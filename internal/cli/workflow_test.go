@@ -37,6 +37,7 @@ func TestNewRootCommand_HasWorkflowAndRunSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
 	for _, path := range [][]string{
+		{"workflow", "new"},
 		{"workflow", "install"},
 		{"workflow", "list"},
 		{"workflow", "validate"},
@@ -300,6 +301,50 @@ func TestWorkflowLifecycle_HelloPatchcordEndToEnd(t *testing.T) {
 	runCancel.SetContext(context.Background())
 	if err := runCancel.Execute(); err == nil {
 		t.Fatal("expected an error cancelling an already-finished run, got nil")
+	}
+}
+
+// TestWorkflowNewCommand_ThenValidate exercises `workflow new` through to
+// `workflow validate`: the scaffold references text.uppercase@1 (the
+// reference plugin), so validation must fail before that plugin is
+// installed and succeed right after — proving the scaffold isn't just
+// syntactically valid YAML but an actually runnable example once its one
+// dependency is met.
+func TestWorkflowNewCommand_ThenValidate(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "scaffold-test.yaml")
+
+	newCmd := newWorkflowNewCommand()
+	newCmd.SetArgs([]string{"scaffold_test", "--output", path})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("workflow new error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), path) {
+		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), path)
+	}
+
+	validateBefore := newWorkflowValidateCommand()
+	validateBefore.SetArgs([]string{path, "--data-dir", dataDir})
+	validateBefore.SetContext(context.Background())
+	if err := validateBefore.Execute(); err == nil {
+		t.Fatal("expected workflow validate to fail before the reference plugin is installed, got nil error")
+	}
+
+	pluginInstall := newPluginInstallCommand()
+	pluginInstall.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
+	pluginInstall.SetContext(context.Background())
+	if err := pluginInstall.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+
+	validateAfter := newWorkflowValidateCommand()
+	validateAfter.SetArgs([]string{path, "--data-dir", dataDir})
+	validateAfter.SetContext(context.Background())
+	if err := validateAfter.Execute(); err != nil {
+		t.Fatalf("workflow validate error = %v, want the scaffold to validate once its reference action is installed", err)
 	}
 }
 

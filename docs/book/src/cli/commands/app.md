@@ -2,6 +2,15 @@
 
 Manage installed applications. See [Apps](../../apps/index.md) for the manifest format and hosting model.
 
+## `new <id>`
+
+```bash
+patchcord app new greeter
+patchcord app new greeter -o my-app --version 1.0.0
+```
+
+Scaffolds a minimal `patchcord-app.yaml` and `index.html` into `-o/--output` (default: the id's last `.`-separated segment) — ready for `app pack`/`app install` as-is. Fails if the target directory already exists and is not empty.
+
 ## `install <dir-or-package>`
 
 ```bash

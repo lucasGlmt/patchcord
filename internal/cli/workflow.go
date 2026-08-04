@@ -35,11 +35,48 @@ func newWorkflowCommand() *cobra.Command {
 		Short: "Manage and run workflows",
 	}
 
+	cmd.AddCommand(newWorkflowNewCommand())
 	cmd.AddCommand(newWorkflowInstallCommand())
 	cmd.AddCommand(newWorkflowListCommand())
 	cmd.AddCommand(newWorkflowValidateCommand())
 	cmd.AddCommand(newWorkflowExportCommand())
 	cmd.AddCommand(newWorkflowRunCommand())
+
+	return cmd
+}
+
+func newWorkflowNewCommand() *cobra.Command {
+	var output string
+	var version int
+
+	cmd := &cobra.Command{
+		Use:   "new <id>",
+		Short: "Scaffold a new workflow",
+		Long: "Writes a minimal workflow definition to --output: a manual trigger\n" +
+			"and one step using text.uppercase@1 (the reference plugin) — replace\n" +
+			"it with your own action, or install\n" +
+			"`patchcord plugin install bin/plugins/text` to run the scaffold as-is.\n" +
+			"Fails if the target file already exists.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			path := output
+			if path == "" {
+				path = id + ".yaml"
+			}
+
+			if err := workflow.Scaffold(path, id, version); err != nil {
+				return fmt.Errorf("workflow new: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Scaffolded %s (version %d) into %s\n", id, version, path)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>.yaml)")
+	cmd.Flags().IntVar(&version, "version", 1, "version to scaffold")
 
 	return cmd
 }

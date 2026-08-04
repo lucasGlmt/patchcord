@@ -2,6 +2,15 @@
 
 Manage workflow definitions. See [Workflows](../../workflows/index.md) for the format and the immutability rule ([ADR-0008](../../../../adr/0008-workflows-publies-immuables.md)).
 
+## `new <id>`
+
+```bash
+patchcord workflow new my_workflow
+patchcord workflow new my_workflow -o my_workflow.yaml --version 1
+```
+
+Scaffolds a minimal workflow definition to `-o/--output` (default: `<id>.yaml`): a manual trigger and one step using `text.uppercase@1` (the reference plugin, `plugins/examples/text`) — a workflow must declare at least one step, so the skeleton can't be empty. Replace that step with your own action, or install the reference plugin (`patchcord plugin install bin/plugins/text`) to `validate`/`run` the scaffold as-is. Fails if the target file already exists.
+
 ## `install <path.yaml>`
 
 ```bash

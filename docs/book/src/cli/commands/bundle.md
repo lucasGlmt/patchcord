@@ -2,6 +2,15 @@
 
 Manage bundles: packages that group an application, its workflows, and its plugin dependencies (vision document, section 9.3). See [ADR-0042](../../../../adr/0042-formats-de-package-plugin-workflow-bundle.md) for the manifest format and what installing a bundle actually does under the hood — it delegates entirely to `app install` and `workflow install`'s underlying services, never duplicating their logic.
 
+## `new <id>`
+
+```bash
+patchcord bundle new io.patchcord.example-bundle
+patchcord bundle new io.patchcord.example-bundle -o my-bundle --version 1.0.0
+```
+
+Scaffolds a minimal `bundle.yaml` into `-o/--output` (default: the id's last `.`-separated segment), plus an embedded app (`app/`) and workflow (`workflows/main.yaml`) — ready for `bundle pack`/`bundle install` as-is. `requires_plugins` starts empty: there is no way to know ahead of time what plugin your bundle should depend on, add entries to `bundle.yaml` yourself. The scaffolded workflow uses `text.uppercase@1` (the reference plugin) as a working example, the same convention [`workflow new`](workflow.md) uses. Fails if the target directory already exists and is not empty.
+
 ## `install <path>`
 
 ```bash

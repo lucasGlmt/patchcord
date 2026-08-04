@@ -20,10 +20,48 @@ func newBundleCommand() *cobra.Command {
 		Short: "Manage bundles (app + workflows + plugin dependencies)",
 	}
 
+	cmd.AddCommand(newBundleNewCommand())
 	cmd.AddCommand(newBundleInstallCommand())
 	cmd.AddCommand(newBundlePackCommand())
 	cmd.AddCommand(newBundleListCommand())
 	cmd.AddCommand(newBundleInspectCommand())
+
+	return cmd
+}
+
+func newBundleNewCommand() *cobra.Command {
+	var output string
+	var version string
+
+	cmd := &cobra.Command{
+		Use:   "new <id>",
+		Short: "Scaffold a new bundle",
+		Long: "Writes a minimal bundle.yaml into --output, plus an embedded app\n" +
+			"(app/) and workflow (workflows/main.yaml) — ready for `bundle\n" +
+			"pack`/`bundle install` as-is, with an empty requires_plugins (there\n" +
+			"is no way to know what plugin you'll depend on ahead of time; add\n" +
+			"entries to bundle.yaml yourself). Fails if the target directory\n" +
+			"already exists and is not empty.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id := args[0]
+			dir := output
+			if dir == "" {
+				dir = scaffoldDirName(id)
+			}
+
+			if err := bundles.Scaffold(dir, id, version); err != nil {
+				return fmt.Errorf("bundle new: %w", err)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "Scaffolded %s (%s) into %s\n", id, version, dir)
+
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory (default: the id's last \".\"-separated segment)")
+	cmd.Flags().StringVar(&version, "version", "0.1.0", "version to scaffold")
 
 	return cmd
 }
