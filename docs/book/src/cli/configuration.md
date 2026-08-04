@@ -1,10 +1,39 @@
 # Configuration
 
-There is no configuration file. Everything is a command-line flag; there is no environment variable convention either, except for whatever a connector's own secret references point at (see [Plugins → Connectors → Secrets & Validation](../plugins/connectors/secrets-and-validation.md)).
+`patchcord serve` accepts its settings from four layered sources, in increasing order of precedence: a built-in default, a `--config` YAML file, a `PATCHCORD_*` environment variable, then an explicitly passed flag ([ADR-0038](../../../adr/0038-configuration-serveur-fichier-yaml-precedence.md)). A flag you actually typed always wins over everything else; an unset flag falls through to the next source. Every other command (`plugin`, `connector`, `workflow`, `run`, `app`) only takes `--data-dir` as a plain flag — no file, no environment variable — see below.
+
+## `serve`'s layered settings
+
+| Setting | Flag | Environment variable | Config file key | Default |
+|---|---|---|---|---|
+| Listen address | `--listen` | `PATCHCORD_LISTEN` | `listen` | `127.0.0.1:7331` |
+| Data directory | `--data-dir` | `PATCHCORD_DATA_DIR` | `data_dir` | `./data` |
+
+```yaml
+# config.yaml
+listen: 0.0.0.0:7331
+data_dir: /data
+```
+
+```bash
+patchcord serve --config ./config.yaml
+```
+
+A `--config` pointing at a file that doesn't exist fails immediately (`load config file: ...`) — it is never silently skipped. An unknown top-level key in the file (a typo'd `liste:`) is also rejected, the same discipline `workflow.Validate` already applies to workflow YAML.
+
+```bash
+# environment variable overrides the file above
+PATCHCORD_LISTEN=0.0.0.0:9000 patchcord serve --config ./config.yaml
+
+# an explicit flag overrides everything, including the environment variable
+patchcord serve --config ./config.yaml --listen 0.0.0.0:9001
+```
+
+`internal/config` (`Load`, `FromEnv`, `Merge`) implements the three non-flag layers; `internal/cli/serve.go` owns the flag layer and the built-in defaults, since only it knows — via cobra's `Flags().Changed()` — whether a flag was actually typed versus left at its default.
 
 ## `--data-dir`
 
-Present on nearly every command (`serve`, and every subcommand of `plugin`, `connector`, `workflow`, `run`, `app`). Defaults to `./data`. It is the directory holding the agent's SQLite database.
+Present on nearly every command (`serve`, and every subcommand of `plugin`, `connector`, `workflow`, `run`, `app`). Defaults to `./data`. It is the directory holding the agent's SQLite database. Outside of `serve`, it is a plain flag only — no `PATCHCORD_DATA_DIR` or config file support; a one-shot command's invocation is already explicit enough not to need layered configuration.
 
 - The database is created and migrated automatically the first time any command touches it — there is no separate `patchcord init` or `migrate` step.
 - One-shot commands (everything except `serve`) open this database directly, run their migrations silently, and close it when done. Migration output only appears in `patchcord serve`'s structured logs, never mixed into a one-shot command's output.
@@ -15,9 +44,9 @@ patchcord plugin list --data-dir ./data
 patchcord serve --data-dir ./data
 ```
 
-## `serve`-only flags
+## Secret references
 
-`--listen` (default `127.0.0.1:7331`) — see [Serving the Agent](serve.md).
+The only other environment variable convention in the CLI is whatever a connector's or a workflow trigger's own secret reference points at (see [Plugins → Connectors → Secrets & Validation](../plugins/connectors/secrets-and-validation.md)) — unrelated to `serve`'s own configuration above.
 
 ## Command-specific flags
 

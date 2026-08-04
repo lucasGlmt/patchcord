@@ -28,8 +28,9 @@ There is no forced-kill fallback beyond the shutdown timeout in this version —
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--listen` | `127.0.0.1:7331` | Address the HTTP API binds to. |
-| `--data-dir` | `./data` | Directory holding the SQLite database (created if missing). |
+| `--listen` | `127.0.0.1:7331` | Address the HTTP API binds to. Also settable via `PATCHCORD_LISTEN` or a `--config` file's `listen` key — see [Configuration](configuration.md). |
+| `--data-dir` | `./data` | Directory holding the SQLite database (created if missing). Also settable via `PATCHCORD_DATA_DIR` or a `--config` file's `data_dir` key. |
+| `--config` | (none) | Path to a YAML file providing `listen`/`data_dir` — the lowest-precedence source; a flag or environment variable always overrides it. See [Configuration](configuration.md). |
 
 ## Admin authentication
 
@@ -42,4 +43,4 @@ patchcord serve --listen 0.0.0.0:7331 --data-dir ./data
 
 ## What's not here yet
 
-TLS and a config file are not part of this phase yet — see the roadmap in `CLAUDE.md` section 9 (phase 6, "server deployment").
+TLS termination and Docker packaging are not part of this phase yet — see the roadmap in `CLAUDE.md` section 9 (phase 6, "server deployment").
