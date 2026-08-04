@@ -1,0 +1,24 @@
+# Local dev/self-host example (ADR-0039) — mirrors the vision document's
+# section 13.3 shape. `build: .` rather than a published image tag: no
+# patchcord/agent image is published yet, this builds from the Dockerfile
+# in this repo. Swap it for `image: patchcord/agent:<tag>` once one exists.
+#
+# ./bin/plugins, not ./plugins: in *this* repo, ./plugins is
+# plugins/examples' Go *source* — mounting that into the container would
+# expose source trees, not runnable Linux binaries. ./bin/plugins matches
+# `make build-plugins`'s own output directory (already gitignored) — build
+# for the container's OS/arch, e.g.
+# `GOOS=linux GOARCH=$(go env GOARCH) make build-plugins`, then
+# `docker compose exec patchcord patchcord plugin install /plugins/<name>`.
+services:
+  patchcord:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+      - ./bin/plugins:/plugins
+    ports:
+      - "7331:7331"
+    # command: ["serve", "--config", "/data/config.yaml"]  # to use your own
+    # mounted config instead of the image's baked-in default — see
+    # docs/book/src/cli/serve.md#docker.

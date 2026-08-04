@@ -1,0 +1,16 @@
+.git
+bin/
+data/
+
+# Node/TS workspaces — not part of the Go build.
+apps/examples/dashboard/node_modules
+apps/examples/dashboard/dist
+sdk/typescript/node_modules
+sdk/typescript/dist
+sdk/typescript/dist-test
+
+# Docs — not read by `go build`; the three go:embed sources it does need
+# (migrations/*.sql, api/agent/swagger.json, api/app/v1/manifest.schema.json)
+# live outside this directory.
+docs/
+*.md

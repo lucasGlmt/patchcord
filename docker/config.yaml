@@ -1,0 +1,8 @@
+# Baked into the agent image at /etc/patchcord/config.yaml (Dockerfile) as
+# the default --config a container starts with — see ADR-0039. Not meant to
+# be edited in place inside the image; override it by mounting your own
+# file over /etc/patchcord/config.yaml, or by setting PATCHCORD_LISTEN /
+# PATCHCORD_DATA_DIR / --listen / --data-dir, all of which take precedence
+# over this file (ADR-0038).
+listen: 0.0.0.0:7331
+data_dir: /data

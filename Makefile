@@ -50,6 +50,14 @@ proto: ## Regenerate the plugin protocol's Go stubs (api/plugin/v1) with buf
 swagger: ## Regenerate the OpenAPI spec (api/agent) from internal/api's swag annotations — requires `go install github.com/swaggo/swag/cmd/swag@latest`
 	swag init --dir ./internal/api --generalInfo doc.go --parseInternal --output api/agent --outputTypes json,yaml --quiet
 
+.PHONY: docker-build
+docker-build: ## Build the agent's Docker image (see Dockerfile, ADR-0039)
+	docker build -t patchcord-agent .
+
+.PHONY: docker-run
+docker-run: ## Run the agent via docker compose (build first with docker-build if needed)
+	docker compose up --build
+
 .PHONY: docs-build
 docs-build: ## Build the mdBook documentation (requires `cargo install mdbook`)
 	mdbook build docs/book
