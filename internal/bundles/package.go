@@ -31,6 +31,14 @@ const PackageExtension = ".patchcord-bundle"
 // again on install (see installEmbeddedApp). The result is what
 // InstallPackage (and therefore `patchcord bundle install`) expects.
 //
+// If the manifest declares an app, its patchcord-app.yaml is validated
+// before anything is staged — the same check apps.Pack itself runs. Without
+// this, a Vite app built without its manifest under public/ (an easy step
+// to forget, since Vite copies public/ into the build output verbatim) packs
+// successfully and only fails at `bundle install` time, deep inside an
+// ephemeral staging directory whose path means nothing to whoever is
+// installing the package.
+//
 // Pack never walks sourceDir itself: only the manifest's declared App
 // subtree and Workflows files are staged and archived. sourceDir routinely
 // holds things bundle.yaml does not declare — a Vite app's node_modules
@@ -41,6 +49,12 @@ func Pack(sourceDir string, key ed25519.PrivateKey, w io.Writer) error {
 	manifest, err := LoadManifest(sourceDir)
 	if err != nil {
 		return err
+	}
+
+	if manifest.App != "" {
+		if _, err := apps.LoadManifest(filepath.Join(sourceDir, manifest.App)); err != nil {
+			return fmt.Errorf("bundle app %q: %w", manifest.App, err)
+		}
 	}
 
 	staging, err := os.MkdirTemp("", "patchcord-bundle-pack-*")

@@ -548,6 +548,42 @@ func TestPack_RejectsAnInvalidManifest(t *testing.T) {
 	}
 }
 
+// TestPack_RejectsAppDirMissingManifest is a regression test for the bug
+// Lucas reported: `bundle pack` on a Vite app whose build never copied
+// patchcord-app.yaml into app/dist (forgot to move it under app/public
+// first, an easy step to miss for a React app — there is no --template
+// react-ts, see app.md) packed successfully. The missing manifest only
+// surfaced at `bundle install` time, as a "no such file or directory" on an
+// ephemeral staging path meaningless to whoever ran the install. Pack must
+// fail immediately instead, naming the source-relative app path.
+func TestPack_RejectsAppDirMissingManifest(t *testing.T) {
+	dir := t.TempDir()
+
+	// app/dist exists (as a real `vite build` output would) but has no
+	// patchcord-app.yaml in it.
+	distDir := filepath.Join(dir, "app", "dist")
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatalf("mkdir app/dist: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(distDir, "index.html"), []byte("<html></html>"), 0o644); err != nil {
+		t.Fatalf("write index.html: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(
+		"id: io.patchcord.example-bundle\nversion: \"1.0.0\"\napp: app/dist\nworkflows: []\nrequires_plugins: []\n",
+	), 0o644); err != nil {
+		t.Fatalf("write bundle.yaml: %v", err)
+	}
+
+	err := Pack(dir, nil, io.Discard)
+	if err == nil {
+		t.Fatal("expected an error for an app dir missing patchcord-app.yaml, got nil")
+	}
+	if !strings.Contains(err.Error(), "app/dist") {
+		t.Fatalf("Pack() error = %v, want it to name the app path %q", err, "app/dist")
+	}
+}
+
 // TestPack_IgnoresUnrelatedSymlinksOutsideDeclaredApp is a regression test
 // for the bug Lucas reported: `patchcord bundle pack` failing with
 // "app/node_modules/.bin/esbuild: unsupported file type" on a Vite-based
