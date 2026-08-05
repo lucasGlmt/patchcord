@@ -69,3 +69,4 @@
 # Bundles
 
 - [Overview](bundles/index.md)
+- [Building a Bundle with React](bundles/react-walkthrough.md)

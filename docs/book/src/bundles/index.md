@@ -12,6 +12,8 @@ A bundle carries no connector configuration: `internal/connectors` has no file-b
 
 See [`patchcord bundle`](../cli/commands/bundle.md) for the manifest format and command reference, and [ADR-0042](../../../adr/0042-formats-de-package-plugin-workflow-bundle.md) for the full design rationale, including what is explicitly out of scope in this first version (automatic dependency installation, multi-resource rollback, connector configuration).
 
+Building the embedded app with a UI framework (React, Vue, …) rather than plain TypeScript needs one extra step not obvious from the command reference alone — see [Building a Bundle with React](react-walkthrough.md).
+
 ## Example
 
 `bundles/examples/lead-crm/` is Patchcord's reference "first complete business application" (CLAUDE.md §9 phase 7 roadmap): a mini-CRM that submits a lead, enriches it via an HTTP call, and stores it in PostgreSQL, composing an app, two workflows, and two connector-consuming plugins (`http`, `postgresql`) into one bundle. See its own `bundle.yaml` header comment for the full setup sequence — it needs a real PostgreSQL server you control, the same requirement `workflows/examples/postgresql_query_demo.yaml` already documents.

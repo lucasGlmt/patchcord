@@ -23,6 +23,10 @@ patchcord bundle dev invoice-manager --watch
 
 From there, `bundle dev --watch` reinstalls automatically on every subsequent `npm run build` (or `vite build --watch`) — see [`dev`](#dev-dir) below. This is the "all in one" path: the app ends up served by the same agent, at `/apps/<id>/`, packaged together with its workflows and plugin dependencies — unlike a standalone app such as `apps/examples/dashboard`, which is installed and served on its own, outside any bundle.
 
+### Using a UI framework (React, Vue, …)
+
+Same caveat as [`app new`](app.md#using-a-ui-framework-react-vue): there is no `--template vite-react`. Combining that page's recipe with `bundle new --template vite` here has one trap specific to bundles — `bundle new --template vite` has already written files into `app/`, which `create-vite` will offer to wipe the moment you point it at that same directory. See [Building a Bundle with React](../../bundles/react-walkthrough.md) for the full sequence that avoids it.
+
 ## `install <path-or-ref>`
 
 ```bash
