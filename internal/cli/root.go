@@ -25,6 +25,7 @@ func NewRootCommand() *cobra.Command {
 	root.AddCommand(newVersionCommand())
 	root.AddCommand(newServeCommand())
 	root.AddCommand(newDevCommand())
+	root.AddCommand(newMCPCommand())
 	root.AddCommand(newPluginCommand())
 	root.AddCommand(newConnectorCommand())
 	root.AddCommand(newWorkflowCommand())

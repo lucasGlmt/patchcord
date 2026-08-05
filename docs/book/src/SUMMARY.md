@@ -22,6 +22,7 @@
     - [trust](cli/commands/trust.md)
     - [auth](cli/commands/auth.md)
     - [secret](cli/commands/secret.md)
+    - [mcp](cli/commands/mcp.md)
 
 # Plugins
 

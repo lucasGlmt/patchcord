@@ -16,6 +16,14 @@ import (
 // given id is in the catalog.
 var ErrNotInstalled = errors.New("plugin not installed")
 
+// ErrActionNotFound is returned by FindAction when no installed plugin
+// contributes the given action id.
+var ErrActionNotFound = errors.New("action not found")
+
+// ErrConnectorNotFound is returned by FindConnector when no installed
+// plugin contributes the given connector type.
+var ErrConnectorNotFound = errors.New("connector type not found")
+
 // CatalogEntry is one plugin recorded in the agent's catalog, as returned
 // by its handshake at install time.
 type CatalogEntry struct {
@@ -216,6 +224,50 @@ func Get(ctx context.Context, db *sql.DB, id string) (*CatalogEntry, error) {
 	}
 
 	return &entry, nil
+}
+
+// FindAction returns the descriptor of one action, and the id of the
+// plugin that contributes it, by scanning every installed plugin's
+// Actions — there is no dedicated index, actions are few enough per
+// installed plugin that a linear scan over List's result is simpler than
+// maintaining one. It returns ErrActionNotFound if no installed plugin
+// contributes actionID.
+func FindAction(ctx context.Context, db *sql.DB, actionID string) (*ActionDescriptor, string, error) {
+	entries, err := List(ctx, db)
+	if err != nil {
+		return nil, "", err
+	}
+
+	for _, entry := range entries {
+		for _, action := range entry.Actions {
+			if action.ID == actionID {
+				return &action, entry.PluginID, nil
+			}
+		}
+	}
+
+	return nil, "", ErrActionNotFound
+}
+
+// FindConnector returns the descriptor of one connector type, and the id
+// of the plugin that contributes it — the same role FindAction plays for
+// actions. It returns ErrConnectorNotFound if no installed plugin
+// contributes connectorType.
+func FindConnector(ctx context.Context, db *sql.DB, connectorType string) (*ConnectorDescriptor, string, error) {
+	entries, err := List(ctx, db)
+	if err != nil {
+		return nil, "", err
+	}
+
+	for _, entry := range entries {
+		for _, connector := range entry.Connectors {
+			if connector.Type == connectorType {
+				return &connector, entry.PluginID, nil
+			}
+		}
+	}
+
+	return nil, "", ErrConnectorNotFound
 }
 
 // Uninstall removes a plugin from the catalog. It returns ErrNotInstalled

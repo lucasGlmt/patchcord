@@ -15,3 +15,4 @@ Every command below accepts `--data-dir` (default: a per-user system directory, 
 | [`trust`](trust.md) | `add <id> <pubkey-path>`, `list [id]`, `remove <id> <pubkey-path>` |
 | [`auth`](auth.md) | `token create <name>`, `token list`, `token revoke <id>` |
 | [`secret`](secret.md) | `keygen`, `set <key>`, `remove <key>` |
+| [`mcp`](mcp.md) | `serve` |

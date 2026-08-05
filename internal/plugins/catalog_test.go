@@ -228,6 +228,72 @@ func TestGet_ReturnsErrNotInstalledForAnUnknownID(t *testing.T) {
 	}
 }
 
+func TestFindAction(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
+		Actions: []ActionDescriptor{
+			{
+				ID:          "a.one@1",
+				Description: "Does one thing.",
+				InputSchema: map[string]any{"type": "object"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+
+	action, pluginID, err := FindAction(context.Background(), db, "a.one@1")
+	if err != nil {
+		t.Fatalf("FindAction() error = %v", err)
+	}
+	if pluginID != "io.patchcord.a" {
+		t.Fatalf("FindAction() pluginID = %q, want %q", pluginID, "io.patchcord.a")
+	}
+	if action.Description != "Does one thing." {
+		t.Fatalf("FindAction() Description = %q, want %q", action.Description, "Does one thing.")
+	}
+
+	_, _, err = FindAction(context.Background(), db, "a.unknown@1")
+	if !errors.Is(err, ErrActionNotFound) {
+		t.Fatalf("FindAction() error = %v, want ErrActionNotFound", err)
+	}
+}
+
+func TestFindConnector(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
+		Connectors: []ConnectorDescriptor{
+			{
+				Type:         "a.connection@1",
+				Description:  "Reaches system A.",
+				ConfigSchema: map[string]any{"type": "object"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+
+	connector, pluginID, err := FindConnector(context.Background(), db, "a.connection@1")
+	if err != nil {
+		t.Fatalf("FindConnector() error = %v", err)
+	}
+	if pluginID != "io.patchcord.a" {
+		t.Fatalf("FindConnector() pluginID = %q, want %q", pluginID, "io.patchcord.a")
+	}
+	if connector.Description != "Reaches system A." {
+		t.Fatalf("FindConnector() Description = %q, want %q", connector.Description, "Reaches system A.")
+	}
+
+	_, _, err = FindConnector(context.Background(), db, "a.unknown@1")
+	if !errors.Is(err, ErrConnectorNotFound) {
+		t.Fatalf("FindConnector() error = %v, want ErrConnectorNotFound", err)
+	}
+}
+
 func TestUninstall(t *testing.T) {
 	db := openCatalogTestDB(t)
 
