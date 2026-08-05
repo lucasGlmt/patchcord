@@ -36,19 +36,69 @@ func InstallWorkflow(ctx context.Context, db *sql.DB, source []byte, knownAction
 	if err != nil {
 		return nil, err
 	}
+
+	return recordWorkflowVersion(ctx, db, def, source, def.Version, knownActions)
+}
+
+// InstallWorkflowAtVersion validates source against knownActions like
+// InstallWorkflow, but records it under version rather than source's own
+// declared `version:` field. It exists solely for internal/bundles' dev-mode
+// install path (`bundle dev`/`patchcord dev`, see installWorkflowForDev):
+// editing an embedded workflow's body without bumping its version is
+// installed under the next unused version instead of being rejected, so the
+// source file on disk is never rewritten. workflow install and
+// InstallPackage (`bundle install`/`update`) never call this — they stay on
+// InstallWorkflow, strict under ADR-0008 with no exception.
+func InstallWorkflowAtVersion(ctx context.Context, db *sql.DB, source []byte, version int, knownActions map[string]struct{}) (*workflow.Definition, error) {
+	def, err := workflow.Parse(source)
+	if err != nil {
+		return nil, err
+	}
+
+	return recordWorkflowVersion(ctx, db, def, source, version, knownActions)
+}
+
+// recordWorkflowVersion validates def against knownActions, then records
+// source as version — never def.Version, so InstallWorkflowAtVersion can
+// override it. def.Version is set to version before returning, so callers
+// always see the version actually recorded. The persisted copy has its own
+// declared `version:` field normalized to version too (workflow.
+// RewriteVersion — a no-op when it already matches), so re-parsing it
+// later (LatestWorkflow, WorkflowSource) never disagrees with the row it
+// came from.
+func recordWorkflowVersion(ctx context.Context, db *sql.DB, def *workflow.Definition, source []byte, version int, knownActions map[string]struct{}) (*workflow.Definition, error) {
 	if err := workflow.Validate(def, knownActions); err != nil {
 		return nil, fmt.Errorf("validate workflow: %w", err)
 	}
+	def.Version = version
+	source = workflow.RewriteVersion(source, version)
 
-	_, err = db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		INSERT INTO workflow_versions (workflow_id, version, definition)
 		VALUES (?, ?, ?)
-	`, def.ID, def.Version, string(source))
+	`, def.ID, version, string(source))
 	if err != nil {
-		return nil, fmt.Errorf("record workflow %s version %d: %w", def.ID, def.Version, err)
+		return nil, fmt.Errorf("record workflow %s version %d: %w", def.ID, version, err)
 	}
 
 	return def, nil
+}
+
+// NextWorkflowVersion returns the next unused version number for
+// workflowID: one past the highest version currently installed, or 1 if
+// none is. Used by internal/bundles' dev-mode install path to auto-assign a
+// version when a workflow's content changed without bumping its declared
+// `version:` field (see InstallWorkflowAtVersion).
+func NextWorkflowVersion(ctx context.Context, db *sql.DB, workflowID string) (int, error) {
+	var max int
+	err := db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(version), 0) FROM workflow_versions WHERE workflow_id = ?
+	`, workflowID).Scan(&max)
+	if err != nil {
+		return 0, fmt.Errorf("find next version of workflow %q: %w", workflowID, err)
+	}
+
+	return max + 1, nil
 }
 
 // LatestWorkflow returns the highest installed version of workflowID.

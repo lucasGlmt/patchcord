@@ -48,15 +48,20 @@ func newWorkflowCommand() *cobra.Command {
 func newWorkflowNewCommand() *cobra.Command {
 	var output string
 	var version int
+	var template string
 
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Scaffold a new workflow",
-		Long: "Writes a minimal workflow definition to --output: a manual trigger\n" +
-			"and one step using text.uppercase@1 (the reference plugin) — replace\n" +
-			"it with your own action, or install\n" +
-			"`patchcord plugin install bin/plugins/text` to run the scaffold as-is.\n" +
-			"Fails if the target file already exists.",
+		Long: "Writes a workflow definition to --output: a manual trigger and one\n" +
+			"step using text.uppercase@1 (the reference plugin) — replace it with\n" +
+			"your own action, or install `patchcord plugin install\n" +
+			"bin/plugins/text` to run the scaffold as-is. Fails if the target file\n" +
+			"already exists.\n\n" +
+			"--template minimal (default) writes a single step run once.\n" +
+			"--template foreach writes a single step run once per item of a\n" +
+			"literal list, demonstrating ${{ each }} (ADR-0032) — replace the list\n" +
+			"and the step's own action with your own.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -65,7 +70,7 @@ func newWorkflowNewCommand() *cobra.Command {
 				path = id + ".yaml"
 			}
 
-			if err := workflow.Scaffold(path, id, version); err != nil {
+			if err := workflow.ScaffoldTemplate(path, id, version, template); err != nil {
 				return fmt.Errorf("workflow new: %w", err)
 			}
 
@@ -77,6 +82,7 @@ func newWorkflowNewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file path (default: <id>.yaml)")
 	cmd.Flags().IntVar(&version, "version", 1, "version to scaffold")
+	cmd.Flags().StringVar(&template, "template", workflow.ScaffoldTemplateMinimal, "template to scaffold: minimal (one step, runs once) or foreach (one step, runs once per item of a literal list)")
 
 	return cmd
 }

@@ -7,9 +7,32 @@ Manage workflow definitions. See [Workflows](../../workflows/index.md) for the f
 ```bash
 patchcord workflow new my_workflow
 patchcord workflow new my_workflow -o my_workflow.yaml --version 1
+patchcord workflow new my_workflow --template foreach
 ```
 
-Scaffolds a minimal workflow definition to `-o/--output` (default: `<id>.yaml`): a manual trigger and one step using `text.uppercase@1` (the reference plugin, `plugins/examples/text`) — a workflow must declare at least one step, so the skeleton can't be empty. Replace that step with your own action, or install the reference plugin (`patchcord plugin install bin/plugins/text`) to `validate`/`run` the scaffold as-is. Fails if the target file already exists.
+Scaffolds a workflow definition to `-o/--output` (default: `<id>.yaml`): a manual trigger and one step using `text.uppercase@1` (the reference plugin, `plugins/examples/text`) — a workflow must declare at least one step, so the skeleton can't be empty. Replace that step with your own action, or install the reference plugin (`patchcord plugin install bin/plugins/text`) to `validate`/`run` the scaffold as-is. Fails if the target file already exists.
+
+`--template minimal` (default) writes a single step that runs once. `--template foreach` writes a single step that runs once per item of a literal list (`foreach: ["hello", "world"]`), with the current item available to `with` as `${{ each }}` — see [ADR-0032](../../../../adr/0032-etapes-foreach-map-agregation-sortie.md) and [Workflow Format](../../workflows/format.md).
+
+## Editor support (JSON Schema)
+
+[`api/workflow/schema.json`](https://github.com/lucasglmt/patchcord/blob/main/api/workflow/schema.json) is a JSON Schema for the workflow definition format (`schema_version: 1`) — structural checks only (shape, enum values, required fields), not the semantic checks `validate`/`install` also run (e.g. that a step's `uses` names an action actually installed). Point your editor's YAML tooling at it for autocomplete and inline validation while writing a workflow file. With the [VS Code YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml), either add to `settings.json`:
+
+```json
+{
+  "yaml.schemas": {
+    "/absolute/path/to/patchcord/api/workflow/schema.json": ["**/workflows/*.yaml", "*.patchcord-workflow"]
+  }
+}
+```
+
+or add a per-file header comment instead:
+
+```yaml
+# yaml-language-server: $schema=/absolute/path/to/patchcord/api/workflow/schema.json
+```
+
+A future `schema_version: 2` gets its own schema file rather than a breaking change to this one — public contracts are versioned (non-negotiable #5).
 
 ## `install <path.yaml>`
 

@@ -8,6 +8,7 @@
 - [Installation](cli/installation.md)
 - [Configuration](cli/configuration.md)
 - [Serving the Agent](cli/serve.md)
+- [Developing a Bundle](cli/dev.md)
 - [Package Signing & Trust](cli/package-signing.md)
 - [Command Reference](cli/commands/index.md)
     - [plugin](cli/commands/plugin.md)

@@ -151,15 +151,18 @@ func InstallPackage(ctx context.Context, db *sql.DB, dataDir, packagePath string
 // `vite build --watch`) needs no further agent involvement, and no dataDir
 // argument is needed here at all.
 //
-// Each embedded workflow is still installed under the exact same rule
-// `workflow install` enforces: a published version is immutable
-// (ADR-0008), so re-declaring an already-installed version with different
-// content is rejected — editing a workflow's body requires bumping its
-// `version` field before the next InstallDir call picks it up. Redeclaring
-// it with byte-identical content, however, is a silent no-op
-// (installWorkflowIfChanged): `bundle dev --watch` reinstalls every
-// embedded workflow on every change under dir, including ones that never
-// touched a given workflow file, so this is what keeps that loop usable.
+// Each embedded workflow goes through installWorkflowForDev (ADR-0055),
+// not the strict installWorkflowIfChanged InstallPackage uses: redeclaring
+// an already-installed version with byte-identical content is a silent
+// no-op (as before, and for the same reason — `bundle dev --watch`
+// reinstalls every embedded workflow on every change under dir, including
+// ones a given save never touched), but redeclaring it with genuinely
+// different content — edited the workflow's body, forgot to bump
+// `version:` — is installed under the next unused version instead of
+// rejected, so a save is never a hard failure. The source file is never
+// rewritten; ADR-0008 immutability stays intact for InstallPackage
+// (`bundle install`/`update`) and `workflow install`, which are unaffected
+// by this.
 //
 // requires_plugins is enforced exactly as InstallPackage enforces it: a
 // missing dependency is not installed automatically.
@@ -185,7 +188,7 @@ func InstallDir(ctx context.Context, db *sql.DB, dir string, knownActions map[st
 		if err != nil {
 			return nil, fmt.Errorf("install bundle %q workflow %q: %w", manifest.ID, relWorkflow, err)
 		}
-		if _, err := installWorkflowIfChanged(ctx, db, source, knownActions); err != nil {
+		if _, err := installWorkflowForDev(ctx, db, source, knownActions); err != nil {
 			return nil, fmt.Errorf("install bundle %q workflow %q: %w", manifest.ID, relWorkflow, err)
 		}
 	}
@@ -294,7 +297,11 @@ func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkfl
 // fail on every such reinstall once a workflow version is first recorded.
 // runs.InstallWorkflow itself stays strict — `workflow install`, called
 // directly by a developer naming a specific file, should keep flagging an
-// unbumped version as a likely mistake.
+// unbumped version as a likely mistake. Used by InstallPackage
+// (`bundle install`/`update`), where the same strictness applies: a
+// package a developer chose to publish should keep flagging an unbumped
+// version as a likely mistake. InstallDir (`bundle dev`/`patchcord dev`)
+// uses installWorkflowForDev below instead.
 func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
 	def, err := workflow.Parse(source)
 	if err != nil {
@@ -310,4 +317,50 @@ func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, kn
 	}
 
 	return runs.InstallWorkflow(ctx, db, source, knownActions)
+}
+
+// installWorkflowForDev is installWorkflowIfChanged's counterpart for
+// InstallDir (`bundle dev`/`patchcord dev`, ADR-0055): byte-identical
+// content at the declared version is still a silent no-op, and an unseen
+// version still installs normally, but content that *differs* from an
+// already-recorded version — the "edited the workflow, forgot to bump
+// `version:`" case installWorkflowIfChanged rejects under ADR-0008 — is
+// installed under the next unused version instead of failing. source is
+// never rewritten on disk: only the workflow_versions row's version number
+// differs from what the file declares. Every caller that resolves "the"
+// workflow without pinning an explicit version (runs.LatestWorkflow,
+// WorkflowSource's version 0, a manual/schedule/webhook trigger) already
+// picks the highest installed version, so the auto-assigned version is
+// transparent downstream.
+//
+// This is deliberately not used by InstallPackage (`bundle
+// install`/`update`) or `workflow install`, which stay on
+// installWorkflowIfChanged/runs.InstallWorkflow: installing a package a
+// developer chose to publish should keep flagging an unbumped version as a
+// likely mistake, with no dev-mode exception.
+func installWorkflowForDev(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
+	def, err := workflow.Parse(source)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := runs.WorkflowSource(ctx, db, def.ID, def.Version)
+	if err == nil && existing == string(source) {
+		return def, nil
+	}
+	if err != nil && !errors.Is(err, runs.ErrWorkflowNotFound) {
+		return nil, fmt.Errorf("check existing workflow %s version %d: %w", def.ID, def.Version, err)
+	}
+	if err != nil { // errors.Is(err, runs.ErrWorkflowNotFound): a normal first install.
+		return runs.InstallWorkflow(ctx, db, source, knownActions)
+	}
+
+	// err == nil and existing != string(source): the declared version is
+	// already recorded with different content — auto-assign the next one.
+	next, err := runs.NextWorkflowVersion(ctx, db, def.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return runs.InstallWorkflowAtVersion(ctx, db, source, next, knownActions)
 }

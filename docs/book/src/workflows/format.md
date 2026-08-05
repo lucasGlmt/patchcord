@@ -1,6 +1,6 @@
 # Workflow Format
 
-A workflow is YAML, parsed by `workflow.Parse` (`internal/workflow/definition.go`) into a `Definition`:
+A workflow is YAML, parsed by `workflow.Parse` (`internal/workflow/definition.go`) into a `Definition`. [`api/workflow/schema.json`](https://github.com/lucasglmt/patchcord/blob/main/api/workflow/schema.json) is this format's JSON Schema — point your editor at it for autocomplete/inline validation while writing a file by hand; see [`workflow` command reference → Editor support](../cli/commands/workflow.md#editor-support-json-schema) for how to wire it up.
 
 ```yaml
 schema_version: 1

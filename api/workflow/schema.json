@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchcord.dev/schema/workflow-v1.json",
+  "title": "Patchcord workflow definition (schema_version 1)",
+  "description": "Structural schema for a Patchcord workflow definition file (internal/workflow.Definition, vision document section 7.5). A future schema_version 2 gets its own schema file rather than a breaking change to this one (non-negotiable #5: public contracts are versioned). This schema checks shape only — it does not replace `patchcord workflow validate`, which additionally checks semantics no JSON Schema can express (e.g. that every `uses` names an action a given agent actually has installed, or that `else_of`/`if` reference real step ids).",
+  "type": "object",
+  "required": ["schema_version", "id", "version", "trigger", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Must be 1 for this schema."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The workflow's identifier. Stable across versions — versions of the same workflow share this id."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "This definition's version. Published versions are immutable (ADR-0008) — bump this to publish a changed definition. `patchcord bundle dev`/`patchcord dev` auto-assign a version instead when this isn't bumped (ADR-0055)."
+    },
+    "trigger": { "$ref": "#/$defs/trigger" },
+    "inputs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inputDef" }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/step" },
+      "description": "A workflow must declare at least one step."
+    }
+  },
+  "$defs": {
+    "trigger": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["manual", "schedule", "webhook"]
+        },
+        "cron": {
+          "type": "string",
+          "description": "Standard 5-field cron expression (\"minute hour dom month dow\"). Required when type is \"schedule\", rejected otherwise. See ADR-0035."
+        },
+        "on_missed": {
+          "type": "string",
+          "enum": ["skip", "fire_once"],
+          "description": "Only meaningful when type is \"schedule\". Defaults to \"skip\" when omitted. See ADR-0035."
+        },
+        "secret_ref": {
+          "$ref": "#/$defs/secretRef",
+          "description": "Checks an inbound webhook request's shared secret header. Required when type is \"webhook\", rejected otherwise. See ADR-0037."
+        }
+      },
+      "additionalProperties": false
+    },
+    "secretRef": {
+      "type": "object",
+      "required": ["type", "key"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["env", "keychain", "file"]
+        },
+        "key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputDef": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Referenced by a step as ${{ workflow.inputs.<name> }}."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "enum"],
+          "description": "Defaults to \"string\" when omitted."
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Rejected together with `default` — a default would silently satisfy `required`, making the flag meaningless."
+        },
+        "description": {
+          "type": "string"
+        },
+        "default": {
+          "description": "Used when a run does not supply this input. Its type must match `type`."
+        },
+        "enum": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Required when type is \"enum\", rejected otherwise."
+        }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "uses"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Referenced by later steps as steps.<id>.outputs.<key>."
+        },
+        "uses": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The action identifier this step invokes, e.g. \"text.uppercase@1\"."
+        },
+        "with": {
+          "type": "object",
+          "description": "The action's input values. A string value that is entirely one ${{ ... }} expression is resolved against workflow inputs or a prior step's outputs; every other value is passed through unchanged."
+        },
+        "connector": {
+          "type": "string",
+          "description": "Must be entirely one ${{ ... }} expression — never a literal connector id, so a published workflow version never bakes in one deployment's connector identity. See ADR-0021."
+        },
+        "if": {
+          "description": "A literal bool, or a ${{ ... }} expression that must resolve to one. A step whose `if` resolves to false is recorded as skipped. See ADR-0031."
+        },
+        "foreach": {
+          "description": "A literal list, or a ${{ ... }} expression that must resolve to one. Runs this step once per item, with the current item available to `with` as ${{ each }}. Outputs become arrays. See ADR-0032."
+        },
+        "stop_if_false": {
+          "type": "boolean",
+          "description": "When `if` resolves to false, skips this step and every step after it, ending the run as succeeded instead of just skipping this one step. Ignored when `if` is absent. See ADR-0033."
+        },
+        "else_of": {
+          "type": "string",
+          "description": "Names an earlier step id: this step is skipped whenever that step actually ran. Chains build an if/elseif/else sequence without nesting. See ADR-0033."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

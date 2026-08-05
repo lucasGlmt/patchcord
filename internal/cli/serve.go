@@ -21,6 +21,47 @@ const defaultListenAddr = "127.0.0.1:7331"
 // once here since it is the same regardless of which command runs.
 var defaultDataDir = config.DefaultDataDir()
 
+// resolveRuntimeConfig resolves the settings needed to run the agent from
+// four sources, in increasing order of precedence — a built-in default,
+// configPath's YAML file, a PATCHCORD_* environment variable, then an
+// explicitly passed flag (ADR-0038; see
+// docs/book/src/cli/configuration.md). Shared by `serve` and `dev`
+// (internal/cli/dev.go) so this resolution lives in exactly one place —
+// cmd must have registered "listen", "data-dir" and
+// "secrets-master-key-file" flags under those exact names for
+// cmd.Flags().Changed to find them.
+func resolveRuntimeConfig(cmd *cobra.Command, listenAddr, dataDir, configPath, secretsMasterKeyFile string) (runtime.Config, error) {
+	resolved := config.Config{Listen: defaultListenAddr, DataDir: defaultDataDir}
+
+	if configPath != "" {
+		fileCfg, err := config.Load(configPath)
+		if err != nil {
+			return runtime.Config{}, fmt.Errorf("load config file: %w", err)
+		}
+		resolved = config.Merge(resolved, fileCfg)
+	}
+
+	resolved = config.Merge(resolved, config.FromEnv())
+
+	var flagCfg config.Config
+	if cmd.Flags().Changed("listen") {
+		flagCfg.Listen = listenAddr
+	}
+	if cmd.Flags().Changed("data-dir") {
+		flagCfg.DataDir = dataDir
+	}
+	if cmd.Flags().Changed("secrets-master-key-file") {
+		flagCfg.SecretsMasterKeyFile = secretsMasterKeyFile
+	}
+	resolved = config.Merge(resolved, flagCfg)
+
+	return runtime.Config{
+		ListenAddr:           resolved.Listen,
+		DataDir:              resolved.DataDir,
+		SecretsMasterKeyFile: resolved.SecretsMasterKeyFile,
+	}, nil
+}
+
 func newServeCommand() *cobra.Command {
 	var listenAddr string
 	var dataDir string
@@ -36,35 +77,11 @@ func newServeCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-			resolved := config.Config{Listen: defaultListenAddr, DataDir: defaultDataDir}
-
-			if configPath != "" {
-				fileCfg, err := config.Load(configPath)
-				if err != nil {
-					return fmt.Errorf("load config file: %w", err)
-				}
-				resolved = config.Merge(resolved, fileCfg)
+			cfg, err := resolveRuntimeConfig(cmd, listenAddr, dataDir, configPath, secretsMasterKeyFile)
+			if err != nil {
+				return err
 			}
 
-			resolved = config.Merge(resolved, config.FromEnv())
-
-			var flagCfg config.Config
-			if cmd.Flags().Changed("listen") {
-				flagCfg.Listen = listenAddr
-			}
-			if cmd.Flags().Changed("data-dir") {
-				flagCfg.DataDir = dataDir
-			}
-			if cmd.Flags().Changed("secrets-master-key-file") {
-				flagCfg.SecretsMasterKeyFile = secretsMasterKeyFile
-			}
-			resolved = config.Merge(resolved, flagCfg)
-
-			cfg := runtime.Config{
-				ListenAddr:           resolved.Listen,
-				DataDir:              resolved.DataDir,
-				SecretsMasterKeyFile: resolved.SecretsMasterKeyFile,
-			}
 			agent, err := runtime.NewAgent(cfg, logger)
 			if err != nil {
 				return fmt.Errorf("create agent: %w", err)

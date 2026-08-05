@@ -348,6 +348,43 @@ func TestWorkflowNewCommand_ThenValidate(t *testing.T) {
 	}
 }
 
+func TestWorkflowNewCommand_ForeachTemplate(t *testing.T) {
+	dataDir := t.TempDir()
+	path := filepath.Join(t.TempDir(), "scaffold-foreach-test.yaml")
+
+	newCmd := newWorkflowNewCommand()
+	newCmd.SetArgs([]string{"scaffold_foreach_test", "--output", path, "--template", "foreach"})
+	newCmd.SetContext(context.Background())
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("workflow new --template foreach error = %v", err)
+	}
+
+	pluginInstall := newPluginInstallCommand()
+	pluginInstall.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
+	pluginInstall.SetContext(context.Background())
+	if err := pluginInstall.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+
+	validate := newWorkflowValidateCommand()
+	validate.SetArgs([]string{path, "--data-dir", dataDir})
+	validate.SetContext(context.Background())
+	if err := validate.Execute(); err != nil {
+		t.Fatalf("workflow validate error = %v, want the foreach scaffold to validate once its reference action is installed", err)
+	}
+}
+
+func TestWorkflowNewCommand_RejectsUnknownTemplate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scaffold-bad-template.yaml")
+
+	newCmd := newWorkflowNewCommand()
+	newCmd.SetArgs([]string{"scaffold_bad_template", "--output", path, "--template", "bogus"})
+	newCmd.SetContext(context.Background())
+	if err := newCmd.Execute(); err == nil {
+		t.Fatal("expected an error for an unknown --template, got nil")
+	}
+}
+
 func extractRunID(t *testing.T, runOutput string) string {
 	t.Helper()
 	for _, line := range strings.Split(runOutput, "\n") {

@@ -288,16 +288,22 @@ func newBundleDevCommand() *cobra.Command {
 			"The embedded app (if any) is installed in place, exactly as `app\n" +
 			"dev` would: served live from dir's app subdirectory, never copied or\n" +
 			"moved, so rebuilding it (e.g. `vite build --watch`) needs no further\n" +
-			"agent involvement. Each embedded workflow still goes through\n" +
-			"`workflow install`'s own rule: a published version is immutable\n" +
-			"(ADR-0008), so editing a workflow's body requires bumping its\n" +
-			"`version` field before rerunning this command picks the change up.\n" +
-			"requires_plugins is still enforced — a missing dependency is not\n" +
-			"installed automatically.\n\n" +
+			"agent involvement. Each embedded workflow is installed under a\n" +
+			"dev-only rule (ADR-0055): identical content at its declared version\n" +
+			"is a no-op, and different content at an already-used version is\n" +
+			"auto-installed under the next unused version instead of being\n" +
+			"rejected — editing a workflow's body and saving again just works,\n" +
+			"no manual version bump needed, and the file on disk is never\n" +
+			"rewritten. `bundle install`/`bundle update` stay strict under\n" +
+			"ADR-0008: an unbumped version there still fails, since that path\n" +
+			"installs a package a developer chose to publish. requires_plugins\n" +
+			"is still enforced — a missing dependency is not installed\n" +
+			"automatically.\n\n" +
 			"--watch keeps this command running, reinstalling on every change\n" +
 			"under dir (debounced) until interrupted (Ctrl+C). An install\n" +
 			"failure while watching is printed but does not stop the watch —\n" +
-			"fix it (e.g. bump the workflow version) and save again.",
+			"fix it (e.g. a missing required plugin, or invalid YAML) and save\n" +
+			"again.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dataDir = resolveDataDir(cmd, dataDir)

@@ -3,6 +3,7 @@ package runs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/workflow"
@@ -75,6 +76,111 @@ steps:
 		def := installTestWorkflow(t, db, v2)
 		if def.Version != 2 {
 			t.Fatalf("Version = %d, want 2", def.Version)
+		}
+	})
+}
+
+func TestInstallWorkflowAtVersion(t *testing.T) {
+	t.Run("records source under version, normalizing its own declared version field to match", func(t *testing.T) {
+		db := openTestDB(t)
+
+		def, err := InstallWorkflowAtVersion(context.Background(), db, []byte(helloWorkflow), 7, knownActions)
+		if err != nil {
+			t.Fatalf("InstallWorkflowAtVersion() error = %v", err)
+		}
+		if def.Version != 7 {
+			t.Fatalf("Version = %d, want 7 (the requested version, not the declared version: 1)", def.Version)
+		}
+
+		// The stored copy's own `version:` field is normalized to 7 too
+		// (workflow.RewriteVersion) — otherwise re-parsing it later (as
+		// this call itself does) would disagree with the row it came
+		// from.
+		source, err := WorkflowSource(context.Background(), db, "hello_patchcord", 7)
+		if err != nil {
+			t.Fatalf("WorkflowSource() error = %v", err)
+		}
+		want := strings.Replace(helloWorkflow, "\nversion: 1\n", "\nversion: 7\n", 1)
+		if source != want {
+			t.Fatalf("WorkflowSource() = %q, want %q", source, want)
+		}
+
+		// Re-parsing the stored copy must agree with the DB row.
+		reparsed, err := workflow.Parse([]byte(source))
+		if err != nil {
+			t.Fatalf("workflow.Parse(stored source) error = %v", err)
+		}
+		if reparsed.Version != 7 {
+			t.Fatalf("re-parsed stored source's Version = %d, want 7", reparsed.Version)
+		}
+	})
+
+	t.Run("rejects a workflow using an unknown action, same as InstallWorkflow", func(t *testing.T) {
+		db := openTestDB(t)
+		source := `
+schema_version: 1
+id: broken
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: step
+    uses: does.not.exist@1
+`
+		if _, err := InstallWorkflowAtVersion(context.Background(), db, []byte(source), 1, knownActions); err == nil {
+			t.Fatal("expected an error, got nil")
+		}
+	})
+
+	t.Run("rejects reinstalling an already-recorded version", func(t *testing.T) {
+		db := openTestDB(t)
+		if _, err := InstallWorkflowAtVersion(context.Background(), db, []byte(helloWorkflow), 1, knownActions); err != nil {
+			t.Fatalf("first InstallWorkflowAtVersion() error = %v", err)
+		}
+
+		if _, err := InstallWorkflowAtVersion(context.Background(), db, []byte(helloWorkflow), 1, knownActions); err == nil {
+			t.Fatal("expected an error re-installing version 1, got nil")
+		}
+	})
+}
+
+func TestNextWorkflowVersion(t *testing.T) {
+	t.Run("returns 1 when no version is installed yet", func(t *testing.T) {
+		db := openTestDB(t)
+
+		next, err := NextWorkflowVersion(context.Background(), db, "hello_patchcord")
+		if err != nil {
+			t.Fatalf("NextWorkflowVersion() error = %v", err)
+		}
+		if next != 1 {
+			t.Fatalf("NextWorkflowVersion() = %d, want 1", next)
+		}
+	})
+
+	t.Run("returns one past the highest installed version", func(t *testing.T) {
+		db := openTestDB(t)
+		installTestWorkflow(t, db, helloWorkflow) // version 1
+
+		v2 := `
+schema_version: 1
+id: hello_patchcord
+version: 2
+trigger:
+  type: manual
+steps:
+  - id: transform
+    uses: text.uppercase@1
+    with:
+      value: "v2"
+`
+		installTestWorkflow(t, db, v2)
+
+		next, err := NextWorkflowVersion(context.Background(), db, "hello_patchcord")
+		if err != nil {
+			t.Fatalf("NextWorkflowVersion() error = %v", err)
+		}
+		if next != 3 {
+			t.Fatalf("NextWorkflowVersion() = %d, want 3", next)
 		}
 	})
 }

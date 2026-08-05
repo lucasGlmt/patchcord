@@ -426,13 +426,13 @@ func TestInstallDir_ReinstallUpdatesAppInPlace(t *testing.T) {
 	}
 }
 
-// TestInstallDir_RejectsRedeclaringAWorkflowVersionWithDifferentContent
-// guards ADR-0008 through InstallDir specifically: reinstalling the same
-// source directory with an unchanged workflow `version` field but a
-// different step body must be rejected, not silently accepted — the
-// friction `bundle dev`'s doc comment tells the developer to expect
-// (bump the version).
-func TestInstallDir_RejectsRedeclaringAWorkflowVersionWithDifferentContent(t *testing.T) {
+// TestInstallDir_AutoBumpsVersionWhenContentChangesWithoutABump is the
+// regression test for ADR-0055: editing an embedded workflow's body
+// without bumping its `version:` field must no longer fail `bundle
+// dev`/`patchcord dev` — it must auto-install under the next unused
+// version instead, leaving the source file and the original version's row
+// untouched.
+func TestInstallDir_AutoBumpsVersionWhenContentChangesWithoutABump(t *testing.T) {
 	db := openTestDB(t)
 
 	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
@@ -451,13 +451,40 @@ func TestInstallDir_RejectsRedeclaringAWorkflowVersionWithDifferentContent(t *te
 	// Edit the workflow's step body in place, without bumping its
 	// `version: 1` field.
 	workflowPath := filepath.Join(sourceDir, "workflows", "main.yaml")
-	changed := strings.Replace(fmt.Sprintf(bundleWorkflowYAMLTemplate, 1), `value: "hi"`, `value: "bye"`, 1)
+	original := fmt.Sprintf(bundleWorkflowYAMLTemplate, 1)
+	changed := strings.Replace(original, `value: "hi"`, `value: "bye"`, 1)
 	if err := os.WriteFile(workflowPath, []byte(changed), 0o644); err != nil {
 		t.Fatalf("rewrite workflow: %v", err)
 	}
 
-	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err == nil {
-		t.Fatal("expected an error redeclaring workflow version 1 with different content, got nil")
+	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err != nil {
+		t.Fatalf("second InstallDir() with an unbumped but changed workflow error = %v, want nil (auto-bumped)", err)
+	}
+
+	// The source file on disk still declares version 1 — InstallDir must
+	// never rewrite it.
+	onDisk, err := os.ReadFile(workflowPath)
+	if err != nil {
+		t.Fatalf("read workflow file: %v", err)
+	}
+	if string(onDisk) != changed {
+		t.Fatalf("workflow file on disk was modified, want it left exactly as written")
+	}
+
+	latest, err := runs.LatestWorkflow(context.Background(), db, "bundle_workflow")
+	if err != nil {
+		t.Fatalf("LatestWorkflow() error = %v", err)
+	}
+	if latest.Version != 2 {
+		t.Fatalf("LatestWorkflow().Version = %d, want 2 (auto-bumped)", latest.Version)
+	}
+
+	v1Source, err := runs.WorkflowSource(context.Background(), db, "bundle_workflow", 1)
+	if err != nil {
+		t.Fatalf("WorkflowSource(version 1) error = %v", err)
+	}
+	if v1Source != original {
+		t.Fatalf("version 1's recorded content changed, want the original left immutable")
 	}
 }
 
