@@ -38,6 +38,8 @@ GET /apps/{id}/  →  http.StripPrefix("/apps/{id}/", http.FileServer(http.Dir(a
 
 `handleServeApp` (`internal/api/apps.go`) resolves the installed app by id and serves its `static_dir` with a per-app `http.FileServer` — the first use of a `FileServer` in the core (everything else served a single embedded file). Open `http://127.0.0.1:7331/apps/<id>/` once `patchcord serve` is running and the app is installed.
 
+A build tool that emits absolute asset URLs (`/assets/index-xxxx.js`) breaks under this scheme: the browser resolves them against the origin, not against `/apps/<id>/index.html`, so every static file 404s and the app renders a blank page — `npm run dev`/`vite preview` never show this, since they serve from the domain root themselves. Vite apps must set `base: "./"` in `vite.config.ts` so emitted URLs stay relative to `index.html` (see [ADR-0058](../../../adr/0058-base-relatif-pour-les-apps-vite-servies-sous-apps-id.md)); `patchcord app new --template vite` and `apps/examples/dashboard` already do.
+
 ## Sessions
 
 ```bash

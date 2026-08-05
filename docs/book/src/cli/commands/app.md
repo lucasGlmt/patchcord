@@ -21,6 +21,20 @@ cd invoice-manager && npm install && npm run build
 patchcord app install invoice-manager/dist
 ```
 
+### Using a UI framework (React, Vue, …)
+
+There is no `--template react-ts`/`--template vue-ts` — deliberately: Vite's own official templates (`npm create vite@latest`) already cover every framework combination and stay current with upstream releases, which a copy embedded in this CLI would not. Start from one of those instead, then adapt it to the two things specific to a Patchcord app:
+
+```bash
+npm create vite@latest invoice-manager -- --template react-ts   # or vue-ts, etc.
+cd invoice-manager
+```
+
+1. Move `patchcord-app.yaml` (write one by hand, or copy `apps/examples/*/patchcord-app.yaml`) under `public/` — Vite copies everything there into `dist/` on build, which is what turns the project into an installable app directory.
+2. In `vite.config.ts`, add `base: "./"` — the agent serves a built app under `/apps/{id}/`, and Vite's default absolute base (`base: "/"`) emits asset URLs that 404 once installed (see [ADR-0058](../../../adr/0058-base-relatif-pour-les-apps-vite-servies-sous-apps-id.md)). `npm run dev`/`vite preview` never reveal this, since they both serve from the domain root themselves.
+
+Everything else — installing `@glmtsolutions/patchcord-sdk`, proxying `/v1` to the agent in dev (see the generated `vite.config.ts` from `--template vite` for the exact shape) — is the same regardless of framework.
+
 ## `install <dir-or-package>`
 
 ```bash

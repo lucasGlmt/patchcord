@@ -96,6 +96,9 @@ func TestScaffoldVite_WritesAViteProjectThatBuildsIntoAValidAppDir(t *testing.T)
 	if !strings.Contains(string(viteConfig), "127.0.0.1:7331") {
 		t.Fatal("vite.config.ts does not proxy to the agent — vite dev would hit CORS as soon as the agent has an admin token (ADR-0045)")
 	}
+	if !strings.Contains(string(viteConfig), `base: "./"`) {
+		t.Fatal("vite.config.ts does not set a relative base — Vite's default absolute base emits asset URLs that 404 once installed under /apps/{id}/ (ADR-0058)")
+	}
 
 	// The manifest is not at dir's root — Vite's build is what moves it
 	// (from public/) into dist/, which is what an app/bundle command must

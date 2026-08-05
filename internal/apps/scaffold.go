@@ -72,6 +72,14 @@ const scaffoldVitePackageJSON = `{
 const scaffoldViteConfig = `import { defineConfig } from "vite";
 
 export default defineConfig({
+  // Relative, not "/": the agent serves a built app under /apps/{id}/, a
+  // subpath it only learns at install time, never at build time. Vite's
+  // default base ("/") emits asset URLs rooted at the domain instead
+  // (e.g. "/assets/index-xxxx.js"), which 404s once installed — the
+  // browser resolves them against the origin, not against
+  // /apps/{id}/index.html. "./" makes every emitted URL relative to
+  // index.html itself, so it resolves correctly under any {id}.
+  base: "./",
   build: {
     outDir: "dist",
   },
