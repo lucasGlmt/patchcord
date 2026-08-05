@@ -19,6 +19,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -178,7 +179,7 @@ func TestAgent_StreamsRunEventsOverSSE(t *testing.T) {
 	if err := persistence.Migrate(context.Background(), setupDB, migrations.FS, testLogger()); err != nil {
 		t.Fatalf("persistence.Migrate() error = %v", err)
 	}
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), setupDB, []byte(sseTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}

@@ -32,7 +32,7 @@ func TestScaffold_WritesAValidDefinition(t *testing.T) {
 		t.Fatalf("len(Steps) = %d, want 1", len(def.Steps))
 	}
 
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]KnownAction{"text.uppercase@1": {}}
 	if err := Validate(def, knownActions); err != nil {
 		t.Fatalf("Validate() error = %v, want the scaffold to validate once its reference action is known", err)
 	}
@@ -72,7 +72,7 @@ func TestScaffoldTemplate_Foreach(t *testing.T) {
 		t.Fatal("Steps[0].Foreach is nil, want the scaffolded literal list")
 	}
 
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]KnownAction{"text.uppercase@1": {}}
 	if err := Validate(def, knownActions); err != nil {
 		t.Fatalf("Validate() error = %v, want the foreach scaffold to validate once its reference action is known", err)
 	}

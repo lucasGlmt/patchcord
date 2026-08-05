@@ -174,7 +174,7 @@ func copyDir(srcDir, dstDir string) error {
 // validation) is not rolled back: this first pass does not implement
 // multi-resource transactions across three independently-catalogued
 // resource kinds. The returned error names which step failed.
-func InstallPackage(ctx context.Context, db *sql.DB, dataDir, packagePath string, knownActions map[string]struct{}, requireSignature bool) (*Bundle, trust.PolicyResult, error) {
+func InstallPackage(ctx context.Context, db *sql.DB, dataDir, packagePath string, knownActions map[string]workflow.KnownAction, requireSignature bool) (*Bundle, trust.PolicyResult, error) {
 	f, err := os.Open(packagePath)
 	if err != nil {
 		return nil, trust.PolicyResult{}, fmt.Errorf("open package %q: %w", packagePath, err)
@@ -267,7 +267,7 @@ func InstallPackage(ctx context.Context, db *sql.DB, dataDir, packagePath string
 //
 // requires_plugins is enforced exactly as InstallPackage enforces it: a
 // missing dependency is not installed automatically.
-func InstallDir(ctx context.Context, db *sql.DB, dir string, knownActions map[string]struct{}) (*Bundle, error) {
+func InstallDir(ctx context.Context, db *sql.DB, dir string, knownActions map[string]workflow.KnownAction) (*Bundle, error) {
 	manifest, err := LoadManifest(dir)
 	if err != nil {
 		return nil, err
@@ -370,7 +370,7 @@ func installEmbeddedApp(ctx context.Context, db *sql.DB, dataDir, staging, relAp
 // installs it exactly as `workflow install` does (through
 // installWorkflowIfChanged, so re-running `bundle install`/`update` on an
 // unchanged package is a no-op rather than an ADR-0008 rejection).
-func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkflow string, knownActions map[string]struct{}) error {
+func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkflow string, knownActions map[string]workflow.KnownAction) error {
 	path, err := packaging.SafeJoin(staging, relWorkflow)
 	if err != nil {
 		return err
@@ -403,7 +403,7 @@ func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkfl
 // package a developer chose to publish should keep flagging an unbumped
 // version as a likely mistake. InstallDir (`bundle dev`/`patchcord dev`)
 // uses installWorkflowForDev below instead.
-func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
+func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]workflow.KnownAction) (*workflow.Definition, error) {
 	def, err := workflow.Parse(source)
 	if err != nil {
 		return nil, err
@@ -439,7 +439,7 @@ func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, kn
 // installWorkflowIfChanged/runs.InstallWorkflow: installing a package a
 // developer chose to publish should keep flagging an unbumped version as a
 // likely mistake, with no dev-mode exception.
-func installWorkflowForDev(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
+func installWorkflowForDev(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]workflow.KnownAction) (*workflow.Definition, error) {
 	def, err := workflow.Parse(source)
 	if err != nil {
 		return nil, err

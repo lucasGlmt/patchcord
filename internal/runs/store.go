@@ -31,7 +31,7 @@ var ErrRunNotCancellable = errors.New("run is not in a cancellable state")
 // InstallWorkflow validates def against knownActions, then records it as a
 // new, immutable version (ADR-0008): publishing never overwrites an
 // existing (workflow_id, version) row.
-func InstallWorkflow(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
+func InstallWorkflow(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]workflow.KnownAction) (*workflow.Definition, error) {
 	def, err := workflow.Parse(source)
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func InstallWorkflow(ctx context.Context, db *sql.DB, source []byte, knownAction
 // source file on disk is never rewritten. workflow install and
 // InstallPackage (`bundle install`/`update`) never call this — they stay on
 // InstallWorkflow, strict under ADR-0008 with no exception.
-func InstallWorkflowAtVersion(ctx context.Context, db *sql.DB, source []byte, version int, knownActions map[string]struct{}) (*workflow.Definition, error) {
+func InstallWorkflowAtVersion(ctx context.Context, db *sql.DB, source []byte, version int, knownActions map[string]workflow.KnownAction) (*workflow.Definition, error) {
 	def, err := workflow.Parse(source)
 	if err != nil {
 		return nil, err
@@ -66,7 +66,7 @@ func InstallWorkflowAtVersion(ctx context.Context, db *sql.DB, source []byte, ve
 // RewriteVersion — a no-op when it already matches), so re-parsing it
 // later (LatestWorkflow, WorkflowSource) never disagrees with the row it
 // came from.
-func recordWorkflowVersion(ctx context.Context, db *sql.DB, def *workflow.Definition, source []byte, version int, knownActions map[string]struct{}) (*workflow.Definition, error) {
+func recordWorkflowVersion(ctx context.Context, db *sql.DB, def *workflow.Definition, source []byte, version int, knownActions map[string]workflow.KnownAction) (*workflow.Definition, error) {
 	if err := workflow.Validate(def, knownActions); err != nil {
 		return nil, fmt.Errorf("validate workflow: %w", err)
 	}

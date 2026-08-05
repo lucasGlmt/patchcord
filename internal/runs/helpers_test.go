@@ -33,7 +33,7 @@ func openTestDB(t *testing.T) *sql.DB {
 
 // knownActions is the set of action ids the tests' fakeExecutor pretends
 // are contributed by installed plugins.
-var knownActions = map[string]struct{}{
+var knownActions = map[string]workflow.KnownAction{
 	"text.uppercase@1": {},
 }
 

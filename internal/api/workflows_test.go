@@ -13,6 +13,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/scheduler"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 func TestBindingName(t *testing.T) {
@@ -104,7 +105,7 @@ func TestHandleGetWorkflow_InfersConnectorTypeForABinding(t *testing.T) {
 	db := openMigratedTestDB(t)
 	insertTestPlugin(t, db, "io.patchcord.postgresql", []string{"postgresql.connection@1"}, []string{"postgresql.query@1"})
 
-	knownActions := map[string]struct{}{"postgresql.query@1": {}}
+	knownActions := map[string]workflow.KnownAction{"postgresql.query@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(bindingTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -134,7 +135,7 @@ func TestHandleGetWorkflow_InfersConnectorTypeForABinding(t *testing.T) {
 func TestHandleGetWorkflow_LeavesConnectorTypeEmptyWhenNoPluginIsInstalled(t *testing.T) {
 	db := openMigratedTestDB(t)
 
-	knownActions := map[string]struct{}{"postgresql.query@1": {}}
+	knownActions := map[string]workflow.KnownAction{"postgresql.query@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(bindingTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -199,7 +200,7 @@ func TestHandleListWorkflows_EmptyCatalog(t *testing.T) {
 
 func TestHandleListWorkflows_ReturnsInstalledVersions(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -227,7 +228,7 @@ func TestHandleListWorkflows_ReturnsInstalledVersions(t *testing.T) {
 
 func TestHandleGetWorkflow_ReturnsStepsAndSource(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -275,7 +276,7 @@ steps:
 
 func TestHandleGetWorkflow_ReturnsScheduleTriggerDetails(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	def, err := runs.InstallWorkflow(context.Background(), db, []byte(scheduledTestWorkflow), knownActions)
 	if err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
@@ -316,7 +317,7 @@ func TestHandleGetWorkflow_ReturnsScheduleTriggerDetails(t *testing.T) {
 
 func TestHandleGetWorkflow_ReturnsDeclaredInputs(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	source := `
 schema_version: 1
 id: greet
@@ -383,7 +384,7 @@ func TestHandleGetWorkflow_UnknownWorkflowReturnsNotFound(t *testing.T) {
 
 func TestHandleGetWorkflow_RejectsANonIntegerVersion(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -413,7 +414,7 @@ func TestHandleRunWorkflow_UnknownWorkflowReturnsNotFound(t *testing.T) {
 
 func TestHandleRunWorkflow_NoExecutorConfiguredReturnsInternalError(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -451,7 +452,7 @@ steps:
 
 func TestHandleRunWorkflow_RejectsMissingRequiredInputWith400(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(inputsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -468,7 +469,7 @@ func TestHandleRunWorkflow_RejectsMissingRequiredInputWith400(t *testing.T) {
 
 func TestHandleRunWorkflow_AppliesDeclaredDefault(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(inputsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -493,7 +494,7 @@ func TestHandleRunWorkflow_AppliesDeclaredDefault(t *testing.T) {
 
 func TestHandleRunWorkflow_StartsImmediatelyAndRunsInTheBackground(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}

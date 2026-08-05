@@ -16,6 +16,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/apps"
 	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 // installTestApp writes a minimal application (manifest + index.html) to a
@@ -272,7 +273,7 @@ func TestHandleAppsDirectory(t *testing.T) {
 func TestWithRunAuth(t *testing.T) {
 	t.Run("no Authorization header reaches the handler unrestricted while no admin token exists", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -290,7 +291,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("an invalid token is rejected even while no admin token exists", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -308,7 +309,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("a valid token not permitted to run the workflow is forbidden", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -329,7 +330,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("a valid token permitted to run the workflow reaches the handler", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -351,7 +352,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("once an admin token exists, no Authorization header is rejected", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -371,7 +372,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("once an admin token exists, that admin token reaches the handler", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -394,7 +395,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("once an admin token exists, a scoped app session still reaches the handler", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}
@@ -419,7 +420,7 @@ func TestWithRunAuth(t *testing.T) {
 
 	t.Run("once an admin token exists, an unrecognized bearer token is rejected", func(t *testing.T) {
 		db := openMigratedTestDB(t)
-		knownActions := map[string]struct{}{"text.uppercase@1": {}}
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 			t.Fatalf("InstallWorkflow() error = %v", err)
 		}

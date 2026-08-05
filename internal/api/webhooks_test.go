@@ -12,6 +12,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/auth"
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 const webhookTestWorkflow = `
@@ -35,7 +36,7 @@ steps:
 `
 
 func TestHandleWebhookTrigger(t *testing.T) {
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 
 	t.Run("unknown workflow returns not found", func(t *testing.T) {
 		db := openMigratedTestDB(t)

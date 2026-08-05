@@ -29,6 +29,12 @@ const SupportedSchemaVersion = 1
 //     (see ADR-0037);
 //   - at least one step, with unique, non-empty step ids;
 //   - every step's action exists among knownActions;
+//   - every step's with satisfies its action's declared input_schema
+//     (ADR-0062, checked by ADR-0063): every required name is present, and
+//     every value whose subtree contains no ${{ ... }} expression must
+//     match its declared type — a value containing an expression anywhere
+//     is left unchecked until run time, since its real value isn't known
+//     yet;
 //   - every ${{ steps.<id>.outputs...}} expression refers to an earlier
 //     step in the same workflow, catching typos and forward references
 //     before a run ever starts;
@@ -44,11 +50,12 @@ const SupportedSchemaVersion = 1
 //   - stop_if_false requires if to be set;
 //   - else_of, when set, names a step defined earlier in the same workflow.
 //
-// knownActions is the set of action identifiers currently installed
-// plugins contribute; the caller (internal/runs) is responsible for
-// fetching it from the plugin catalog, keeping this package free of any
-// persistence or process dependency.
-func Validate(def *Definition, knownActions map[string]struct{}) error {
+// knownActions maps the identifiers of currently installed plugins'
+// actions to what Validate needs to know about each — currently just its
+// declared input_schema (KnownAction); the caller (internal/runs) is
+// responsible for fetching it from the plugin catalog, keeping this
+// package free of any persistence or process dependency.
+func Validate(def *Definition, knownActions map[string]KnownAction) error {
 	if def.SchemaVersion != SupportedSchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d, expected %d", def.SchemaVersion, SupportedSchemaVersion)
 	}
@@ -79,7 +86,8 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 		if step.Uses == "" {
 			return fmt.Errorf("step %q: uses is required", step.ID)
 		}
-		if _, ok := knownActions[step.Uses]; !ok {
+		action, ok := knownActions[step.Uses]
+		if !ok {
 			return fmt.Errorf("step %q: unknown action %q (no installed plugin contributes it)", step.ID, step.Uses)
 		}
 
@@ -97,6 +105,9 @@ func Validate(def *Definition, knownActions map[string]struct{}) error {
 			if err := validateValueExpressions(value, seenSteps, step.Foreach != nil); err != nil {
 				return fmt.Errorf("step %q: input %q: %w", step.ID, key, err)
 			}
+		}
+		if err := validateInputSchema(step.With, action.InputSchema); err != nil {
+			return fmt.Errorf("step %q: %w", step.ID, err)
 		}
 
 		if step.Connector != "" {

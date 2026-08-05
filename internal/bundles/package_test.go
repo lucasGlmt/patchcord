@@ -23,6 +23,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/trust"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
@@ -288,7 +289,7 @@ func TestInstallPackage_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	sourceDir := newTestBundleSourceDir(t)
 	packagePath := packBundle(t, sourceDir, nil)
 
-	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}, false); err == nil {
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]workflow.KnownAction{}, false); err == nil {
 		t.Fatal("expected an error for a missing required plugin, got nil")
 	}
 
@@ -531,7 +532,7 @@ func TestInstallDir_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	db := openTestDB(t)
 	sourceDir := newTestBundleSourceDir(t)
 
-	if _, err := InstallDir(context.Background(), db, sourceDir, map[string]struct{}{}); err == nil {
+	if _, err := InstallDir(context.Background(), db, sourceDir, map[string]workflow.KnownAction{}); err == nil {
 		t.Fatal("expected an error for a missing required plugin, got nil")
 	}
 
@@ -665,7 +666,7 @@ func TestExtractPackage_RejectsPathTraversal(t *testing.T) {
 		t.Fatalf("write package file: %v", err)
 	}
 
-	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]struct{}{}, false); err == nil {
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, map[string]workflow.KnownAction{}, false); err == nil {
 		t.Fatal("expected an error for a path-traversal entry, got nil")
 	}
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dataDir), "escaped.txt")); !os.IsNotExist(err) {

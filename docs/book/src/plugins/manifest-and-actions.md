@@ -26,7 +26,7 @@ type Action interface {
 - **`InputSchema()`/`OutputSchema()`** return a `Schema` (`map[string]any`, a JSON Schema document) describing `Run`'s input and output. They cross the protocol as a `google.protobuf.Struct`, the same encoding the values themselves use at execution time — see [Protocol](protocol.md#contributions).
 - **`Run`** receives `input` (a `map[string]any`, decoded from the workflow step's resolved inputs) and `connector` (non-nil only if the calling step bound one — see [Connectors](connectors/index.md)). It returns `output` (a `map[string]any`, encoded back across the protocol as `google.protobuf.Struct`) or an error.
 
-Declaring a schema does not make the protocol type-safe: nothing on the wire validates a step's `input:` against `InputSchema()` before `Run` is called yet (that's a workflow-compiler feature, still to come) — an action must still check its own inputs and return a clear error on mismatch. The schema exists today for discovery and documentation, human or agentic, not yet for enforcement.
+Declaring a schema does not make the protocol itself type-safe: nothing on the wire checks `ExecuteActionRequest.input` against `InputSchema()` before `Run` is called — an action must still check its own inputs and return a clear error on mismatch. What *is* checked, since ADR-0063, is a step's declared `with:` at workflow validate/install time (`workflow.Validate`, see [Workflow Format → Validation](../workflows/format.md#validation-compiling-a-workflow)) — but only for a value whose subtree contains no `${{ ... }}` expression; an expression's real value is only known once a run resolves it, well after `Validate` has run, so it is never checked against the schema, before or during `Run`.
 
 ## Minimal reference example
 

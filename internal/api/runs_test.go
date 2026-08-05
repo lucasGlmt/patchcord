@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/runs"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 func TestHandleGetRun_UnknownRunReturnsNotFound(t *testing.T) {
@@ -25,7 +26,7 @@ func TestHandleGetRun_UnknownRunReturnsNotFound(t *testing.T) {
 
 func TestHandleGetRun_ReturnsTheRunAndItsSteps(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -67,7 +68,7 @@ func TestHandleGetRun_ReturnsTheRunAndItsSteps(t *testing.T) {
 
 func TestHandleListRuns(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -140,7 +141,7 @@ func TestHandleCancelRun_UnknownRunReturnsNotFound(t *testing.T) {
 
 func TestHandleCancelRun_AlreadyFinishedReturnsConflict(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
@@ -161,7 +162,7 @@ func TestHandleCancelRun_AlreadyFinishedReturnsConflict(t *testing.T) {
 
 func TestHandleCancelRun_CancelsAQueuedRun(t *testing.T) {
 	db := openMigratedTestDB(t)
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}

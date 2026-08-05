@@ -53,7 +53,7 @@ Each step:
 |---|---|
 | `id` | Unique within the workflow. Other steps reference its outputs as `steps.<id>.outputs.<key>`. |
 | `uses` | The action id this step invokes, e.g. `text.uppercase@1`. Must be contributed by a currently installed plugin. |
-| `with` | The action's input values, a `map[string]any`. |
+| `with` | The action's input values, a `map[string]any`. Checked against the action's declared `input_schema` at validate/install time for any value whose subtree contains no `${{ ... }}` expression — see [Validation](#validation-compiling-a-workflow). |
 | `connector` | Optional — binds a connector to this step's action call. See [Connector binding](#connector-binding). |
 | `if` | Optional — gates whether this step runs at all. See [Conditional steps](#conditional-steps). |
 | `stop_if_false` | Optional, boolean — when `if` resolves to `false`, ends the run there instead of only skipping this step. See [Conditional steps](#conditional-steps). |
@@ -67,6 +67,7 @@ Each step:
 - `schema_version` is supported, `id` is non-empty, `version` is positive, `trigger.type` is `"manual"`, `"schedule"` or `"webhook"` — see [Schedule trigger](#schedule-trigger) and [Webhook trigger](#webhook-trigger) for the extra rules each must satisfy;
 - at least one step; every step id is non-empty and unique;
 - every `uses` is in `knownActions` — the set of action ids currently installed plugins contribute (`plugins.KnownActions`), passed in by the caller so this package stays free of any persistence or process dependency;
+- every step's `with` satisfies its action's declared `input_schema` (a JSON Schema, ADR-0062): every name in `input_schema`'s `required` must be a key of `with`, and every value whose subtree contains no `${{ ... }}` expression must match its declared type. A value containing an expression anywhere in its subtree is left entirely unchecked — its real type is only known once the run resolves it (ADR-0063); this is a documented v1 simplification, not a partial check;
 - every `${{ ... }}` expression in `with`, `connector`, `if` or `foreach` has a supported shape (below), and every `steps.<id>.outputs...` reference points at a step defined **earlier** in the same list — a forward reference or a typo'd step id is rejected at install time, not at run time;
 - a step's `if`, when set, is either a literal boolean or a `${{ ... }}` expression — never any other literal (a string, a number...);
 - a step's `foreach`, when set, is either a literal list or a `${{ ... }}` expression;

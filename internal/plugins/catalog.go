@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"time"
+
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 // ErrNotInstalled is returned by Get and Uninstall when no plugin with the
@@ -156,19 +158,20 @@ func List(ctx context.Context, db *sql.DB) ([]CatalogEntry, error) {
 	return entries, nil
 }
 
-// KnownActions returns the set of action identifiers contributed by every
-// installed plugin, for the workflow compiler (internal/workflow.Validate)
-// to check a workflow's steps against.
-func KnownActions(ctx context.Context, db *sql.DB) (map[string]struct{}, error) {
+// KnownActions returns, for every action contributed by an installed
+// plugin, what the workflow compiler (internal/workflow.Validate) needs to
+// check a workflow's steps against it: that it exists, and its declared
+// input_schema (ADR-0062, checked since ADR-0063).
+func KnownActions(ctx context.Context, db *sql.DB) (map[string]workflow.KnownAction, error) {
 	entries, err := List(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 
-	actions := make(map[string]struct{})
+	actions := make(map[string]workflow.KnownAction)
 	for _, entry := range entries {
 		for _, action := range entry.Actions {
-			actions[action.ID] = struct{}{}
+			actions[action.ID] = workflow.KnownAction{InputSchema: action.InputSchema}
 		}
 	}
 

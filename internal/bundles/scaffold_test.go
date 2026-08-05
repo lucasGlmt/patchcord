@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 func TestScaffold_WritesAValidBundleDir(t *testing.T) {
@@ -61,7 +63,7 @@ func TestScaffold_IsPackAndInstallReady(t *testing.T) {
 	}
 
 	db := openTestDB(t)
-	b, _, err := InstallPackage(context.Background(), db, t.TempDir(), packagePath, map[string]struct{}{"text.uppercase@1": {}}, false)
+	b, _, err := InstallPackage(context.Background(), db, t.TempDir(), packagePath, map[string]workflow.KnownAction{"text.uppercase@1": {}}, false)
 	if err != nil {
 		t.Fatalf("InstallPackage() error = %v", err)
 	}

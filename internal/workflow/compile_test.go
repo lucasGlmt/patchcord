@@ -14,6 +14,15 @@ func validDefinition() *Definition {
 		Trigger:       Trigger{Type: "manual"},
 		Steps: []Step{
 			{ID: "first", Uses: "text.uppercase@1", With: map[string]any{"value": "hello"}},
+			// "second"'s with.value is deliberately an unresolved
+			// expression, not a literal: its real value/type isn't known
+			// until run time, so validateInputSchema must never reject it
+			// merely for being an expression — this is that case's only
+			// coverage, kept implicit in the passing baseline rather than a
+			// dedicated case, since text.uppercase@1's declared type
+			// (string) can't distinguish "checked and passed" from
+			// "skipped" here; schema_test.go covers that distinction with a
+			// purpose-built non-string schema instead.
 			{ID: "second", Uses: "text.uppercase@1", With: map[string]any{
 				"value": "${{ steps.first.outputs.value }}",
 			}},
@@ -22,7 +31,15 @@ func validDefinition() *Definition {
 }
 
 func TestValidate(t *testing.T) {
-	knownActions := map[string]struct{}{"text.uppercase@1": {}}
+	knownActions := map[string]KnownAction{
+		"text.uppercase@1": {
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"value": map[string]any{"type": "string"}},
+				"required":   []any{"value"},
+			},
+		},
+	}
 
 	tests := []struct {
 		name    string
@@ -73,6 +90,16 @@ func TestValidate(t *testing.T) {
 		{
 			name:    "rejects an action no installed plugin contributes",
 			mutate:  func(d *Definition) { d.Steps[0].Uses = "text.reverse@1" },
+			wantErr: true,
+		},
+		{
+			name:    "rejects a with value that doesn't match its action's declared type",
+			mutate:  func(d *Definition) { d.Steps[0].With["value"] = 42 },
+			wantErr: true,
+		},
+		{
+			name:    "rejects a with missing a required input",
+			mutate:  func(d *Definition) { d.Steps[0].With = map[string]any{} },
 			wantErr: true,
 		},
 		{

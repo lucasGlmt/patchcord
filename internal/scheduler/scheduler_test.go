@@ -36,7 +36,7 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-var knownActions = map[string]struct{}{"text.uppercase@1": {}}
+var knownActions = map[string]workflow.KnownAction{"text.uppercase@1": {}}
 
 const scheduledWorkflowSource = `
 schema_version: 1
