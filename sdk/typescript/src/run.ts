@@ -1,5 +1,5 @@
 import { parseEventStream } from "./sse.js";
-import type { RunEvent, RunStatus, RunSummary } from "./types.js";
+import type { RunEvent, RunSnapshot, RunStatus, RunStep, RunSummary, WatchRunOptions } from "./types.js";
 import { runEventFromWire, runSummaryFromWire, type WireRunEvent, type WireRunSummary } from "./wire.js";
 
 /**
@@ -64,15 +64,53 @@ export class Run {
    * terminal status (internal/runs.WatchRun) — a client connecting after a
    * fast run has already finished still observes each entity's current
    * (final) status once, not the intermediate ones it passed through.
+   *
+   * Pass `{ signal }` to stop listening early — e.g. a UI component
+   * unmounting mid-run — without waiting for the run itself to finish. This
+   * only tears down the client's own connection; the run keeps executing on
+   * the agent regardless (call .cancel() to actually stop it).
    */
-  async *events(): AsyncGenerator<RunEvent> {
-    const response = await this.#fetch(`${this.#baseUrl}/v1/runs/${this.id}/events`);
+  async *events(options?: WatchRunOptions): AsyncGenerator<RunEvent> {
+    const response = await this.#fetch(`${this.#baseUrl}/v1/runs/${this.id}/events`, { signal: options?.signal });
     if (!response.ok) {
       throw new Error(`GET /v1/runs/${this.id}/events: ${response.status} ${response.statusText}`);
     }
     for await (const frame of parseEventStream(response)) {
       yield runEventFromWire(JSON.parse(frame.data) as WireRunEvent);
     }
+  }
+
+  /**
+   * Streams this run's live state as fully merged snapshots — see
+   * RunSnapshot. Internally just a reducer over events(): each iteration
+   * upserts the reported step (or the run's own status/error) into a
+   * running Map, then yields the whole picture, so a caller never
+   * hand-writes that reduction itself. Once events() closes (terminal
+   * status reached), watch() does one extra GET /v1/runs/{id} — the same
+   * trade its sibling .result() makes — so the final snapshot it yields
+   * carries step inputs/outputs, which events() itself never does, before
+   * the generator closes for good.
+   *
+   * Accepts the same `{ signal }` as events(), for the same reason: stop
+   * listening from a UI cleanup without cancelling the run.
+   */
+  async *watch(options?: WatchRunOptions): AsyncGenerator<RunSnapshot> {
+    const steps = new Map<string, RunStep>();
+    let status: RunStatus = this.#summary.status;
+    let error: string | undefined = this.#summary.error;
+
+    for await (const event of this.events(options)) {
+      if (event.stepId) {
+        steps.set(event.stepId, { ...steps.get(event.stepId), id: event.stepId, status: event.status as RunStep["status"], error: event.error });
+      } else {
+        status = event.status as RunStatus;
+        error = event.error;
+      }
+      yield { status, error, steps: [...steps.values()] };
+    }
+
+    const final = await this.fetch();
+    yield { status: final.status, error: final.error, steps: final.steps ?? [...steps.values()], outputs: final.outputs };
   }
 
   /**

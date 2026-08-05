@@ -35,3 +35,4 @@ The vision document's fuller `client.*` surface (section 10.2) also describes `a
 - [Actions & Workflows](actions-and-workflows.md) — listing and triggering workflows, listing/inspecting/cancelling runs.
 - [Events (SSE)](events.md) — observing a run live.
 - [Types & Contracts](types-and-contracts.md) — how the SDK stays in sync with the agent's OpenAPI contract.
+- [React Adapter](react-adapter.md) — `@glmtsolutions/patchcord-react`'s `useWorkflowRun` hook, for "run this workflow on a click" without hand-writing the state management around it.

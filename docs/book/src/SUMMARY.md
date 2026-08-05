@@ -55,6 +55,7 @@
 - [Actions & Workflows](sdk-ts/actions-and-workflows.md)
 - [Events (SSE)](sdk-ts/events.md)
 - [Types & Contracts](sdk-ts/types-and-contracts.md)
+- [React Adapter](sdk-ts/react-adapter.md)
 
 # Apps
 

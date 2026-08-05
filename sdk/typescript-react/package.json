@@ -1,0 +1,63 @@
+{
+  "name": "@glmtsolutions/patchcord-react",
+  "version": "0.1.0",
+  "description": "React bindings for the Patchcord TypeScript SDK — a useWorkflowRun hook that turns \"run this workflow, watch it live\" into a few lines.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/lucasglmt/patchcord/tree/main/sdk/typescript-react#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasglmt/patchcord.git",
+    "directory": "sdk/typescript-react"
+  },
+  "bugs": {
+    "url": "https://github.com/lucasglmt/patchcord/issues"
+  },
+  "keywords": [
+    "patchcord",
+    "automation",
+    "workflow",
+    "react",
+    "hooks"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "peerDependencies": {
+    "@glmtsolutions/patchcord-sdk": "^0.1.0",
+    "react": "^18.2.0 || ^19.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@glmtsolutions/patchcord-sdk": "file:../typescript",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^26.1.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "global-jsdom": "^29.0.0",
+    "jsdom": "^29.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node --import global-jsdom/register --test dist-test/test/*.test.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

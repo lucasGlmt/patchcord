@@ -54,6 +54,37 @@ export interface RunEvent {
   time: string;
 }
 
+/**
+ * A fully merged view of a run's live state, yielded by Run.watch() after
+ * every event — unlike RunEvent, which carries one delta at a time, this is
+ * always the complete current picture: every step .watch() has seen a
+ * status change for so far, keyed by id, plus the run's own status/error.
+ * Lets a UI progress view do `setState(snapshot)` on each iteration instead
+ * of hand-reducing a stream of deltas into an array itself.
+ */
+export interface RunSnapshot {
+  status: RunStatus;
+  error?: string;
+  /**
+   * Every step .watch() has observed at least one event for, in the order
+   * each first appeared. Steps a workflow declares but that haven't started
+   * yet are absent — watch() only knows about steps events() has reported,
+   * never a workflow's full step list (that's WorkflowDetail.steps, fetched
+   * separately). input/output are only populated on the final snapshot
+   * (Run.watch() re-fetches the run once it reaches a terminal status,
+   * mirroring Run.result()) — events() itself never carries them.
+   */
+  steps: RunStep[];
+  /** The run's own outputs. Like steps[].input/output, only populated on the final snapshot — events() never carries them. */
+  outputs?: Record<string, unknown>;
+}
+
+/** Options accepted by Run.events() and Run.watch(). */
+export interface WatchRunOptions {
+  /** Aborts the underlying event stream request — e.g. from a UI component's cleanup on unmount. Does not cancel the run itself; use Run.cancel() for that. */
+  signal?: AbortSignal;
+}
+
 /** Options accepted by PatchcordClient.workflows.run. */
 export interface RunWorkflowOptions {
   /** Values for the workflow's ${{ workflow.inputs.<key> }} expressions. */

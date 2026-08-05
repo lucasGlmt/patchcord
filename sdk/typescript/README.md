@@ -27,7 +27,15 @@ const result = await run.result(); // waits for a terminal status
 console.log(result.status, result.outputs);
 ```
 
-See the full guide in the docs book: [Getting Started with the TypeScript SDK](https://github.com/lucasglmt/patchcord/blob/main/docs/book/src/sdk-ts/getting-started.md).
+For a live progress view instead of just waiting, use `run.watch()` — it yields a fully merged `RunSnapshot` (status, error, steps) after every event instead of raw deltas:
+
+```ts
+for await (const snapshot of run.watch()) {
+  console.log(snapshot.status, snapshot.steps);
+}
+```
+
+See the full guide in the docs book: [Getting Started with the TypeScript SDK](https://github.com/lucasglmt/patchcord/blob/main/docs/book/src/sdk-ts/getting-started.md) and [Events (SSE)](https://github.com/lucasglmt/patchcord/blob/main/docs/book/src/sdk-ts/events.md). Building a React UI on top of this? [`@glmtsolutions/patchcord-react`](https://github.com/lucasglmt/patchcord/tree/main/sdk/typescript-react) wraps `watch()` into a `useWorkflowRun` hook.
 
 ## Scope
 
