@@ -28,6 +28,14 @@ func TestScaffold_WritesAValidAppDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "index.html")); err != nil {
 		t.Fatalf("index.html missing: %v", err)
 	}
+
+	agentsMD, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("AGENTS.md missing: %v", err)
+	}
+	if !strings.Contains(string(agentsMD), "patchcord app install") {
+		t.Fatalf("AGENTS.md = %q, want it to mention the install command", agentsMD)
+	}
 }
 
 func TestScaffold_RefusesToOverwriteANonEmptyDir(t *testing.T) {
@@ -64,6 +72,7 @@ func TestScaffoldVite_WritesAViteProjectThatBuildsIntoAValidAppDir(t *testing.T)
 		".gitignore",
 		"src/main.ts",
 		"src/vite-env.d.ts",
+		"AGENTS.md",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, relPath)); err != nil {
 			t.Fatalf("%s missing: %v", relPath, err)
@@ -76,6 +85,14 @@ func TestScaffoldVite_WritesAViteProjectThatBuildsIntoAValidAppDir(t *testing.T)
 	}
 	if !strings.Contains(string(packageJSON), `"@glmtsolutions/patchcord-sdk"`) {
 		t.Fatal("package.json does not declare a @glmtsolutions/patchcord-sdk dependency — the scaffold should be ready to call the agent's API out of the box")
+	}
+
+	agentsMD, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if !strings.Contains(string(agentsMD), "npm run build") {
+		t.Fatalf("AGENTS.md = %q, want it to mention the build step this template needs before install", agentsMD)
 	}
 
 	mainTS, err := os.ReadFile(filepath.Join(dir, "src/main.ts"))

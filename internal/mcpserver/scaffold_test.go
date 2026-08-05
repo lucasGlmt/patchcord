@@ -20,6 +20,9 @@ func TestScaffoldApp(t *testing.T) {
 		if !slices.Contains(out.Files, "patchcord-app.yaml") {
 			t.Fatalf("Files = %v, want it to contain patchcord-app.yaml", out.Files)
 		}
+		if !slices.Contains(out.Files, "AGENTS.md") {
+			t.Fatalf("Files = %v, want it to contain AGENTS.md", out.Files)
+		}
 	})
 
 	t.Run("vite template", func(t *testing.T) {
@@ -70,6 +73,9 @@ func TestScaffoldBundle(t *testing.T) {
 		}
 		if !slices.Contains(out.Files, "app/patchcord-app.yaml") {
 			t.Fatalf("Files = %v, want it to contain the embedded app's manifest", out.Files)
+		}
+		if !slices.Contains(out.Files, "AGENTS.md") || !slices.Contains(out.Files, "app/AGENTS.md") {
+			t.Fatalf("Files = %v, want it to contain both the bundle's and the embedded app's AGENTS.md", out.Files)
 		}
 	})
 

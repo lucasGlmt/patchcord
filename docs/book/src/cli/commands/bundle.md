@@ -11,6 +11,8 @@ patchcord bundle new io.patchcord.example-bundle -o my-bundle --version 1.0.0
 
 Scaffolds a minimal `bundle.yaml` into `-o/--output` (default: the id's last `.`-separated segment), plus an embedded app and workflow (`workflows/main.yaml`). `requires_plugins` starts empty: there is no way to know ahead of time what plugin your bundle should depend on, add entries to `bundle.yaml` yourself. The scaffolded workflow uses `text.uppercase@1` (the reference plugin) as a working example, the same convention [`workflow new`](workflow.md) uses. Fails if the target directory already exists and is not empty.
 
+Also writes an `AGENTS.md` at the bundle's root, alongside `bundle.yaml` — orienting a coding agent working in the scaffolded directory: how to register this agent's [MCP server](mcp.md) to ground itself in the real plugin catalog instead of guessing, the workflow YAML grammar, and the dev loop (`bundle dev`/`bundle pack`). Never packaged by `bundle pack`. The embedded app under `app/` gets its own `app/AGENTS.md` from `app new`'s own scaffold (see above).
+
 `--template static` (default) writes the embedded app as a plain `app/` directory (`patchcord-app.yaml` + `index.html`) — ready for `bundle pack`/`bundle install` as-is, same as [`app new`](app.md)'s static template.
 
 `--template vite` writes the embedded app as a Vite + TypeScript project under `app/` instead (same layout as [`app new --template vite`](app.md)) — no UI framework opinion, add any npm package the app needs. `bundle.yaml`'s `app` field already points at `app/dist`, but that directory only exists once the project has been built at least once:

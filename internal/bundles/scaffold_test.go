@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/workflow"
@@ -38,6 +39,20 @@ func TestScaffold_WritesAValidBundleDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "workflows", "main.yaml")); err != nil {
 		t.Fatalf("embedded workflow missing: %v", err)
+	}
+
+	agentsMD, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("AGENTS.md missing: %v", err)
+	}
+	if !strings.Contains(string(agentsMD), "patchcord mcp serve") {
+		t.Fatalf("AGENTS.md = %q, want it to point the agent at the MCP server (ADR-0064)", agentsMD)
+	}
+	// app/AGENTS.md is apps.Scaffold's own responsibility (internal/apps
+	// already tests its content) — this only proves bundles.Scaffold
+	// doesn't skip it by delegating there.
+	if _, err := os.Stat(filepath.Join(dir, "app", "AGENTS.md")); err != nil {
+		t.Fatalf("embedded app's AGENTS.md missing: %v", err)
 	}
 }
 
@@ -105,7 +120,7 @@ func TestScaffoldVite_WritesABundleDirPointingAtAppDist(t *testing.T) {
 		t.Fatalf("Workflows = %v, want [workflows/main.yaml]", m.Workflows)
 	}
 
-	for _, relPath := range []string{"app/package.json", "app/vite.config.ts", "app/src/main.ts", "app/public/patchcord-app.yaml"} {
+	for _, relPath := range []string{"AGENTS.md", "app/AGENTS.md", "app/package.json", "app/vite.config.ts", "app/src/main.ts", "app/public/patchcord-app.yaml"} {
 		if _, err := os.Stat(filepath.Join(dir, relPath)); err != nil {
 			t.Fatalf("%s missing: %v", relPath, err)
 		}
