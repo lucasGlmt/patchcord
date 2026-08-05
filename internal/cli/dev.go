@@ -241,12 +241,8 @@ func runAppDev(ctx context.Context, dir string, cmdParts []string, out io.Writer
 	prefixed := &linePrefixWriter{prefix: "[app] ", out: out}
 	c.Stdout = prefixed
 	c.Stderr = prefixed
-	c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	c.Cancel = func() error {
-		// Negative pid targets the whole process group created by
-		// Setpgid above, not just cmdParts[0] itself.
-		return syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
-	}
+	setProcessGroup(c)
+	c.Cancel = func() error { return stopProcessGroup(c) }
 	c.WaitDelay = appDevWaitDelay
 
 	err := c.Run()

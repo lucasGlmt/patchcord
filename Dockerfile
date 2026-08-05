@@ -6,11 +6,23 @@
 FROM golang:1.25 AS build
 WORKDIR /src
 
+# Passed by `make docker-build` (from `git describe`/`git rev-parse`) or by
+# the release workflow (from the pushed tag) — .dockerignore excludes .git,
+# so the build stage cannot derive these itself. Unset, they fall back to
+# internal/version's own "dev"/"none"/"unknown" defaults.
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/patchcord ./cmd/patchcord
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w \
+	-X github.com/lucasglmt/patchcord/internal/version.Version=${VERSION} \
+	-X github.com/lucasglmt/patchcord/internal/version.Commit=${COMMIT} \
+	-X github.com/lucasglmt/patchcord/internal/version.Date=${DATE}" \
+	-o /out/patchcord ./cmd/patchcord
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=build /out/patchcord /usr/local/bin/patchcord

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/lucasglmt/patchcord/internal/version"
 )
 
 const healthCheckTimeout = 2 * time.Second
@@ -13,10 +15,12 @@ const healthCheckTimeout = 2 * time.Second
 type healthResponse struct {
 	Status   string `json:"status"`
 	Database string `json:"database"`
+	Version  string `json:"version"`
 }
 
 // @Summary      Check agent health
-// @Description  Reports whether the agent's database is reachable.
+// @Description  Reports whether the agent's database is reachable, and the
+// @Description  agent's own release version (see `patchcord version`).
 // @Tags         system
 // @Produce      json
 // @Success      200  {object}  healthResponse
@@ -24,7 +28,7 @@ type healthResponse struct {
 // @Router       /system/health [get]
 func handleHealth(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body := healthResponse{Status: "ok", Database: "ok"}
+		body := healthResponse{Status: "ok", Database: "ok", Version: version.Version}
 		statusCode := http.StatusOK
 
 		ctx, cancel := context.WithTimeout(r.Context(), healthCheckTimeout)

@@ -272,7 +272,7 @@ func TestEchoConnectorAction_Run(t *testing.T) {
 }
 
 func TestReplaceAction_Run(t *testing.T) {
-		tests := []struct {
+	tests := []struct {
 		name    string
 		input   patchcord.ActionInput
 		want    string

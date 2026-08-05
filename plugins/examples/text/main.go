@@ -59,7 +59,7 @@ func (splitAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchc
 	return patchcord.ActionOutput{"values": values}, nil
 }
 
-type replaceAction struct {}
+type replaceAction struct{}
 
 func (replaceAction) ID() string { return "text.replace@1" }
 

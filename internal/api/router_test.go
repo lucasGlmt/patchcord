@@ -12,6 +12,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/lucasglmt/patchcord/internal/auth"
+	"github.com/lucasglmt/patchcord/internal/version"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
@@ -55,7 +56,7 @@ func TestRouter_Health(t *testing.T) {
 			path:       "/v1/system/health",
 			db:         openTestDB,
 			wantStatus: http.StatusOK,
-			wantBody:   &healthResponse{Status: "ok", Database: "ok"},
+			wantBody:   &healthResponse{Status: "ok", Database: "ok", Version: version.Version},
 		},
 		{
 			name:       "GET health returns degraded when the database is unreachable",
@@ -63,7 +64,7 @@ func TestRouter_Health(t *testing.T) {
 			path:       "/v1/system/health",
 			db:         closedTestDB,
 			wantStatus: http.StatusServiceUnavailable,
-			wantBody:   &healthResponse{Status: "degraded", Database: "unreachable"},
+			wantBody:   &healthResponse{Status: "degraded", Database: "unreachable", Version: version.Version},
 		},
 		{
 			name:       "POST health is not allowed",

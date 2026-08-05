@@ -1,0 +1,111 @@
+# goreleaser configuration — builds and publishes the patchcord binary as a
+# GitHub Release whenever a "vX.Y.Z" tag is pushed (see
+# .github/workflows/release.yml and docs/adr/0056-versionnement-du-binaire-agent.md).
+#
+# Scope: the agent binary only (./cmd/patchcord). Example plugins and the
+# Docker image are separate deliverables with their own release paths —
+# see the "Conséquences négatives" of ADR-0056 for what this deliberately
+# leaves out for now.
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: patchcord
+    main: ./cmd/patchcord
+    binary: patchcord
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/lucasglmt/patchcord/internal/version.Version={{ .Version }}
+      - -X github.com/lucasglmt/patchcord/internal/version.Commit={{ .Commit }}
+      - -X github.com/lucasglmt/patchcord/internal/version.Date={{ .Date }}
+
+archives:
+  - id: patchcord
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+# .deb/.rpm attached directly to the GitHub Release (dpkg -i / rpm -i) —
+# deliberately not a hosted apt/dnf repository, which would need ongoing
+# server + GPG-signing infrastructure disproportionate to the project's
+# current phase. See ADR-0057.
+nfpms:
+  - id: patchcord
+    ids: [patchcord]
+    package_name: patchcord
+    vendor: Lucas Guilleminot
+    homepage: https://github.com/lucasGlmt/patchcord
+    maintainer: "Lucas Guilleminot <lcs.glmt@gmail.com>"
+    description: >-
+      Patchcord Agent — the local-first, universal execution agent behind
+      Patchcord. Connect anything. Automate everything. Build on top.
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
+# Pushes a Homebrew cask to lucasGlmt/homebrew-patchcord on every release —
+# that repo must exist beforehand and {{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}
+# must be a token with write access to it (see
+# .github/workflows/release.yml and ADR-0057). `homebrew_casks`, not the
+# older `brews` (a plain CLI binary, hard-deprecated as of goreleaser
+# v2.16 — see https://goreleaser.com/deprecations/#brews).
+homebrew_casks:
+  - name: patchcord
+    ids: [patchcord]
+    binaries:
+      - patchcord
+    repository:
+      owner: lucasGlmt
+      name: homebrew-patchcord
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: https://github.com/lucasGlmt/patchcord
+    description: "Local-first, universal execution agent — connect anything, automate everything, build on top."
+    license: Apache-2.0
+
+# The changelog shown in the GitHub Release body. CHANGELOG.md (regenerated
+# via `make changelog` before tagging) remains the source of truth for the
+# full project history — this is grouped independently, from goreleaser's
+# own commit-message parsing, to keep the release notes self-contained.
+changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+release:
+  github:
+    owner: lucasGlmt
+    name: patchcord
+  prerelease: auto

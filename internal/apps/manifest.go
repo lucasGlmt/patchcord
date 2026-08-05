@@ -49,8 +49,8 @@ type Manifest struct {
 // AppPermissions rather than the nesting the public YAML contract commits
 // to.
 type manifestYAML struct {
-	ID      string `yaml:"id"`
-	Version string `yaml:"version"`
+	ID          string `yaml:"id"`
+	Version     string `yaml:"version"`
 	Permissions struct {
 		Workflows struct {
 			Run []string `yaml:"run"`

@@ -2,7 +2,10 @@
 // the same internal services as the public API — never duplicated logic.
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/lucasglmt/patchcord/internal/version"
+	"github.com/spf13/cobra"
+)
 
 // NewRootCommand builds the root "patchcord" command with all subcommands
 // attached.
@@ -10,10 +13,16 @@ func NewRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "patchcord",
 		Short:         "Patchcord Agent — connect anything, automate everything, build on top.",
+		Version:       version.Version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
+	// Setting Version above makes cobra register the -v/--version flag
+	// for the short form ("patchcord version 0.1.0"); `patchcord version`
+	// (below) is the long form with commit and build date.
+	root.SetVersionTemplate("{{.Name}} version {{.Version}}\n")
 
+	root.AddCommand(newVersionCommand())
 	root.AddCommand(newServeCommand())
 	root.AddCommand(newDevCommand())
 	root.AddCommand(newPluginCommand())

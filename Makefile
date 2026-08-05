@@ -2,11 +2,23 @@ GO         := go
 BUILD_DIR  := bin
 BINARY     := patchcord
 
+# Version metadata embedded into internal/version at build time (see
+# docs/adr/0056-versionnement-du-binaire-agent.md). VERSION is the last
+# reachable tag plus a "-N-gHASH" suffix when HEAD is ahead of it, "dev"
+# outside of a git checkout — never hand-set these, tag the release instead
+# (`git tag vX.Y.Z && git push --tags`).
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE       := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS    := -X github.com/lucasglmt/patchcord/internal/version.Version=$(VERSION) \
+              -X github.com/lucasglmt/patchcord/internal/version.Commit=$(COMMIT) \
+              -X github.com/lucasglmt/patchcord/internal/version.Date=$(DATE)
+
 .DEFAULT_GOAL := help
 
 .PHONY: build
-build: ## Build the patchcord binary into bin/patchcord
-	$(GO) build -o $(BUILD_DIR)/$(BINARY) ./cmd/patchcord
+build: ## Build the patchcord binary into bin/patchcord (embeds VERSION/COMMIT/DATE)
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/patchcord
 
 .PHONY: build-plugins
 build-plugins: ## Build every example plugin into bin/plugins/<name>
@@ -51,8 +63,12 @@ swagger: ## Regenerate the OpenAPI spec (api/agent) from internal/api's swag ann
 	swag init --dir ./internal/api --generalInfo doc.go --parseInternal --output api/agent --outputTypes json,yaml --quiet
 
 .PHONY: docker-build
-docker-build: ## Build the agent's Docker image (see Dockerfile, ADR-0039)
-	docker build -t patchcord-agent .
+docker-build: ## Build the agent's Docker image (see Dockerfile, ADR-0039), embedding VERSION/COMMIT/DATE
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg COMMIT=$(COMMIT) \
+		--build-arg DATE=$(DATE) \
+		-t patchcord-agent .
 
 .PHONY: docker-run
 docker-run: ## Run the agent via docker compose (build first with docker-build if needed)
@@ -69,6 +85,10 @@ docs-build: ## Build the mdBook documentation (requires `cargo install mdbook`)
 .PHONY: docs-serve
 docs-serve: ## Serve the mdBook documentation locally with live reload (requires `cargo install mdbook`)
 	mdbook serve docs/book
+
+.PHONY: changelog
+changelog: ## Regenerate CHANGELOG.md from Conventional Commits (requires `brew install git-cliff` or `cargo install git-cliff`) — see docs/adr/0056-versionnement-du-binaire-agent.md
+	git-cliff --config cliff.toml --output CHANGELOG.md
 
 .PHONY: check
 check: vet fmt-check test ## Run everything a change should pass before it's proposed as done

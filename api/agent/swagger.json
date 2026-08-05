@@ -463,7 +463,7 @@
         },
         "/system/health": {
             "get": {
-                "description": "Reports whether the agent's database is reachable.",
+                "description": "Reports whether the agent's database is reachable, and the\nagent's own release version (see `patchcord version`).",
                 "produces": [
                     "application/json"
                 ],
@@ -799,6 +799,9 @@
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }

@@ -1,5 +1,9 @@
 # Patchcord
 
+[![CI](https://github.com/lucasGlmt/patchcord/actions/workflows/ci.yml/badge.svg)](https://github.com/lucasGlmt/patchcord/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/lucasGlmt/patchcord?include_prereleases)](https://github.com/lucasGlmt/patchcord/releases)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 > The extensible runtime for integrations, workflows and intelligent apps.
 > **Connect anything. Automate everything. Build on top.**
 
@@ -18,6 +22,27 @@ Early stage — Phase 1 (Core minimal) of the roadmap. No stable release yet.
 See [`docs/PATCHCORD_VISION_ARCHITECTURE.md`](docs/PATCHCORD_VISION_ARCHITECTURE.md)
 for the full product and architecture vision, and [`docs/adr/`](docs/adr/)
 for the architecture decision records.
+
+## Installing
+
+Prebuilt binaries for linux/darwin/windows (amd64/arm64) are attached to
+every [GitHub Release](https://github.com/lucasGlmt/patchcord/releases).
+
+```bash
+# macOS, or Linux via Linuxbrew
+brew install lucasGlmt/patchcord/patchcord
+
+# Debian/Ubuntu — download the .deb from the release page, then
+sudo dpkg -i patchcord_*_linux_amd64.deb
+
+# Fedora/RHEL — download the .rpm from the release page, then
+sudo rpm -i patchcord_*_linux_amd64.rpm
+```
+
+These work from the first tagged release onward (see Status below — none
+has shipped yet). There is deliberately no hosted apt/dnf repository or
+Chocolatey package — see
+[ADR-0057](docs/adr/0057-distribution-homebrew-et-paquets-linux.md) for why.
 
 ## Repository layout
 
@@ -59,6 +84,27 @@ go build ./...
 go vet ./...
 go test ./...
 ```
+
+`make build`/`make build-all` embed a version into the binary (see
+Versioning below); a plain `go build` falls back to `dev`.
+
+## Versioning
+
+Patchcord follows [SemVer](https://semver.org/) (`vX.Y.Z`); pre-1.0, any
+`0.x` bump may contain breaking changes. `patchcord version` prints the
+binary's version, commit and build date; `patchcord --version` prints the
+short form; `GET /v1/system/health` reports it as `version` for running
+instances.
+
+Releases are cut by pushing a `vX.Y.Z` tag: `make changelog` regenerates
+[`CHANGELOG.md`](CHANGELOG.md) from
+[Conventional Commits](https://www.conventionalcommits.org/), then
+`git tag vX.Y.Z && git push --tags` hands off to CI
+([`.github/workflows/release.yml`](.github/workflows/release.yml)), which
+cross-compiles and publishes a GitHub Release via
+[goreleaser](.goreleaser.yaml). See
+[ADR-0056](docs/adr/0056-versionnement-du-binaire-agent.md) for the full
+decision.
 
 ## License
 

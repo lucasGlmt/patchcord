@@ -74,6 +74,8 @@ definitions:
         type: string
       status:
         type: string
+      version:
+        type: string
     type: object
   api.pluginSummary:
     properties:
@@ -570,7 +572,9 @@ paths:
       - runs
   /system/health:
     get:
-      description: Reports whether the agent's database is reachable.
+      description: |-
+        Reports whether the agent's database is reachable, and the
+        agent's own release version (see `patchcord version`).
       produces:
       - application/json
       responses:
