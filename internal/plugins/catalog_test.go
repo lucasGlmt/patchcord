@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -61,6 +64,76 @@ func TestInstall_LaunchesHandshakesAndRecordsTheManifest(t *testing.T) {
 	if got.PluginID != entry.PluginID {
 		t.Fatalf("Get().PluginID = %q, want %q", got.PluginID, entry.PluginID)
 	}
+}
+
+// TestInstall_RecordsAnAbsolutePathEvenWhenGivenARelativeOne guards against
+// a bug where a plugin installed with a relative path (e.g. `patchcord
+// plugin install ./text`) would launch fine at install time — since exec
+// resolves it against the current working directory — but silently fail to
+// launch later, whenever the Supervisor started it (e.g. via `patchcord
+// serve`) from a different working directory. `plugin list` would still
+// report the plugin as installed, while every action it contributes
+// reported "not currently available".
+func TestInstall_RecordsAnAbsolutePathEvenWhenGivenARelativeOne(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	dir, file := filepath.Split(examplePluginPath)
+	relativePath := "./" + file
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("os.Getwd() error = %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("os.Chdir(%q) error = %v", dir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldWD); err != nil {
+			t.Fatalf("os.Chdir(%q) error = %v", oldWD, err)
+		}
+	})
+
+	entry, err := Install(context.Background(), db, relativePath)
+	if err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+
+	if !filepath.IsAbs(entry.ExecutablePath) {
+		t.Fatalf("ExecutablePath = %q, want an absolute path", entry.ExecutablePath)
+	}
+	// Compare by file identity rather than string equality: on macOS, the
+	// temp dir itself sits behind a symlink (/tmp -> /private/tmp), and
+	// os.Getwd() after os.Chdir resolves it, while examplePluginPath does
+	// not — an artifact of the test fixture, not of Install's behavior.
+	sameFile, err := isSameFile(entry.ExecutablePath, examplePluginPath)
+	if err != nil {
+		t.Fatalf("compare ExecutablePath: %v", err)
+	}
+	if !sameFile {
+		t.Fatalf("ExecutablePath = %q, want it to resolve to the same file as %q", entry.ExecutablePath, examplePluginPath)
+	}
+
+	got, err := Get(context.Background(), db, entry.PluginID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !filepath.IsAbs(got.ExecutablePath) {
+		t.Fatalf("Get().ExecutablePath = %q, want an absolute path", got.ExecutablePath)
+	}
+}
+
+// isSameFile reports whether a and b name the same file on disk, resolving
+// symlinks on both sides first.
+func isSameFile(a, b string) (bool, error) {
+	resolvedA, err := filepath.EvalSymlinks(a)
+	if err != nil {
+		return false, fmt.Errorf("resolve %q: %w", a, err)
+	}
+	resolvedB, err := filepath.EvalSymlinks(b)
+	if err != nil {
+		return false, fmt.Errorf("resolve %q: %w", b, err)
+	}
+	return resolvedA == resolvedB, nil
 }
 
 func TestInstall_FailsForABrokenBinary(t *testing.T) {

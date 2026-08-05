@@ -54,6 +54,18 @@ func newTestBundleSourceDir(t *testing.T) string {
 // workflow versions are immutable (ADR-0008).
 func newTestBundleSourceDirVersions(t *testing.T, bundleVersion, appVersion string, workflowVersion int) string {
 	t.Helper()
+	return newTestBundleSourceDirRequiring(t, bundleVersion, appVersion, workflowVersion, "io.patchcord.example-text@1.0.0")
+}
+
+// newTestBundleSourceDirRequiring is newTestBundleSourceDirVersions,
+// additionally parameterized on the plugin dependency the bundle declares
+// in requires_plugins — used by the "missing required plugin" tests, which
+// need one that's guaranteed to never be present, unlike
+// io.patchcord.example-text: that one is now seeded into a fresh
+// --data-dir automatically (ADR-0059), same as every other test in this
+// file relies on it being.
+func newTestBundleSourceDirRequiring(t *testing.T, bundleVersion, appVersion string, workflowVersion int, requiredPlugin string) string {
+	t.Helper()
 
 	dir := t.TempDir()
 
@@ -77,7 +89,7 @@ func newTestBundleSourceDirVersions(t *testing.T, bundleVersion, appVersion stri
 		fmt.Sprintf("version: %q\n", bundleVersion) +
 		"app: app\n" +
 		"workflows:\n  - workflows/main.yaml\n" +
-		"requires_plugins:\n  - io.patchcord.example-text@1.0.0\n"
+		fmt.Sprintf("requires_plugins:\n  - %s\n", requiredPlugin)
 	if err := os.WriteFile(filepath.Join(dir, "bundle.yaml"), []byte(bundleYAML), 0o644); err != nil {
 		t.Fatalf("write bundle.yaml: %v", err)
 	}
@@ -178,7 +190,7 @@ func TestBundleCommands_FullLifecycle(t *testing.T) {
 }
 
 func TestBundleInstallCommand_FailsWhenARequiredPluginIsMissing(t *testing.T) {
-	sourceDir := newTestBundleSourceDir(t)
+	sourceDir := newTestBundleSourceDirRequiring(t, "1.0.0", "0.1.0", 1, "io.patchcord.example-nonexistent@1.0.0")
 	packagePath := filepath.Join(t.TempDir(), "bundle.patchcord-bundle")
 
 	pack := newBundlePackCommand()
@@ -242,8 +254,10 @@ func TestBundleDevCommand_InstallsFromDirectoryAndUpdatesInPlace(t *testing.T) {
 }
 
 func TestBundleDevCommand_FailsWhenARequiredPluginIsMissing(t *testing.T) {
+	sourceDir := newTestBundleSourceDirRequiring(t, "1.0.0", "0.1.0", 1, "io.patchcord.example-nonexistent@1.0.0")
+
 	dev := newBundleDevCommand()
-	dev.SetArgs([]string{newTestBundleSourceDir(t), "--data-dir", t.TempDir()})
+	dev.SetArgs([]string{sourceDir, "--data-dir", t.TempDir()})
 	dev.SetContext(context.Background())
 
 	if err := dev.Execute(); err == nil {

@@ -2,6 +2,8 @@
 
 Manage the plugin catalog. See [Plugins](../../plugins/index.md) for what a plugin is, and [ADR-0015](../../../../adr/0015-catalogue-greffons-effet-au-redemarrage.md) for why these commands never talk to a running `patchcord serve` — a change here takes effect the next time the agent (or `workflow run` / `connector test`) starts.
 
+Five reference plugins — `text`, `json`, `encoding`, `http`, `time` — are embedded in the `patchcord` binary and auto-installed into any `--data-dir` the first time it's touched by any command, so a fresh agent already has them in `plugin list` with no `install` step. This is a one-time seed, not a standing default: `plugin uninstall` on one of them sticks, exactly as for a manually installed plugin. `mysql`, `postgresql` and `openai` are not bundled — install them explicitly like any other plugin. See [ADR-0059](../../../../adr/0059-greffons-de-reference-embarques-et-auto-installes.md).
+
 ## `new <id>`
 
 ```bash

@@ -88,6 +88,16 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("build secrets store: %w", err)
 	}
 
+	// Seeds Patchcord's bundled reference plugins into the catalog the very
+	// first time the agent runs against this data directory (ADR-0059) —
+	// a no-op on every call after that, so it must run before Start reads
+	// the catalog.
+	if err := plugins.SeedEmbedded(context.Background(), db, cfg.DataDir, logger); err != nil {
+		_ = listener.Close()
+		_ = db.Close()
+		return nil, fmt.Errorf("seed embedded plugins: %w", err)
+	}
+
 	supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
 	if err := supervisor.Start(context.Background(), db); err != nil {
 		_ = listener.Close()

@@ -17,7 +17,7 @@ LDFLAGS    := -X github.com/lucasglmt/patchcord/internal/version.Version=$(VERSI
 .DEFAULT_GOAL := help
 
 .PHONY: build
-build: ## Build the patchcord binary into bin/patchcord (embeds VERSION/COMMIT/DATE)
+build: build-embedded-plugins ## Build the patchcord binary into bin/patchcord (embeds VERSION/COMMIT/DATE, and the reference plugins from build-embedded-plugins — ADR-0059)
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/patchcord
 
 .PHONY: build-plugins
@@ -26,6 +26,29 @@ build-plugins: ## Build every example plugin into bin/plugins/<name>
 		name=$$(basename "$$dir"); \
 		echo "building plugin $$name"; \
 		$(GO) build -o $(BUILD_DIR)/plugins/$$name ./$$dir || exit 1; \
+	done
+
+# EMBEDDED_PLUGINS lists the reference plugins patchcord embeds and
+# auto-installs on first run (ADR-0059) — deliberately the ones with no
+# concrete external service behind them (mysql/postgresql/openai stay
+# opt-in, via `plugin install`). GOOS/GOARCH default to the host platform;
+# the release pipeline (.goreleaser.yaml) overrides both per target so
+# each platform's patchcord binary embeds its own matching executables.
+EMBEDDED_PLUGINS := text json encoding http time
+GOOS             ?= $(shell $(GO) env GOOS)
+GOARCH           ?= $(shell $(GO) env GOARCH)
+EMBEDDED_EXT     :=
+ifeq ($(GOOS),windows)
+EMBEDDED_EXT := .exe
+endif
+
+.PHONY: build-embedded-plugins
+build-embedded-plugins: ## Build the reference plugins patchcord embeds into internal/plugins/embedded/bin/$(GOOS)_$(GOARCH)/ (ADR-0059)
+	@dir=internal/plugins/embedded/bin/$(GOOS)_$(GOARCH); \
+	mkdir -p $$dir; \
+	for name in $(EMBEDDED_PLUGINS); do \
+		echo "building embedded plugin $$name ($(GOOS)/$(GOARCH))"; \
+		GOOS=$(GOOS) GOARCH=$(GOARCH) $(GO) build -o $$dir/$$name$(EMBEDDED_EXT) ./plugins/examples/$$name || exit 1; \
 	done
 
 .PHONY: build-all

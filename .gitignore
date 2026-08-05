@@ -16,6 +16,14 @@ vendor/
 *.sqlite3
 /data/
 
+# Reference plugin executables embedded into the patchcord binary
+# (ADR-0059) — built by `make build-embedded-plugins` / the release
+# pipeline's per-target pre-hook, never committed. .gitkeep keeps each
+# platform directory (and its go:embed directive) present on a fresh
+# checkout — see internal/plugins/embedded.
+/internal/plugins/embedded/bin/*/*
+!/internal/plugins/embedded/bin/*/.gitkeep
+
 # Secrets and local config overrides
 .env
 .env.*

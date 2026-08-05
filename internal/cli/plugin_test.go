@@ -81,19 +81,45 @@ func TestPluginInstallCommand_FailsForAMissingBinary(t *testing.T) {
 	}
 }
 
+// TestPluginListCommand_EmptyCatalog checks the "No plugin installed."
+// message itself. A brand new --data-dir is no longer necessarily an empty
+// catalog: it gets Patchcord's bundled reference plugins seeded into it on
+// first touch (ADR-0059, openDataStore -> plugins.SeedEmbedded). This
+// uninstalls whatever that seeded — zero or more, depending on whether
+// this checkout has actually built them, see internal/plugins/embedded —
+// to reach a genuinely empty catalog either way, then asserts the message
+// that prints for it.
 func TestPluginListCommand_EmptyCatalog(t *testing.T) {
-	cmd := newPluginListCommand()
-	cmd.SetArgs([]string{"--data-dir", t.TempDir()})
-	cmd.SetContext(context.Background())
+	dataDir := t.TempDir()
 
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	list := func() string {
+		cmd := newPluginListCommand()
+		cmd.SetArgs([]string{"--data-dir", dataDir})
+		cmd.SetContext(context.Background())
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("plugin list error = %v", err)
+		}
+		return out.String()
 	}
-	if !strings.Contains(out.String(), "No plugin installed.") {
-		t.Fatalf("output = %q, want it to mention an empty catalog", out.String())
+
+	for line := range strings.SplitSeq(strings.TrimSpace(list()), "\n") {
+		if line == "" || line == "No plugin installed." {
+			continue
+		}
+		id, _, _ := strings.Cut(line, "\t")
+
+		uninstall := newPluginUninstallCommand()
+		uninstall.SetArgs([]string{id, "--data-dir", dataDir})
+		uninstall.SetContext(context.Background())
+		if err := uninstall.Execute(); err != nil {
+			t.Fatalf("plugin uninstall %q error = %v", id, err)
+		}
+	}
+
+	if out := list(); !strings.Contains(out, "No plugin installed.") {
+		t.Fatalf("output = %q, want it to mention an empty catalog", out)
 	}
 }
 
@@ -122,6 +148,41 @@ func TestPluginUninstallCommand_UnknownPlugin(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("error = %q, want it to mention the plugin is not installed", err.Error())
+	}
+}
+
+// TestOpenDataStore_SeedingIsIdempotentAndNeverFails exercises
+// openDataStore's call to plugins.SeedEmbedded (ADR-0059) purely through
+// its observable contract — never errors, and the catalog it produces is
+// stable across repeated calls against the same data directory — without
+// asserting on which (if any) reference plugins actually got seeded: that
+// depends on whether `make build-embedded-plugins` populated
+// internal/plugins/embedded/bin for the host platform in this checkout.
+// SeedEmbedded's own install/skip/no-op behavior is covered directly and
+// hermetically by internal/plugins.TestSeedEmbedded*.
+func TestOpenDataStore_SeedingIsIdempotentAndNeverFails(t *testing.T) {
+	dataDir := t.TempDir()
+
+	// openDataStore is what `plugin list` runs through, so calling it
+	// (via the command, exactly as a user would) exercises the exact
+	// seeding path a fresh --data-dir goes through.
+	pluginList := func() string {
+		cmd := newPluginListCommand()
+		cmd.SetArgs([]string{"--data-dir", dataDir})
+		cmd.SetContext(context.Background())
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		if err := cmd.Execute(); err != nil {
+			t.Fatalf("plugin list error = %v", err)
+		}
+		return out.String()
+	}
+
+	before := pluginList()
+	after := pluginList()
+
+	if before != after {
+		t.Fatalf("catalog changed across repeated calls against the same data directory: %q then %q", before, after)
 	}
 }
 

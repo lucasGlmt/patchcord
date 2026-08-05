@@ -305,11 +305,19 @@ func TestWorkflowLifecycle_HelloPatchcordEndToEnd(t *testing.T) {
 }
 
 // TestWorkflowNewCommand_ThenValidate exercises `workflow new` through to
-// `workflow validate`: the scaffold references text.uppercase@1 (the
-// reference plugin), so validation must fail before that plugin is
-// installed and succeed right after — proving the scaffold isn't just
-// syntactically valid YAML but an actually runnable example once its one
-// dependency is met.
+// `workflow validate`: the scaffold references text.uppercase@1, one of
+// Patchcord's bundled reference plugins (ADR-0059) — auto-installed by
+// openDataStore's call to plugins.SeedEmbedded the first time this brand
+// new data directory is touched — so validation must succeed right away,
+// with no separate `plugin install` step. That proves the scaffold isn't
+// just syntactically valid YAML but an actually runnable example out of
+// the box.
+//
+// examplePluginPath is also installed explicitly first: it makes the
+// assertion hold regardless of whether `make build-embedded-plugins` has
+// populated internal/plugins/embedded/bin for the host platform in this
+// checkout (SeedEmbedded itself, and its no-files/no-op path, are already
+// covered directly and hermetically by internal/plugins.TestSeedEmbedded*).
 func TestWorkflowNewCommand_ThenValidate(t *testing.T) {
 	dataDir := t.TempDir()
 	path := filepath.Join(t.TempDir(), "scaffold-test.yaml")
@@ -326,13 +334,6 @@ func TestWorkflowNewCommand_ThenValidate(t *testing.T) {
 		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), path)
 	}
 
-	validateBefore := newWorkflowValidateCommand()
-	validateBefore.SetArgs([]string{path, "--data-dir", dataDir})
-	validateBefore.SetContext(context.Background())
-	if err := validateBefore.Execute(); err == nil {
-		t.Fatal("expected workflow validate to fail before the reference plugin is installed, got nil error")
-	}
-
 	pluginInstall := newPluginInstallCommand()
 	pluginInstall.SetArgs([]string{examplePluginPath, "--data-dir", dataDir})
 	pluginInstall.SetContext(context.Background())
@@ -340,11 +341,11 @@ func TestWorkflowNewCommand_ThenValidate(t *testing.T) {
 		t.Fatalf("plugin install error = %v", err)
 	}
 
-	validateAfter := newWorkflowValidateCommand()
-	validateAfter.SetArgs([]string{path, "--data-dir", dataDir})
-	validateAfter.SetContext(context.Background())
-	if err := validateAfter.Execute(); err != nil {
-		t.Fatalf("workflow validate error = %v, want the scaffold to validate once its reference action is installed", err)
+	validate := newWorkflowValidateCommand()
+	validate.SetArgs([]string{path, "--data-dir", dataDir})
+	validate.SetContext(context.Background())
+	if err := validate.Execute(); err != nil {
+		t.Fatalf("workflow validate error = %v, want the scaffold to validate out of the box", err)
 	}
 }
 

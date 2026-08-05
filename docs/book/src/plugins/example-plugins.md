@@ -2,6 +2,8 @@
 
 `plugins/examples/` contains the reference plugins used to develop and test the protocol. Every action below is real: the ID, inputs, and outputs come directly from the plugin's source, and each usage snippet is lifted from a matching workflow in `workflows/examples/` (see [Writing a Plugin in Go](writing-a-plugin-go.md) for how these plugins are built, and [Workflow Format](../workflows/format.md) for the full step syntax).
 
+`text`, `encoding`, `json`, `time` and `http` are bundled in the `patchcord` binary and auto-installed into any `--data-dir` the first time it's touched, so their `plugin install` step below is shown for completeness but isn't actually needed — see [ADR-0059](../../../adr/0059-greffons-de-reference-embarques-et-auto-installes.md). `openai`, `postgresql` and `mysql` are not bundled: `plugin install` is required for those.
+
 Every number crossing the plugin protocol arrives and leaves as a `float64` (the only numeric kind `google.protobuf.Struct` has) — this is why, e.g., `time.now@1`'s `unix` output or `postgresql.execute@1`'s `rows_affected` are numbers with no integer/float distinction on the wire.
 
 ## text — `io.patchcord.example-text`

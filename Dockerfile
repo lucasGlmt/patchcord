@@ -1,8 +1,11 @@
 # Multi-stage build (ADR-0039): a CGO-free binary (modernc.org/sqlite is
 # pure Go — no libc needed at runtime) copied into a minimal, shell-less
-# base. No plugin binaries are baked in here — the core never bundles a
-# concrete business integration (non-negotiable #3); install one at
-# runtime via a volume, see docker-compose.yml.
+# base. The core still never bundles a concrete business integration
+# (non-negotiable #3): mysql/postgresql/openai are not baked in here —
+# install one at runtime via a volume, see docker-compose.yml. The five
+# generic reference plugins (text, json, encoding, http, time) are, as
+# separate supervised processes embedded in the binary itself, exactly
+# like a native `patchcord` install — see ADR-0059.
 FROM golang:1.25 AS build
 WORKDIR /src
 
@@ -18,6 +21,21 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
+
+# Builds patchcord's embedded reference plugins (ADR-0059) for this image's
+# own GOOS/GOARCH before compiling the agent — go:embed reads whatever's on
+# disk under internal/plugins/embedded/bin/<goos>_<goarch>/ at compile
+# time. Mirrors `make build-embedded-plugins` without depending on `make`,
+# which the base golang image doesn't include.
+RUN set -eux; \
+	goos="$(go env GOOS)"; \
+	goarch="$(go env GOARCH)"; \
+	dir="internal/plugins/embedded/bin/${goos}_${goarch}"; \
+	mkdir -p "$dir"; \
+	for name in text json encoding http time; do \
+		go build -o "$dir/$name" "./plugins/examples/$name"; \
+	done
+
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w \
 	-X github.com/lucasglmt/patchcord/internal/version.Version=${VERSION} \
 	-X github.com/lucasglmt/patchcord/internal/version.Commit=${COMMIT} \

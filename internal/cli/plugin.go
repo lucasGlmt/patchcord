@@ -22,8 +22,18 @@ import (
 )
 
 // openDataStore opens and migrates the agent's database for a one-shot CLI
-// command. Migration logs are discarded: they belong in `patchcord serve`'s
-// structured logs, not in plugin command output.
+// command, then seeds Patchcord's bundled reference plugins into its
+// catalog the first time this data directory is used (plugins.SeedEmbedded,
+// ADR-0059) — a no-op on every call after that. Migration and seeding logs
+// are discarded: they belong in `patchcord serve`'s structured logs, not in
+// one-shot command output.
+//
+// Every CLI command that touches the database goes through this one
+// function, which makes it the single place that needs to seed embedded
+// plugins for the whole CLI surface to see them consistently — e.g.
+// `workflow install`/`workflow validate` checking a step's action against
+// plugins.KnownActions must see the same catalog `workflow run` will later
+// execute against.
 //
 // Plugin commands read and write this catalog directly, independent of
 // whether `patchcord serve` is currently running against the same
@@ -39,6 +49,11 @@ func openDataStore(dataDir string) (*sql.DB, error) {
 	if err := persistence.Migrate(context.Background(), db, migrations.FS, discardLogger); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate database: %w", err)
+	}
+
+	if err := plugins.SeedEmbedded(context.Background(), db, dataDir, discardLogger); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("seed embedded plugins: %w", err)
 	}
 
 	return db, nil

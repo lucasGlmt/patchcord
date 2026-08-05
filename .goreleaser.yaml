@@ -2,10 +2,14 @@
 # GitHub Release whenever a "vX.Y.Z" tag is pushed (see
 # .github/workflows/release.yml and docs/adr/0056-versionnement-du-binaire-agent.md).
 #
-# Scope: the agent binary only (./cmd/patchcord). Example plugins and the
-# Docker image are separate deliverables with their own release paths —
-# see the "Conséquences négatives" of ADR-0056 for what this deliberately
-# leaves out for now.
+# Scope: the agent binary only (./cmd/patchcord). Example plugins are a
+# separate deliverable with their own release path — see the "Conséquences
+# négatives" of ADR-0056 for what this deliberately leaves out — except for
+# the five reference plugins (text, json, encoding, http, time) patchcord
+# embeds and auto-installs on first run (ADR-0059): the `hooks.pre` below
+# cross-builds those for each target's GOOS/GOARCH right before that
+# target's own build compiles and embeds them, so every platform's release
+# binary carries its own matching set.
 version: 2
 
 before:
@@ -25,6 +29,12 @@ builds:
     goarch:
       - amd64
       - arm64
+    hooks:
+      pre:
+        - cmd: make build-embedded-plugins
+          env:
+            - GOOS={{ .Os }}
+            - GOARCH={{ .Arch }}
     ldflags:
       - -s -w
       - -X github.com/lucasglmt/patchcord/internal/version.Version={{ .Version }}

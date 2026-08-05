@@ -54,16 +54,16 @@ docker compose up --build
 
 The image bakes in `/etc/patchcord/config.yaml` (`listen: 0.0.0.0:7331`, `data_dir: /data`) as its default `--config` — deliberately different from the CLI's own bare `127.0.0.1`-only default, since a container needs to be reachable from outside itself to be useful at all (this is a Docker packaging choice, not a change to `serve`'s own defaults, and not the local-vs-server branching CLAUDE.md's non-negotiable #2 forbids — the *binary* still defaults to `127.0.0.1` everywhere, only this *image*'s launch command differs, the same way an official Postgres or Nginx image's baked-in config differs from each project's own upstream default). Override it by mounting your own file over that path (matching the vision document's `--config=/data/config.yaml` exactly), or with `PATCHCORD_LISTEN`/`PATCHCORD_DATA_DIR`/`--listen`/`--data-dir` — all of which still take precedence ([ADR-0038](../../../adr/0038-configuration-serveur-fichier-yaml-precedence.md)).
 
-No plugin is baked into the image — the core never bundles a concrete integration (non-negotiable #3). Build one for the container's OS/arch and mount it in:
+The image's binary embeds and auto-installs the same five reference plugins (`text`, `json`, `encoding`, `http`, `time`) any native `patchcord` install does — the `Dockerfile`'s build stage compiles them for the image's own `GOOS`/`GOARCH` right before compiling the agent, see [ADR-0059](../../../adr/0059-greffons-de-reference-embarques-et-auto-installes.md). No concrete external service integration is baked in — the core never bundles one (non-negotiable #3). Build `mysql`/`postgresql`/`openai` (or your own) for the container's OS/arch and mount it in:
 
 ```bash
 GOOS=linux GOARCH=$(go env GOARCH) make build-plugins
 docker compose up -d
-docker compose exec patchcord patchcord plugin install /plugins/text --data-dir /data
+docker compose exec patchcord patchcord plugin install /plugins/postgresql --data-dir /data
 docker compose restart patchcord   # picks up the newly installed plugin
 ```
 
-See [ADR-0039](../../../adr/0039-image-docker-multi-stage-distroless.md) for the full set of packaging decisions (base image, why nothing is baked in beyond the binary and the default config, why `./bin/plugins` rather than `./plugins`).
+See [ADR-0039](../../../adr/0039-image-docker-multi-stage-distroless.md) for the full set of packaging decisions (base image, why nothing beyond the binary, the bundled reference plugins and the default config is baked in, why `./bin/plugins` rather than `./plugins`).
 
 ### Secrets in a container
 

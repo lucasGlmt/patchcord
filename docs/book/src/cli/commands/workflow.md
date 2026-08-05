@@ -10,7 +10,7 @@ patchcord workflow new my_workflow -o my_workflow.yaml --version 1
 patchcord workflow new my_workflow --template foreach
 ```
 
-Scaffolds a workflow definition to `-o/--output` (default: `<id>.yaml`): a manual trigger and one step using `text.uppercase@1` (the reference plugin, `plugins/examples/text`) — a workflow must declare at least one step, so the skeleton can't be empty. Replace that step with your own action, or install the reference plugin (`patchcord plugin install bin/plugins/text`) to `validate`/`run` the scaffold as-is. Fails if the target file already exists.
+Scaffolds a workflow definition to `-o/--output` (default: `<id>.yaml`): a manual trigger and one step using `text.uppercase@1` (the reference plugin, `plugins/examples/text`) — a workflow must declare at least one step, so the skeleton can't be empty. `text.uppercase@1` is one of Patchcord's bundled reference plugins ([ADR-0059](../../../../adr/0059-greffons-de-reference-embarques-et-auto-installes.md)), auto-installed into any `--data-dir` the first time it's touched, so the scaffold `validate`s/`run`s as-is with nothing to install — replace the step with your own action whenever you're ready. Fails if the target file already exists.
 
 `--template minimal` (default) writes a single step that runs once. `--template foreach` writes a single step that runs once per item of a literal list (`foreach: ["hello", "world"]`), with the current item available to `with` as `${{ each }}` — see [ADR-0032](../../../../adr/0032-etapes-foreach-map-agregation-sortie.md) and [Workflow Format](../../workflows/format.md).
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 )
 
@@ -29,8 +30,19 @@ type CatalogEntry struct {
 // Install launches the plugin binary at path, completes the handshake to
 // validate it and discover its manifest, then records it in the catalog.
 // Installing a plugin whose id is already present replaces its entry.
+//
+// path is resolved to an absolute path before it is recorded: the catalog
+// entry must remain launchable by the Supervisor regardless of the working
+// directory `patchcord serve` (or any other command that starts plugins) is
+// later run from, which is almost never the directory `plugin install` was
+// run from.
 func Install(ctx context.Context, db *sql.DB, path string) (*CatalogEntry, error) {
-	proc, err := Launch(ctx, path, DefaultReadyTimeout)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve plugin path: %w", err)
+	}
+
+	proc, err := Launch(ctx, absPath, DefaultReadyTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("launch plugin: %w", err)
 	}
@@ -48,7 +60,7 @@ func Install(ctx context.Context, db *sql.DB, path string) (*CatalogEntry, error
 	entry := &CatalogEntry{
 		PluginID:        manifest.PluginID,
 		Version:         manifest.PluginVersion,
-		ExecutablePath:  path,
+		ExecutablePath:  absPath,
 		ProtocolVersion: manifest.ProtocolVersion,
 		Connectors:      manifest.Connectors,
 		Actions:         manifest.Actions,

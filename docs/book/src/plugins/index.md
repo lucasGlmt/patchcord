@@ -13,12 +13,14 @@ A plugin contributes:
 
 | Plugin | Contributes | Notes |
 |---|---|---|
-| `text` | `text.uppercase@1`, `text.lowercase@1`, `text.join@1`, `text.split@1`, `text.echo_connector@1` | The minimal reference plugin (vision document section 20). No real connector — `demo.connection@1` exists only to validate connector binding end to end. |
-| `encoding`, `json`, `time` | Various stateless actions | No connector. |
-| `http` | HTTP request actions | Connector: `http.connection@1`. No `ConnectorTester`. |
-| `openai` | AI actions | Connector: `openai.connection@1`. No `ConnectorTester`. |
-| `postgresql` | `postgresql.query@1`, `postgresql.execute@1` | Connector: `postgresql.connection@1`. Implements `ConnectorTester` (opens a connection and pings it). |
-| `mysql` | Same shape as `postgresql` | Connector: `mysql.connection@1`. Implements `ConnectorTester`. |
+| `text` | `text.uppercase@1`, `text.lowercase@1`, `text.join@1`, `text.split@1`, `text.echo_connector@1` | Bundled. The minimal reference plugin (vision document section 20). No real connector — `demo.connection@1` exists only to validate connector binding end to end. |
+| `encoding`, `json`, `time` | Various stateless actions | Bundled. No connector. |
+| `http` | HTTP request actions | Bundled. Connector: `http.connection@1`. No `ConnectorTester`. |
+| `openai` | AI actions | Not bundled — `plugin install` required. Connector: `openai.connection@1`. No `ConnectorTester`. |
+| `postgresql` | `postgresql.query@1`, `postgresql.execute@1` | Not bundled — `plugin install` required. Connector: `postgresql.connection@1`. Implements `ConnectorTester` (opens a connection and pings it). |
+| `mysql` | Same shape as `postgresql` | Not bundled — `plugin install` required. Connector: `mysql.connection@1`. Implements `ConnectorTester`. |
+
+"Bundled" plugins are embedded in the `patchcord` binary and auto-installed into any `--data-dir` the first time it's touched — see [`patchcord plugin`](../cli/commands/plugin.md) and [ADR-0059](../../../adr/0059-greffons-de-reference-embarques-et-auto-installes.md). `openai`/`postgresql`/`mysql` integrate a concrete external service, so they stay opt-in.
 
 See [Example Plugins](example-plugins.md) for every action's inputs/outputs and a runnable workflow snippet for each.
 
