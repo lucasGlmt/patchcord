@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -22,20 +23,106 @@ import (
 // produced by Pack (vision document, section 9.3).
 const PackageExtension = ".patchcord-bundle"
 
-// Pack archives sourceDir (which must contain a valid bundle.yaml, plus
-// whatever app/workflow files it references) into w as a gzip-compressed
-// tar stream, plus a checksums.json covering it (see
-// internal/packaging.SignedArchive). If key is non-nil, the package is
-// also signed — signing a bundle covers its embedded app and workflows
-// too, so they are never separately verified again on install (see
-// installEmbeddedApp). The result is what InstallPackage (and therefore
-// `patchcord bundle install`) expects.
+// Pack archives sourceDir's bundle.yaml plus exactly the app/workflow files
+// it references into w as a gzip-compressed tar stream, plus a
+// checksums.json covering it (see internal/packaging.SignedArchive). If key
+// is non-nil, the package is also signed — signing a bundle covers its
+// embedded app and workflows too, so they are never separately verified
+// again on install (see installEmbeddedApp). The result is what
+// InstallPackage (and therefore `patchcord bundle install`) expects.
+//
+// Pack never walks sourceDir itself: only the manifest's declared App
+// subtree and Workflows files are staged and archived. sourceDir routinely
+// holds things bundle.yaml does not declare — a Vite app's node_modules
+// (which packaging.Archive would otherwise reject outright the moment it
+// hit a symlink such as node_modules/.bin/esbuild), a .git directory,
+// editor state — none of which belong in the package.
 func Pack(sourceDir string, key ed25519.PrivateKey, w io.Writer) error {
-	if _, err := LoadManifest(sourceDir); err != nil {
+	manifest, err := LoadManifest(sourceDir)
+	if err != nil {
 		return err
 	}
 
-	return packaging.SignedArchive(sourceDir, key, w)
+	staging, err := os.MkdirTemp("", "patchcord-bundle-pack-*")
+	if err != nil {
+		return fmt.Errorf("create staging directory: %w", err)
+	}
+	defer os.RemoveAll(staging)
+
+	if err := stageBundleContent(sourceDir, staging, manifest); err != nil {
+		return fmt.Errorf("pack bundle %q: %w", sourceDir, err)
+	}
+
+	return packaging.SignedArchive(staging, key, w)
+}
+
+// stageBundleContent copies exactly what bundle.yaml declares — the
+// manifest itself, its embedded app subtree (if any), and its embedded
+// workflow files — out of sourceDir into staging, preserving their
+// relative paths so staging ends up laid out exactly as InstallPackage
+// expects.
+func stageBundleContent(sourceDir, staging string, manifest *Manifest) error {
+	if err := copyFile(filepath.Join(sourceDir, ManifestFileName), filepath.Join(staging, ManifestFileName)); err != nil {
+		return fmt.Errorf("stage %s: %w", ManifestFileName, err)
+	}
+
+	if manifest.App != "" {
+		if err := copyDir(filepath.Join(sourceDir, manifest.App), filepath.Join(staging, manifest.App)); err != nil {
+			return fmt.Errorf("stage app %q: %w", manifest.App, err)
+		}
+	}
+
+	for _, relWorkflow := range manifest.Workflows {
+		if err := copyFile(filepath.Join(sourceDir, relWorkflow), filepath.Join(staging, relWorkflow)); err != nil {
+			return fmt.Errorf("stage workflow %q: %w", relWorkflow, err)
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a single regular file from src to dst, creating dst's
+// parent directory as needed.
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o644)
+}
+
+// copyDir recursively copies srcDir's regular files and directories to
+// dstDir. Like packaging.Archive, any other entry type (a symlink, most
+// commonly — e.g. node_modules/.bin's shims) fails loudly rather than being
+// silently skipped or followed.
+func copyDir(srcDir, dstDir string) error {
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dstDir, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("%s: unsupported file type", filepath.ToSlash(rel))
+		}
+
+		return copyFile(path, target)
+	})
 }
 
 // InstallPackage installs a bundle from a .patchcord-bundle archive (Pack's

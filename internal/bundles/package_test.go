@@ -548,6 +548,57 @@ func TestPack_RejectsAnInvalidManifest(t *testing.T) {
 	}
 }
 
+// TestPack_IgnoresUnrelatedSymlinksOutsideDeclaredApp is a regression test
+// for the bug Lucas reported: `patchcord bundle pack` failing with
+// "app/node_modules/.bin/esbuild: unsupported file type" on a Vite-based
+// bundle (bundle.yaml's app: app/dist, per scaffoldViteManifestTemplate).
+// Before the fix, Pack archived sourceDir verbatim, so a sibling
+// node_modules directory it never declared — and its symlinked .bin shims,
+// standard for any npm-installed CLI tool — broke packing outright. Pack
+// must only stage what bundle.yaml actually references.
+func TestPack_IgnoresUnrelatedSymlinksOutsideDeclaredApp(t *testing.T) {
+	dir := t.TempDir()
+
+	distDir := filepath.Join(dir, "app", "dist")
+	if err := os.MkdirAll(distDir, 0o755); err != nil {
+		t.Fatalf("mkdir app/dist: %v", err)
+	}
+	appManifest := "id: dashboard\nversion: \"0.1.0\"\n"
+	if err := os.WriteFile(filepath.Join(distDir, apps.ManifestFileName), []byte(appManifest), 0o644); err != nil {
+		t.Fatalf("write app manifest: %v", err)
+	}
+
+	// A sibling of app/dist, never declared by bundle.yaml's "app:
+	// app/dist" — exactly like a Vite project's node_modules living next
+	// to its build output. .bin/esbuild is a symlink, as npm always
+	// installs it.
+	binDir := filepath.Join(dir, "app", "node_modules", ".bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("mkdir app/node_modules/.bin: %v", err)
+	}
+	target := filepath.Join(dir, "app", "node_modules", "esbuild", "bin", "esbuild")
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		t.Fatalf("mkdir esbuild target dir: %v", err)
+	}
+	if err := os.WriteFile(target, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write esbuild target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(binDir, "esbuild")); err != nil {
+		t.Fatalf("symlink node_modules/.bin/esbuild: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(
+		"id: io.patchcord.example-bundle\nversion: \"1.0.0\"\napp: app/dist\nworkflows: []\nrequires_plugins: []\n",
+	), 0o644); err != nil {
+		t.Fatalf("write bundle.yaml: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := Pack(dir, nil, &buf); err != nil {
+		t.Fatalf("Pack() error = %v, want nil (node_modules is not part of the declared app)", err)
+	}
+}
+
 func TestExtractPackage_RejectsPathTraversal(t *testing.T) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
