@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -137,6 +138,85 @@ func TestParseAction_Run(t *testing.T) {
 				t.Fatalf("output[unix] = %v, want %v", output["unix"], tt.wantUnix)
 			}
 		})
+	}
+}
+
+func TestSleepAction_Run(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   patchcord.ActionInput
+		want    string
+		wantErr bool
+	}{
+		{
+			name:  "sleeps for the given duration",
+			input: patchcord.ActionInput{"duration": "10ms"},
+			want:  "10ms",
+		},
+		{
+			name:  "accepts a zero duration",
+			input: patchcord.ActionInput{"duration": "0s"},
+			want:  "0s",
+		},
+		{
+			name:    "rejects a missing duration",
+			input:   patchcord.ActionInput{},
+			wantErr: true,
+		},
+		{
+			name:    "rejects an invalid duration",
+			input:   patchcord.ActionInput{"duration": "not a duration"},
+			wantErr: true,
+		},
+		{
+			name:    "rejects a negative duration",
+			input:   patchcord.ActionInput{"duration": "-1s"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := time.Now()
+			output, err := sleepAction{}.Run(context.Background(), tt.input, nil)
+			elapsed := time.Since(before)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected an error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+			if output["slept_for"] != tt.want {
+				t.Fatalf("output[slept_for] = %v, want %q", output["slept_for"], tt.want)
+			}
+			want, _ := time.ParseDuration(tt.want)
+			if elapsed < want {
+				t.Fatalf("Run() returned after %v, want at least %v", elapsed, want)
+			}
+		})
+	}
+}
+
+func TestSleepAction_Run_ContextCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	before := time.Now()
+	output, err := sleepAction{}.Run(ctx, patchcord.ActionInput{"duration": "1h"}, nil)
+	elapsed := time.Since(before)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	if output != nil {
+		t.Fatalf("output = %#v, want nil", output)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("Run() took %v, want to return immediately on a cancelled context", elapsed)
 	}
 }
 

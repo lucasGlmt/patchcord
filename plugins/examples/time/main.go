@@ -1,10 +1,10 @@
 // Command time is an example plugin contributing basic date/time actions —
-// "time.now@1", "time.format@1", "time.parse@1", and "time.add@1" — the
-// kind of utility operations most real workflows need (timestamps,
-// expiries, scheduling windows). Every action that produces a moment in
-// time represents it as RFC3339 in UTC, so the actions compose directly:
-// "time.now@1"'s output feeds "time.add@1", whose output feeds
-// "time.format@1", without any conversion step in between.
+// "time.now@1", "time.format@1", "time.parse@1", "time.add@1", and
+// "time.sleep@1" — the kind of utility operations most real workflows need
+// (timestamps, expiries, scheduling windows, pacing). Every action that
+// produces a moment in time represents it as RFC3339 in UTC, so the actions
+// compose directly: "time.now@1"'s output feeds "time.add@1", whose output
+// feeds "time.format@1", without any conversion step in between.
 //
 // It depends only on the SDK (sdk/go-plugin), never on any internal/
 // package of the agent.
@@ -103,6 +103,37 @@ func (addAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcor
 	return patchcord.ActionOutput{"value": parsed.Add(duration).UTC().Format(time.RFC3339)}, nil
 }
 
+type sleepAction struct{}
+
+func (sleepAction) ID() string { return "time.sleep@1" }
+
+// Run pauses the step for the given duration, or returns early with ctx's
+// error if the run is cancelled or its timeout elapses first (ADR-0018) —
+// a sleep must never outlast the run that started it.
+func (sleepAction) Run(ctx context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
+	durationStr, ok := input["duration"].(string)
+	if !ok {
+		return nil, fmt.Errorf("input %q must be a string", "duration")
+	}
+	duration, err := time.ParseDuration(durationStr)
+	if err != nil {
+		return nil, fmt.Errorf("input %q: %w", "duration", err)
+	}
+	if duration < 0 {
+		return nil, fmt.Errorf("input %q must not be negative: %q", "duration", durationStr)
+	}
+
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return patchcord.ActionOutput{"slept_for": durationStr}, nil
+	}
+}
+
 func main() {
 	plugin := patchcord.Plugin{
 		Manifest: patchcord.Manifest{
@@ -114,6 +145,7 @@ func main() {
 			formatAction{},
 			parseAction{},
 			addAction{},
+			sleepAction{},
 		},
 	}
 

@@ -155,6 +155,9 @@ No connector. Every action that produces a moment in time represents it as RFC33
 | `time.format@1` | `value` (RFC3339 string), `layout` (Go reference-time layout, e.g. `2006-01-02`) | `value` (string, formatted per `layout`) |
 | `time.parse@1` | `value` (string per `layout`), `layout` (string) | `value` (RFC3339 UTC string), `unix` (number) |
 | `time.add@1` | `value` (RFC3339 string), `duration` (Go duration string, e.g. `24h`) | `value` (RFC3339 UTC string) |
+| `time.sleep@1` | `duration` (Go duration string, e.g. `500ms`, must not be negative) | `slept_for` (the input `duration`, echoed back) |
+
+`time.sleep@1` returns early with a Go error if the run is cancelled or its own timeout elapses before `duration` is up — see [timeouts and cancellation](../workflows/timeouts-and-cancellation.md) — so it never outlasts the run that started it.
 
 `time_utils_demo.yaml` gets the current time, adds 24 hours, then formats the result:
 
