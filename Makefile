@@ -91,7 +91,7 @@ changelog: ## Regenerate CHANGELOG.md from Conventional Commits (requires `brew 
 	git-cliff --config cliff.toml --output CHANGELOG.md
 
 .PHONY: check
-check: vet fmt-check test ## Run everything a change should pass before it's proposed as done
+check: build vet fmt-check test ## Run everything a change should pass before it's proposed as done
 
 .PHONY: clean
 clean: ## Remove build artifacts and local runtime data

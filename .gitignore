@@ -1,8 +1,8 @@
 # Build output
 /bin/
 /dist/
-patchcord
-patchcord.exe
+/patchcord
+/patchcord.exe
 
 # Go
 *.test
