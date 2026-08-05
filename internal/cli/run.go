@@ -33,6 +33,7 @@ func newRunListCommand() *cobra.Command {
 		Short: "List workflow runs",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -58,7 +59,7 @@ func newRunListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&workflowID, "workflow", "", "only list runs of this workflow")
 
 	return cmd
@@ -72,6 +73,7 @@ func newRunInspectCommand() *cobra.Command {
 		Short: "Show details about one workflow run",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -107,7 +109,7 @@ func newRunInspectCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -120,6 +122,7 @@ func newRunLogsCommand() *cobra.Command {
 		Short: "Show a timestamped transcript of one workflow run",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -158,7 +161,7 @@ func newRunLogsCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -175,6 +178,7 @@ func newRunCancelCommand() *cobra.Command {
 			"meant to clean up a run left behind by a crashed process.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -198,7 +202,7 @@ func newRunCancelCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

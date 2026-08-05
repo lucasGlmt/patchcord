@@ -15,6 +15,7 @@ import (
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/trust"
+	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
 // PackageExtension is the conventional file extension for a bundle package
@@ -52,9 +53,12 @@ func Pack(sourceDir string, key ed25519.PrivateKey, w io.Writer) error {
 //     (record(), below): re-running `bundle install`/`bundle update` on an
 //     already-installed bundle id must succeed and replace its embedded
 //     app in place, not fail with apps.ErrAlreadyExists (ADR-0044);
-//  3. each embedded workflow file is installed via runs.InstallWorkflow —
-//     workflow definitions need no on-disk home of their own, they live in
-//     the workflow_versions table (ADR-0008).
+//  3. each embedded workflow file is installed via installWorkflowIfChanged
+//     — workflow definitions need no on-disk home of their own, they live
+//     in the workflow_versions table (ADR-0008), and re-running install/
+//     update with an unchanged workflow is a no-op rather than a rejection
+//     (only redeclaring a version with genuinely different content still
+//     hits ADR-0008's immutability rule).
 //
 // The package is verified (internal/packaging.Verify) before anything is
 // installed: a checksum mismatch or an invalid signature aborts
@@ -134,6 +138,69 @@ func InstallPackage(ctx context.Context, db *sql.DB, dataDir, packagePath string
 	return bundle, policy, err
 }
 
+// InstallDir installs a bundle straight from a source directory instead of
+// a packaged .patchcord-bundle archive — no Pack/Extract round trip, no
+// checksum, no signature: dir is local, unsigned-by-design source under
+// active development. It backs `patchcord bundle dev` the same way
+// apps.InstallOrUpdate backs `patchcord app dev`.
+//
+// Unlike InstallPackage's installEmbeddedApp, the embedded app (if any) is
+// installed in place via apps.InstallOrUpdate pointed straight at
+// dir/manifest.App — never moved under dataDir/apps — so it ends up served
+// live off dir exactly as `app dev` serves an app: rebuilding it (e.g.
+// `vite build --watch`) needs no further agent involvement, and no dataDir
+// argument is needed here at all.
+//
+// Each embedded workflow is still installed under the exact same rule
+// `workflow install` enforces: a published version is immutable
+// (ADR-0008), so re-declaring an already-installed version with different
+// content is rejected — editing a workflow's body requires bumping its
+// `version` field before the next InstallDir call picks it up. Redeclaring
+// it with byte-identical content, however, is a silent no-op
+// (installWorkflowIfChanged): `bundle dev --watch` reinstalls every
+// embedded workflow on every change under dir, including ones that never
+// touched a given workflow file, so this is what keeps that loop usable.
+//
+// requires_plugins is enforced exactly as InstallPackage enforces it: a
+// missing dependency is not installed automatically.
+func InstallDir(ctx context.Context, db *sql.DB, dir string, knownActions map[string]struct{}) (*Bundle, error) {
+	manifest, err := LoadManifest(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := checkPluginDependencies(ctx, db, manifest.RequiresPlugins); err != nil {
+		return nil, err
+	}
+
+	if manifest.App != "" {
+		if _, err := apps.InstallOrUpdate(ctx, db, filepath.Join(dir, manifest.App)); err != nil {
+			return nil, fmt.Errorf("install bundle %q app: %w", manifest.ID, err)
+		}
+	}
+
+	for _, relWorkflow := range manifest.Workflows {
+		path := filepath.Join(dir, relWorkflow)
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("install bundle %q workflow %q: %w", manifest.ID, relWorkflow, err)
+		}
+		if _, err := installWorkflowIfChanged(ctx, db, source, knownActions); err != nil {
+			return nil, fmt.Errorf("install bundle %q workflow %q: %w", manifest.ID, relWorkflow, err)
+		}
+	}
+
+	manifestSource, err := os.ReadFile(filepath.Join(dir, ManifestFileName))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", ManifestFileName, err)
+	}
+	if err := record(ctx, db, manifest.ID, manifest.Version, string(manifestSource)); err != nil {
+		return nil, err
+	}
+
+	return Get(ctx, db, manifest.ID)
+}
+
 // checkPluginDependencies fails fast, naming the first unmet dependency, if
 // any declared "id@version" plugin is not installed at exactly that
 // version.
@@ -196,7 +263,9 @@ func installEmbeddedApp(ctx context.Context, db *sql.DB, dataDir, staging, relAp
 }
 
 // installEmbeddedWorkflow reads one workflow file out of staging and
-// installs it exactly as `workflow install` does.
+// installs it exactly as `workflow install` does (through
+// installWorkflowIfChanged, so re-running `bundle install`/`update` on an
+// unchanged package is a no-op rather than an ADR-0008 rejection).
 func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkflow string, knownActions map[string]struct{}) error {
 	path, err := packaging.SafeJoin(staging, relWorkflow)
 	if err != nil {
@@ -208,6 +277,37 @@ func installEmbeddedWorkflow(ctx context.Context, db *sql.DB, staging, relWorkfl
 		return fmt.Errorf("read %q: %w", relWorkflow, err)
 	}
 
-	_, err = runs.InstallWorkflow(ctx, db, source, knownActions)
+	_, err = installWorkflowIfChanged(ctx, db, source, knownActions)
 	return err
+}
+
+// installWorkflowIfChanged installs source via runs.InstallWorkflow, except
+// when the exact same (id, version) is already installed with
+// byte-identical content: then it is a silent no-op instead of hitting
+// ADR-0008's immutability rejection.
+//
+// This is what makes reinstalling a bundle safe to call repeatedly without
+// having touched a workflow at all: `bundle dev --watch` reinstalls the
+// whole bundle on every change under dir (internal/cli/bundle.go), even
+// one that has nothing to do with a given embedded workflow (e.g. the
+// embedded app's own build output), so a strict InstallWorkflow call would
+// fail on every such reinstall once a workflow version is first recorded.
+// runs.InstallWorkflow itself stays strict — `workflow install`, called
+// directly by a developer naming a specific file, should keep flagging an
+// unbumped version as a likely mistake.
+func installWorkflowIfChanged(ctx context.Context, db *sql.DB, source []byte, knownActions map[string]struct{}) (*workflow.Definition, error) {
+	def, err := workflow.Parse(source)
+	if err != nil {
+		return nil, err
+	}
+
+	existing, err := runs.WorkflowSource(ctx, db, def.ID, def.Version)
+	if err == nil && existing == string(source) {
+		return def, nil
+	}
+	if err != nil && !errors.Is(err, runs.ErrWorkflowNotFound) {
+		return nil, fmt.Errorf("check existing workflow %s version %d: %w", def.ID, def.Version, err)
+	}
+
+	return runs.InstallWorkflow(ctx, db, source, knownActions)
 }

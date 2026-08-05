@@ -1,4 +1,4 @@
-import type { WorkflowInputDetail } from "@patchcord/sdk";
+import type { WorkflowInputDetail } from "@glmtsolutions/patchcord-sdk";
 
 export function parseJSONRecord(raw: string, fieldName: string): Record<string, unknown> {
   const trimmed = raw.trim();

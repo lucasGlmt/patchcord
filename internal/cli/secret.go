@@ -69,6 +69,7 @@ func newSecretSetCommand() *cobra.Command {
 			"A connector's --secret <name>=<type>:<key> then resolves against this same key.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			store, err := openWritableSecretStore(secretType, dataDir, secretsMasterKeyFile)
 			if err != nil {
 				return fmt.Errorf("set secret: %w", err)
@@ -88,7 +89,7 @@ func newSecretSetCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&secretType, "type", "", "secret store to write to: \"keychain\" or \"file\"")
 	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", secretsMasterKeyFileFlagUsage)
 	_ = cmd.MarkFlagRequired("type")
@@ -106,6 +107,7 @@ func newSecretRemoveCommand() *cobra.Command {
 		Short: "Delete a stored secret value",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			store, err := openWritableSecretStore(secretType, dataDir, secretsMasterKeyFile)
 			if err != nil {
 				return fmt.Errorf("remove secret: %w", err)
@@ -120,7 +122,7 @@ func newSecretRemoveCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&secretType, "type", "", "secret store to remove from: \"keychain\" or \"file\"")
 	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", secretsMasterKeyFileFlagUsage)
 	_ = cmd.MarkFlagRequired("type")

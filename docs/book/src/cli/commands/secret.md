@@ -39,4 +39,4 @@ Deletes the stored value. Fails if `key` was never set — a typo'd key silently
 
 ## `--data-dir` and `--secrets-master-key-file`
 
-Both `set` and `remove` take `--data-dir` (default `./data`, only relevant to `--type file`, since that's where `secrets.vault` lives) and `--secrets-master-key-file` (required for `--type file`) as plain flags — same convention as `connector`/`workflow run`, see [Configuration](../configuration.md).
+Both `set` and `remove` take `--data-dir` (default: a per-user system directory, [ADR-0052](../../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md); only relevant to `--type file`, since that's where `secrets.vault` lives) and `--secrets-master-key-file` (required for `--type file`) as plain flags — same convention as `connector`/`workflow run`, see [Configuration](../configuration.md).

@@ -23,4 +23,4 @@ Commands other than `serve` do not connect to a `patchcord serve` process over H
 - Installing or uninstalling a plugin, or installing a workflow, only takes effect for a running agent the next time it restarts — there is no hot reload yet.
 - `workflow run` and `connector test` are the two exceptions among one-shot commands: they actually need a live plugin process, so each of them launches and supervises the catalog's plugins for the duration of that single command, then tears them down. This is separate from, and does not affect, an already-running `patchcord serve`.
 
-Every one-shot command accepts `--data-dir` (default `./data`) to point at the database explicitly — see [Configuration](configuration.md).
+Every one-shot command accepts `--data-dir` (default: a per-user system directory, [ADR-0052](../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)) to point at a different database explicitly — see [Configuration](configuration.md).

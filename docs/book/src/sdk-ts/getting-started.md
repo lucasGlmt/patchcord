@@ -2,12 +2,22 @@
 
 ## Install
 
-`@patchcord/sdk` is not published to a registry yet — the monorepo consumes it as a workspace/`file:` dependency (see `apps/examples/dashboard/package.json` for the reference):
+```bash
+npm install @glmtsolutions/patchcord-sdk
+```
+
+`patchcord app new --template vite` and `patchcord bundle new --template vite` already declare this dependency in the scaffolded `package.json` — a fresh `npm install` in a generated project is enough, no manual wiring needed.
+
+Requires Node >=18 (for the global `fetch`) if run outside a browser.
+
+### Working inside the monorepo
+
+Code that lives in this repository (`apps/examples/dashboard`, `bundles/examples/*`) consumes the SDK from source instead, as a `file:` dependency, so a local change to `sdk/typescript` is picked up without a publish round trip:
 
 ```json
 {
   "dependencies": {
-    "@patchcord/sdk": "file:../../../sdk/typescript"
+    "@glmtsolutions/patchcord-sdk": "file:../../../sdk/typescript"
   }
 }
 ```
@@ -20,12 +30,10 @@ npm install
 npm run build
 ```
 
-Requires Node >=18 (for the global `fetch`) if run outside a browser.
-
 ## Instantiate the client
 
 ```ts
-import { PatchcordClient } from "@patchcord/sdk";
+import { PatchcordClient } from "@glmtsolutions/patchcord-sdk";
 
 const client = new PatchcordClient({
   baseUrl: "http://127.0.0.1:7331", // wherever `patchcord serve` is listening

@@ -143,6 +143,7 @@ func newPluginInstallCommand() *cobra.Command {
 			"to verify) if path turns out to be a raw executable.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -183,7 +184,7 @@ func newPluginInstallCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
@@ -254,6 +255,7 @@ func newPluginListCommand() *cobra.Command {
 		Short: "List installed plugins",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -279,7 +281,7 @@ func newPluginListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -292,6 +294,7 @@ func newPluginInspectCommand() *cobra.Command {
 		Short: "Show details about one installed plugin",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -320,7 +323,7 @@ func newPluginInspectCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -333,6 +336,7 @@ func newPluginUninstallCommand() *cobra.Command {
 		Short: "Remove an installed plugin from the catalog",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -352,7 +356,7 @@ func newPluginUninstallCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

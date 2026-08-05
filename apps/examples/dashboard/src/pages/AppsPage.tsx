@@ -1,4 +1,4 @@
-import type { PatchcordClient, AppSummary } from "@patchcord/sdk";
+import type { PatchcordClient, AppSummary } from "@glmtsolutions/patchcord-sdk";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
 import CircularProgress from "@mui/material/CircularProgress";

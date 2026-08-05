@@ -30,7 +30,7 @@ func newTestAppDir(t *testing.T, id string, workflowsRun ...string) string {
 func TestNewRootCommand_HasAppSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
-	for _, name := range []string{"install", "dev", "pack", "list", "remove"} {
+	for _, name := range []string{"install", "dev", "pack", "list", "remove", "session"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := root.Find([]string{"app", name})
 			if err != nil {
@@ -250,5 +250,47 @@ func TestAppNewCommand_ThenPackThenInstall(t *testing.T) {
 	}
 	if !strings.Contains(listOut.String(), id) {
 		t.Fatalf("list output = %q, want it to mention the scaffolded app", listOut.String())
+	}
+}
+
+// TestAppNewCommand_TemplateVite_ScaffoldsAViteProject exercises `app new
+// --template vite`: it must delegate to apps.ScaffoldVite rather than the
+// static template, so the result is a Vite project (package.json,
+// vite.config.ts) rather than a bare index.html.
+func TestAppNewCommand_TemplateVite_ScaffoldsAViteProject(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+	id := "scaffold-test-app"
+
+	newCmd := newAppNewCommand()
+	newCmd.SetArgs([]string{id, "--output", dir, "--template", "vite"})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("app new --template vite error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), "npm install") {
+		t.Fatalf("new output = %q, want it to mention the npm install/build step", newOut.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "package.json")); err != nil {
+		t.Fatalf("package.json missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "vite.config.ts")); err != nil {
+		t.Fatalf("vite.config.ts missing: %v", err)
+	}
+}
+
+// TestAppNewCommand_UnknownTemplate_Errors guards --template's validation:
+// an unrecognized value must fail clearly rather than silently falling
+// back to the static template.
+func TestAppNewCommand_UnknownTemplate_Errors(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+
+	newCmd := newAppNewCommand()
+	newCmd.SetArgs([]string{"scaffold-test-app", "--output", dir, "--template", "svelte"})
+	newCmd.SetContext(context.Background())
+	if err := newCmd.Execute(); err == nil {
+		t.Fatal("expected an error for an unknown --template value, got nil")
 	}
 }

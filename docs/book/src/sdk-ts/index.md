@@ -1,6 +1,6 @@
 # SDK TypeScript Overview
 
-`sdk/typescript` (published as `@patchcord/sdk`) is the official TypeScript client for the agent's public HTTP API. It is the only supported way for an [application](../apps/index.md) to talk to the agent from JavaScript/TypeScript — never hand-roll `fetch` calls against `/v1/*` in application code (see [Building an App with the TS SDK](../apps/building-with-sdk-ts.md)).
+`sdk/typescript` (published as `@glmtsolutions/patchcord-sdk`) is the official TypeScript client for the agent's public HTTP API. It is the only supported way for an [application](../apps/index.md) to talk to the agent from JavaScript/TypeScript — never hand-roll `fetch` calls against `/v1/*` in application code (see [Building an App with the TS SDK](../apps/building-with-sdk-ts.md)).
 
 ## Package layout
 

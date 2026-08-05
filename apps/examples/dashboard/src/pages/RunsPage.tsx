@@ -1,4 +1,4 @@
-import type { PatchcordClient, Run, RunSummary } from "@patchcord/sdk";
+import type { PatchcordClient, Run, RunSummary } from "@glmtsolutions/patchcord-sdk";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";

@@ -45,6 +45,7 @@ func newRegistryAddCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, location := args[0], args[1]
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -61,7 +62,7 @@ func newRegistryAddCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -74,6 +75,7 @@ func newRegistryListCommand() *cobra.Command {
 		Short: "List configured package registries",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -99,7 +101,7 @@ func newRegistryListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -114,6 +116,7 @@ func newRegistryRemoveCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -133,7 +136,7 @@ func newRegistryRemoveCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

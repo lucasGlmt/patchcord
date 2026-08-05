@@ -13,10 +13,13 @@ import (
 	"github.com/lucasglmt/patchcord/internal/runtime"
 )
 
-const (
-	defaultListenAddr = "127.0.0.1:7331"
-	defaultDataDir    = "./data"
-)
+const defaultListenAddr = "127.0.0.1:7331"
+
+// defaultDataDir is the built-in, lowest-precedence default for every
+// command's --data-dir/PATCHCORD_DATA_DIR (ADR-0038, ADR-0049, ADR-0052):
+// a per-user, per-machine directory (see config.DefaultDataDir), resolved
+// once here since it is the same regardless of which command runs.
+var defaultDataDir = config.DefaultDataDir()
 
 func newServeCommand() *cobra.Command {
 	var listenAddr string

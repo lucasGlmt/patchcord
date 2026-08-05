@@ -1,6 +1,9 @@
 package cli
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // scaffoldDirName derives a default output directory (or file basename)
 // from an id by taking its last "."-separated segment, so
@@ -11,4 +14,23 @@ func scaffoldDirName(id string) string {
 		return id[i+1:]
 	}
 	return id
+}
+
+// scaffoldTemplateStatic and scaffoldTemplateVite are the values accepted
+// by `app new`/`bundle new --template` — shared here so both commands
+// validate and describe them identically.
+const (
+	scaffoldTemplateStatic = "static"
+	scaffoldTemplateVite   = "vite"
+)
+
+// validateScaffoldTemplate rejects any --template value other than
+// scaffoldTemplateStatic or scaffoldTemplateVite.
+func validateScaffoldTemplate(template string) error {
+	switch template {
+	case scaffoldTemplateStatic, scaffoldTemplateVite:
+		return nil
+	default:
+		return fmt.Errorf("unknown template %q (want %q or %q)", template, scaffoldTemplateStatic, scaffoldTemplateVite)
+	}
 }

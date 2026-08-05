@@ -80,3 +80,46 @@ func TestScaffold_RefusesToOverwriteANonEmptyDir(t *testing.T) {
 		t.Fatal("expected an error for a non-empty target directory, got nil")
 	}
 }
+
+// TestScaffoldVite_WritesABundleDirPointingAtAppDist proves the manifest
+// already points at app/dist (where a build lands its output), not app —
+// unlike the static template, there is no patchcord-app.yaml at app's root
+// to point at until `npm run build` has run at least once.
+func TestScaffoldVite_WritesABundleDirPointingAtAppDist(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-bundle")
+
+	if err := ScaffoldVite(dir, "io.patchcord.my-bundle", "0.1.0"); err != nil {
+		t.Fatalf("ScaffoldVite() error = %v", err)
+	}
+
+	m, err := LoadManifest(dir)
+	if err != nil {
+		t.Fatalf("LoadManifest() error = %v", err)
+	}
+	if m.App != "app/dist" {
+		t.Fatalf("App = %q, want %q", m.App, "app/dist")
+	}
+	if len(m.Workflows) != 1 || m.Workflows[0] != "workflows/main.yaml" {
+		t.Fatalf("Workflows = %v, want [workflows/main.yaml]", m.Workflows)
+	}
+
+	for _, relPath := range []string{"app/package.json", "app/vite.config.ts", "app/src/main.ts", "app/public/patchcord-app.yaml"} {
+		if _, err := os.Stat(filepath.Join(dir, relPath)); err != nil {
+			t.Fatalf("%s missing: %v", relPath, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "workflows", "main.yaml")); err != nil {
+		t.Fatalf("embedded workflow missing: %v", err)
+	}
+}
+
+func TestScaffoldVite_RefusesToOverwriteANonEmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write existing.txt: %v", err)
+	}
+
+	if err := ScaffoldVite(dir, "io.patchcord.my-bundle", "0.1.0"); err == nil {
+		t.Fatal("expected an error for a non-empty target directory, got nil")
+	}
+}

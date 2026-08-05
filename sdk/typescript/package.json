@@ -1,8 +1,27 @@
 {
-  "name": "@patchcord/sdk",
+  "name": "@glmtsolutions/patchcord-sdk",
   "version": "0.1.0",
   "description": "Official TypeScript SDK for the Patchcord agent's public HTTP API.",
   "type": "module",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/lucasglmt/patchcord/tree/main/sdk/typescript#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lucasglmt/patchcord.git",
+    "directory": "sdk/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/lucasglmt/patchcord/issues"
+  },
+  "keywords": [
+    "patchcord",
+    "automation",
+    "workflow",
+    "sdk"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

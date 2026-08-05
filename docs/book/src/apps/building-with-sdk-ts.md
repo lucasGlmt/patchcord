@@ -1,13 +1,13 @@
 # Building an App with the TS SDK
 
-An [application](index.md) talks to the agent exclusively through `@patchcord/sdk` (see [SDK TypeScript](../sdk-ts/index.md)) — never through hand-rolled `fetch` calls against `/v1/*`. This page covers the one pattern specific to running *as* an installed application: acquiring a session limited to your own declared permissions — and, just as importantly, when an application legitimately has no use for one.
+An [application](index.md) talks to the agent exclusively through `@glmtsolutions/patchcord-sdk` (see [SDK TypeScript](../sdk-ts/index.md)) — never through hand-rolled `fetch` calls against `/v1/*`. This page covers the one pattern specific to running *as* an installed application: acquiring a session limited to your own declared permissions — and, just as importantly, when an application legitimately has no use for one.
 
 ## Acquiring a session
 
 An app's manifest (`patchcord-app.yaml`) declares which workflows its sessions may run (see [App Manifest](manifest.md)). At runtime, ask the agent for a session token scoped to those permissions with `client.apps.createSession`:
 
 ```ts
-import { PatchcordClient } from "@patchcord/sdk";
+import { PatchcordClient } from "@glmtsolutions/patchcord-sdk";
 
 async function fetchAppSessionToken(baseUrl: string, appId: string): Promise<string | undefined> {
   try {
@@ -32,6 +32,35 @@ const run = await client.workflows.run("hello_patchcord", { inputs: { text: "hi"
 ```
 
 Every request this second client makes sends `Authorization: Bearer <token>`. Only `POST /v1/workflows/{id}/run` accepts an app session — the agent limits that call to the workflow ids the session's app manifest declared under `workflows_run`, rejecting anything else with `403` ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)). Every other route (listing runs, listing workflows, ...) requires a full admin token instead, once one exists ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) — an app session is intentionally not enough to call them. See [Hosting & Sessions](hosting-and-sessions.md).
+
+### Once the agent has an admin token
+
+`fetchAppSessionToken` above calls `client.apps.createSession` **from the browser** — fine on a fresh agent with no admin token yet, but `POST /v1/apps/{id}/sessions` requires one once any exists (ADR-0036), and an admin token must never ship inside browser code. Past that point, the call above always fails with `401`, by design — there is no client-side fix for it.
+
+The supported alternative once admin auth is active: mint the session **out of band**, as whoever holds the admin token, with [`patchcord app session create`](../cli/commands/app.md#session-create-id) ([ADR-0051](../../../adr/0051-commande-cli-pour-minter-une-session-app-hors-navigateur.md)):
+
+```bash
+patchcord app session create dashboard --admin-token pcat_...
+```
+
+This writes `patchcord-session.json` (`{"token": "..."}`) into the application's own `static-dir` — same origin as its other files, so its code reads it directly instead of calling `createSession`:
+
+```ts
+async function readProvisionedSession(): Promise<string | undefined> {
+  try {
+    const response = await fetch("/patchcord-session.json");
+    if (!response.ok) return undefined;
+    return (await response.json()).token;
+  } catch {
+    return undefined;
+  }
+}
+
+const token = await readProvisionedSession();
+const client = new PatchcordClient({ baseUrl, token });
+```
+
+Re-run `app session create` after every rebuild that replaces `static-dir`'s contents (a fresh `vite build`, another `app install`) — the previous run's session file does not survive one.
 
 ## Full example
 

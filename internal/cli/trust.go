@@ -49,6 +49,7 @@ func newTrustAddCommand() *cobra.Command {
 				return fmt.Errorf("trust add: %w", err)
 			}
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -65,7 +66,7 @@ func newTrustAddCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -84,6 +85,7 @@ func newTrustListCommand() *cobra.Command {
 				id = args[0]
 			}
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -109,7 +111,7 @@ func newTrustListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -129,6 +131,7 @@ func newTrustRemoveCommand() *cobra.Command {
 				return fmt.Errorf("trust remove: %w", err)
 			}
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -148,7 +151,7 @@ func newTrustRemoveCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

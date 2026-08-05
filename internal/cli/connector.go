@@ -64,6 +64,7 @@ func newConnectorCreateCommand() *cobra.Command {
 			"install the plugin first with `patchcord plugin install`.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -99,7 +100,7 @@ func newConnectorCreateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&connectorType, "type", "", "connector type, e.g. \"postgresql.connection@1\"")
 	cmd.Flags().StringToStringVar(&configFlags, "config", nil, "non-secret configuration value as key=value, repeatable")
 	cmd.Flags().StringToStringVar(&secretFlags, "secret", nil, "secret reference as name=type:key (e.g. api_key=env:MY_API_KEY), repeatable")
@@ -115,6 +116,7 @@ func newConnectorListCommand() *cobra.Command {
 		Short: "List connectors",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -140,7 +142,7 @@ func newConnectorListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -158,6 +160,7 @@ func newConnectorInspectCommand() *cobra.Command {
 			"Use `connector test` to actually attempt a connection through its plugin.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -207,7 +210,7 @@ func newConnectorInspectCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE)")
 
 	return cmd
@@ -230,6 +233,7 @@ func newConnectorTestCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -283,7 +287,7 @@ func newConnectorTestCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringVar(&secretsMasterKeyFile, "secrets-master-key-file", "", "path to the file holding the base64 AES-256 master key for the \"file\" secret store (env PATCHCORD_SECRETS_MASTER_KEY_FILE)")
 
 	return cmd
@@ -315,6 +319,7 @@ func newConnectorRemoveCommand() *cobra.Command {
 		Short: "Remove a connector",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -334,7 +339,7 @@ func newConnectorRemoveCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

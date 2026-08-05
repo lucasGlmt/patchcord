@@ -1,4 +1,4 @@
-import type { WorkflowInputDetail } from "@patchcord/sdk";
+import type { WorkflowInputDetail } from "@glmtsolutions/patchcord-sdk";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Stack from "@mui/material/Stack";

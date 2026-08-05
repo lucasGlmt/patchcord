@@ -4,6 +4,7 @@ go 1.25.3
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0

@@ -94,6 +94,7 @@ func newWorkflowInstallCommand() *cobra.Command {
 				return fmt.Errorf("read workflow file: %w", err)
 			}
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -120,7 +121,7 @@ func newWorkflowInstallCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -133,6 +134,7 @@ func newWorkflowListCommand() *cobra.Command {
 		Short: "List installed workflow versions",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -158,7 +160,7 @@ func newWorkflowListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -176,6 +178,7 @@ func newWorkflowValidateCommand() *cobra.Command {
 				return fmt.Errorf("read workflow file: %w", err)
 			}
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -201,7 +204,7 @@ func newWorkflowValidateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -220,6 +223,7 @@ func newWorkflowExportCommand() *cobra.Command {
 			"declarative YAML, no archive involved).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -248,7 +252,7 @@ func newWorkflowExportCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().IntVar(&version, "version", 0, "workflow version to export (defaults to the latest)")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write to this file instead of stdout")
 
@@ -269,6 +273,7 @@ func newWorkflowRunCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -325,7 +330,7 @@ func newWorkflowRunCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().StringToStringVar(&inputFlags, "input", nil, "workflow input as key=value, repeatable")
 	cmd.Flags().StringToStringVar(&bindingFlags, "binding", nil, "connector binding as name=connector-id, repeatable (see a step's connector: field)")
 	cmd.Flags().DurationVar(&stepTimeout, "step-timeout", runs.DefaultStepTimeout, "maximum duration of a single step's action call")

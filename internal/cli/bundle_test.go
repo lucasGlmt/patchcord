@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNewRootCommand_HasBundleSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
-	for _, name := range []string{"install", "update", "pack", "list", "inspect"} {
+	for _, name := range []string{"install", "update", "dev", "pack", "list", "inspect"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := root.Find([]string{"bundle", name})
 			if err != nil {
@@ -193,6 +194,135 @@ func TestBundleInstallCommand_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	if err := install.Execute(); err == nil {
 		t.Fatal("expected an error for a missing required plugin, got nil")
 	}
+}
+
+// TestBundleDevCommand_InstallsFromDirectoryAndUpdatesInPlace exercises the
+// `bundle dev` loop without --watch: install straight from a directory
+// (no pack/install round trip), then reinstall from a changed directory,
+// and confirm it succeeds where `bundle install` (from a fresh package)
+// would need a full re-pack — the same shape as TestAppDevCommand_UpdatesInPlace.
+func TestBundleDevCommand_InstallsFromDirectoryAndUpdatesInPlace(t *testing.T) {
+	dataDir := t.TempDir()
+	installExampleTextPlugin(t, dataDir)
+
+	firstDir := newTestBundleSourceDirVersions(t, "1.0.0", "0.1.0", 1)
+
+	dev := newBundleDevCommand()
+	dev.SetArgs([]string{firstDir, "--data-dir", dataDir})
+	dev.SetContext(context.Background())
+	var devOut bytes.Buffer
+	dev.SetOut(&devOut)
+	if err := dev.Execute(); err != nil {
+		t.Fatalf("bundle dev error = %v", err)
+	}
+	if !strings.Contains(devOut.String(), "io.patchcord.example-bundle") {
+		t.Fatalf("dev output = %q, want it to mention the bundle id", devOut.String())
+	}
+
+	secondDir := newTestBundleSourceDirVersions(t, "1.1.0", "0.2.0", 2)
+
+	devAgain := newBundleDevCommand()
+	devAgain.SetArgs([]string{secondDir, "--data-dir", dataDir})
+	devAgain.SetContext(context.Background())
+	if err := devAgain.Execute(); err != nil {
+		t.Fatalf("second bundle dev error = %v, want it to update in place instead of failing", err)
+	}
+
+	appList := newAppListCommand()
+	appList.SetArgs([]string{"--data-dir", dataDir})
+	appList.SetContext(context.Background())
+	var appOut bytes.Buffer
+	appList.SetOut(&appOut)
+	if err := appList.Execute(); err != nil {
+		t.Fatalf("app list error = %v", err)
+	}
+	if !strings.Contains(appOut.String(), "0.2.0") {
+		t.Fatalf("app list output = %q, want it to show the updated embedded app version 0.2.0", appOut.String())
+	}
+}
+
+func TestBundleDevCommand_FailsWhenARequiredPluginIsMissing(t *testing.T) {
+	dev := newBundleDevCommand()
+	dev.SetArgs([]string{newTestBundleSourceDir(t), "--data-dir", t.TempDir()})
+	dev.SetContext(context.Background())
+
+	if err := dev.Execute(); err == nil {
+		t.Fatal("expected an error for a missing required plugin, got nil")
+	}
+}
+
+// TestBundleDevCommand_Watch exercises the --watch path end to end through
+// the CLI: initial install, then a change to the embedded app's manifest
+// on disk (a version bump — no version to bump on a workflow this time,
+// since re-triggering the same one would hit ADR-0008) picked up
+// automatically, then Ctrl+C (context cancellation) stops it cleanly.
+func TestBundleDevCommand_Watch(t *testing.T) {
+	dataDir := t.TempDir()
+	installExampleTextPlugin(t, dataDir)
+
+	sourceDir := newTestBundleSourceDirVersions(t, "1.0.0", "0.1.0", 1)
+
+	dev := newBundleDevCommand()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dev.SetContext(ctx)
+	dev.SetArgs([]string{sourceDir, "--data-dir", dataDir, "--watch"})
+	var out bytes.Buffer
+	dev.SetOut(&out)
+	dev.SetErr(&out)
+
+	done := make(chan error, 1)
+	go func() { done <- dev.Execute() }()
+
+	// Wait for the initial install to complete and the watch to start.
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.Contains(out.String(), "Watching") {
+		if time.Now().After(deadline) {
+			t.Fatalf("bundle dev --watch did not start watching in time, output so far: %q", out.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	appManifestPath := filepath.Join(sourceDir, "app", "patchcord-app.yaml")
+	if err := os.WriteFile(appManifestPath, []byte("id: bundle-dashboard\nversion: \"0.2.0\"\n"), 0o644); err != nil {
+		t.Fatalf("rewrite app manifest: %v", err)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		app, err := getAppOutput(t, dataDir)
+		if err == nil && strings.Contains(app, "0.2.0") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("app was not reinstalled at 0.2.0 within the deadline; last app list output: %q", app)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("bundle dev --watch error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("bundle dev --watch did not stop after context cancellation")
+	}
+}
+
+// getAppOutput runs `app list` against dataDir and returns its output, for
+// polling in TestBundleDevCommand_Watch.
+func getAppOutput(t *testing.T, dataDir string) (string, error) {
+	t.Helper()
+
+	appList := newAppListCommand()
+	appList.SetArgs([]string{"--data-dir", dataDir})
+	appList.SetContext(context.Background())
+	var appOut bytes.Buffer
+	appList.SetOut(&appOut)
+	err := appList.Execute()
+	return appOut.String(), err
 }
 
 func TestBundleInspectCommand_UnknownBundle(t *testing.T) {
@@ -471,5 +601,51 @@ func TestBundleNewCommand_ThenPackThenInstall(t *testing.T) {
 	}
 	if !strings.Contains(installOut.String(), id) {
 		t.Fatalf("install output = %q, want it to mention %q", installOut.String(), id)
+	}
+}
+
+// TestBundleNewCommand_TemplateVite_ScaffoldsAViteEmbeddedApp exercises
+// `bundle new --template vite`: it must delegate to bundles.ScaffoldVite,
+// so the embedded app is a Vite project and bundle.yaml's app field
+// already points at app/dist (only populated once that project is built).
+func TestBundleNewCommand_TemplateVite_ScaffoldsAViteEmbeddedApp(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+	id := "io.patchcord.scaffold-test-bundle"
+
+	newCmd := newBundleNewCommand()
+	newCmd.SetArgs([]string{id, "--output", dir, "--template", "vite"})
+	newCmd.SetContext(context.Background())
+	var newOut bytes.Buffer
+	newCmd.SetOut(&newOut)
+	if err := newCmd.Execute(); err != nil {
+		t.Fatalf("bundle new --template vite error = %v", err)
+	}
+	if !strings.Contains(newOut.String(), "npm install") {
+		t.Fatalf("new output = %q, want it to mention the npm install/build step", newOut.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "app", "package.json")); err != nil {
+		t.Fatalf("app/package.json missing: %v", err)
+	}
+	manifestBytes, err := os.ReadFile(filepath.Join(dir, "bundle.yaml"))
+	if err != nil {
+		t.Fatalf("read bundle.yaml: %v", err)
+	}
+	if !strings.Contains(string(manifestBytes), "app: app/dist") {
+		t.Fatalf("bundle.yaml = %q, want it to point app at app/dist", manifestBytes)
+	}
+}
+
+// TestBundleNewCommand_UnknownTemplate_Errors guards --template's
+// validation: an unrecognized value must fail clearly rather than
+// silently falling back to the static template.
+func TestBundleNewCommand_UnknownTemplate_Errors(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
+
+	newCmd := newBundleNewCommand()
+	newCmd.SetArgs([]string{"io.patchcord.scaffold-test-bundle", "--output", dir, "--template", "svelte"})
+	newCmd.SetContext(context.Background())
+	if err := newCmd.Execute(); err == nil {
+		t.Fatal("expected an error for an unknown --template value, got nil")
 	}
 }

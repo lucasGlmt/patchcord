@@ -1,7 +1,7 @@
 # Serving the Agent
 
 ```bash
-patchcord serve --listen 127.0.0.1:7331 --data-dir ./data
+patchcord serve --listen 127.0.0.1:7331
 ```
 
 `serve` is the only long-running command. On startup it, in order:
@@ -29,7 +29,7 @@ There is no forced-kill fallback beyond the shutdown timeout in this version —
 | Flag | Default | Meaning |
 |---|---|---|
 | `--listen` | `127.0.0.1:7331` | Address the HTTP API binds to. Also settable via `PATCHCORD_LISTEN` or a `--config` file's `listen` key — see [Configuration](configuration.md). |
-| `--data-dir` | `./data` | Directory holding the SQLite database (created if missing). Also settable via `PATCHCORD_DATA_DIR` or a `--config` file's `data_dir` key. |
+| `--data-dir` | a per-user system directory ([ADR-0052](../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)) | Directory holding the SQLite database (created if missing). Also settable via `PATCHCORD_DATA_DIR` or a `--config` file's `data_dir` key. |
 | `--secrets-master-key-file` | (none) | Path to the file holding the base64 AES-256 master key for the `file` secret store. Also settable via `PATCHCORD_SECRETS_MASTER_KEY_FILE` or a `--config` file's `secrets_master_key_file` key. Left unset, `file` secret references don't resolve. See [Configuration](configuration.md) and [ADR-0040](../../../adr/0040-secret-providers-keychain-et-fichier-aes.md). |
 | `--config` | (none) | Path to a YAML file providing `listen`/`data_dir`/`secrets_master_key_file` — the lowest-precedence source; a flag or environment variable always overrides it. See [Configuration](configuration.md). |
 
@@ -38,9 +38,11 @@ There is no forced-kill fallback beyond the shutdown timeout in this version —
 The public API answers every request unauthenticated until an admin token exists — see [`patchcord auth`](commands/auth.md) and [ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md). Create one before binding `--listen` to anything beyond `127.0.0.1`:
 
 ```bash
-patchcord auth token create ci --data-dir ./data
-patchcord serve --listen 0.0.0.0:7331 --data-dir ./data
+patchcord auth token create ci
+patchcord serve --listen 0.0.0.0:7331
 ```
+
+Both resolve the same built-in per-user data directory by default ([ADR-0052](../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)) — no `--data-dir` needed to keep them in sync.
 
 ## Docker
 

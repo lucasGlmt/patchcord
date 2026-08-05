@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -26,6 +28,7 @@ func newBundleCommand() *cobra.Command {
 	cmd.AddCommand(newBundleNewCommand())
 	cmd.AddCommand(newBundleInstallCommand())
 	cmd.AddCommand(newBundleUpdateCommand())
+	cmd.AddCommand(newBundleDevCommand())
 	cmd.AddCommand(newBundlePackCommand())
 	cmd.AddCommand(newBundleListCommand())
 	cmd.AddCommand(newBundleInspectCommand())
@@ -74,22 +77,43 @@ func resolveBundleInstallSource(ctx context.Context, db *sql.DB, arg string) (pa
 func newBundleNewCommand() *cobra.Command {
 	var output string
 	var version string
+	var template string
 
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Scaffold a new bundle",
 		Long: "Writes a minimal bundle.yaml into --output, plus an embedded app\n" +
-			"(app/) and workflow (workflows/main.yaml) — ready for `bundle\n" +
-			"pack`/`bundle install` as-is, with an empty requires_plugins (there\n" +
-			"is no way to know what plugin you'll depend on ahead of time; add\n" +
-			"entries to bundle.yaml yourself). Fails if the target directory\n" +
-			"already exists and is not empty.",
+			"and workflow (workflows/main.yaml) — with an empty requires_plugins\n" +
+			"(there is no way to know what plugin you'll depend on ahead of\n" +
+			"time; add entries to bundle.yaml yourself). --template static\n" +
+			"(default) writes a plain HTML app (app/), ready for `bundle\n" +
+			"pack`/`bundle install` as-is. --template vite writes a Vite +\n" +
+			"TypeScript app (app/) instead — no UI framework opinion, npm\n" +
+			"packages welcome — whose bundle.yaml already points app at\n" +
+			"app/dist, but that only exists after building it once:\n" +
+			"\n" +
+			"  cd <dir>/app && npm install && npm run build\n" +
+			"  patchcord bundle dev <dir> --watch\n" +
+			"\n" +
+			"Fails if the target directory already exists and is not empty.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateScaffoldTemplate(template); err != nil {
+				return fmt.Errorf("bundle new: %w", err)
+			}
+
 			id := args[0]
 			dir := output
 			if dir == "" {
 				dir = scaffoldDirName(id)
+			}
+
+			if template == scaffoldTemplateVite {
+				if err := bundles.ScaffoldVite(dir, id, version); err != nil {
+					return fmt.Errorf("bundle new: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Scaffolded %s (%s) into %s\nBuild the embedded app, then start developing:\n  cd %s/app && npm install && npm run build\n  patchcord bundle dev %s --watch\n", id, version, dir, dir, dir)
+				return nil
 			}
 
 			if err := bundles.Scaffold(dir, id, version); err != nil {
@@ -104,6 +128,7 @@ func newBundleNewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory (default: the id's last \".\"-separated segment)")
 	cmd.Flags().StringVar(&version, "version", "0.1.0", "version to scaffold")
+	cmd.Flags().StringVar(&template, "template", scaffoldTemplateStatic, "embedded app template to scaffold: static (plain HTML) or vite (Vite + TypeScript, build before bundle pack/install/dev)")
 
 	return cmd
 }
@@ -132,6 +157,7 @@ func newBundleInstallCommand() *cobra.Command {
 			"more convenient way to do that by id alone.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -162,7 +188,7 @@ func newBundleInstallCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
@@ -183,6 +209,7 @@ func newBundleUpdateCommand() *cobra.Command {
 			"is already installed, this is a no-op.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -241,8 +268,85 @@ func newBundleUpdateCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
+
+	return cmd
+}
+
+func newBundleDevCommand() *cobra.Command {
+	var dataDir string
+	var watch bool
+
+	cmd := &cobra.Command{
+		Use:   "dev <dir>",
+		Short: "Install or update a bundle from a directory for local development",
+		Long: "Like `bundle install`, but installs straight from dir instead of a\n" +
+			".patchcord-bundle package (bundles.InstallDir): no pack/verify round\n" +
+			"trip, no signature — dir is local, unsigned-by-design source under\n" +
+			"active development.\n\n" +
+			"The embedded app (if any) is installed in place, exactly as `app\n" +
+			"dev` would: served live from dir's app subdirectory, never copied or\n" +
+			"moved, so rebuilding it (e.g. `vite build --watch`) needs no further\n" +
+			"agent involvement. Each embedded workflow still goes through\n" +
+			"`workflow install`'s own rule: a published version is immutable\n" +
+			"(ADR-0008), so editing a workflow's body requires bumping its\n" +
+			"`version` field before rerunning this command picks the change up.\n" +
+			"requires_plugins is still enforced — a missing dependency is not\n" +
+			"installed automatically.\n\n" +
+			"--watch keeps this command running, reinstalling on every change\n" +
+			"under dir (debounced) until interrupted (Ctrl+C). An install\n" +
+			"failure while watching is printed but does not stop the watch —\n" +
+			"fix it (e.g. bump the workflow version) and save again.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
+			db, err := openDataStore(dataDir)
+			if err != nil {
+				return err
+			}
+			defer db.Close()
+
+			dir := args[0]
+			out := cmd.OutOrStdout()
+
+			install := func() error {
+				knownActions, err := plugins.KnownActions(cmd.Context(), db)
+				if err != nil {
+					return fmt.Errorf("list known actions: %w", err)
+				}
+				b, err := bundles.InstallDir(cmd.Context(), db, dir, knownActions)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(out, "Installed %s (%s) from %s\n", b.ID, b.Version, dir)
+				return nil
+			}
+
+			if !watch {
+				if err := install(); err != nil {
+					return fmt.Errorf("bundle dev: %w", err)
+				}
+				return nil
+			}
+
+			if err := install(); err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "bundle dev: %v\n", err)
+			}
+
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
+			fmt.Fprintf(out, "Watching %s for changes (Ctrl+C to stop)...\n", dir)
+			errOut := cmd.ErrOrStderr()
+			return watchDir(ctx, dir, install, func(err error) {
+				fmt.Fprintf(errOut, "bundle dev: %v\n", err)
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
+	cmd.Flags().BoolVar(&watch, "watch", false, "keep running, reinstalling on every change under dir until interrupted (Ctrl+C)")
 
 	return cmd
 }
@@ -310,6 +414,7 @@ func newBundleListCommand() *cobra.Command {
 		Short: "List installed bundles",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -335,7 +440,7 @@ func newBundleListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -348,6 +453,7 @@ func newBundleInspectCommand() *cobra.Command {
 		Short: "Show a bundle's declared manifest",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -373,7 +479,7 @@ func newBundleInspectCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

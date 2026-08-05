@@ -1,4 +1,4 @@
-import type { Connector, ConnectorTestResult, PatchcordClient, PluginSummary } from "@patchcord/sdk";
+import type { Connector, ConnectorTestResult, PatchcordClient, PluginSummary } from "@glmtsolutions/patchcord-sdk";
 import AddIcon from "@mui/icons-material/Add";
 import BoltIcon from "@mui/icons-material/Bolt";
 import DeleteIcon from "@mui/icons-material/Delete";

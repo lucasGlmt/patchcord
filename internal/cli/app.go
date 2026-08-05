@@ -27,6 +27,7 @@ func newAppCommand() *cobra.Command {
 	cmd.AddCommand(newAppPackCommand())
 	cmd.AddCommand(newAppListCommand())
 	cmd.AddCommand(newAppRemoveCommand())
+	cmd.AddCommand(newAppSessionCommand())
 
 	return cmd
 }
@@ -34,19 +35,39 @@ func newAppCommand() *cobra.Command {
 func newAppNewCommand() *cobra.Command {
 	var output string
 	var version string
+	var template string
 
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Scaffold a new application",
-		Long: "Writes a minimal patchcord-app.yaml and index.html into --output —\n" +
-			"ready for `app pack`/`app install` as-is. Fails if the target\n" +
-			"directory already exists and is not empty.",
+		Long: "Writes a minimal application project into --output. --template static\n" +
+			"(default) writes a patchcord-app.yaml and index.html ready for `app\n" +
+			"pack`/`app install` as-is. --template vite writes a Vite + TypeScript\n" +
+			"project instead — no UI framework opinion, npm packages welcome —\n" +
+			"whose patchcord-app.yaml only exists at <dir>/dist after building it:\n" +
+			"\n" +
+			"  cd <dir> && npm install && npm run build\n" +
+			"  patchcord app install <dir>/dist\n" +
+			"\n" +
+			"Fails if the target directory already exists and is not empty.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := validateScaffoldTemplate(template); err != nil {
+				return fmt.Errorf("app new: %w", err)
+			}
+
 			id := args[0]
 			dir := output
 			if dir == "" {
 				dir = scaffoldDirName(id)
+			}
+
+			if template == scaffoldTemplateVite {
+				if err := apps.ScaffoldVite(dir, id, version); err != nil {
+					return fmt.Errorf("app new: %w", err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "Scaffolded %s (%s) into %s\nBuild it, then install %s/dist:\n  cd %s && npm install && npm run build\n  patchcord app install %s/dist\n", id, version, dir, dir, dir, dir)
+				return nil
 			}
 
 			if err := apps.Scaffold(dir, id, version); err != nil {
@@ -61,6 +82,7 @@ func newAppNewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory (default: the id's last \".\"-separated segment)")
 	cmd.Flags().StringVar(&version, "version", "0.1.0", "version to scaffold")
+	cmd.Flags().StringVar(&template, "template", scaffoldTemplateStatic, "project template to scaffold: static (plain HTML) or vite (Vite + TypeScript, build before app install/dev/pack)")
 
 	return cmd
 }
@@ -81,6 +103,7 @@ func newAppInstallCommand() *cobra.Command {
 			"    itself does not need to stick around afterwards.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -120,7 +143,7 @@ func newAppInstallCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
 
 	return cmd
@@ -140,6 +163,7 @@ func newAppDevCommand() *cobra.Command {
 			"the next browser refresh without rerunning this command.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -157,7 +181,7 @@ func newAppDevCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -224,6 +248,7 @@ func newAppListCommand() *cobra.Command {
 		Short: "List installed applications",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -250,7 +275,7 @@ func newAppListCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }
@@ -263,6 +288,7 @@ func newAppRemoveCommand() *cobra.Command {
 		Short: "Remove an installed application",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			dataDir = resolveDataDir(cmd, dataDir)
 			db, err := openDataStore(dataDir)
 			if err != nil {
 				return err
@@ -282,7 +308,7 @@ func newAppRemoveCommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database")
+	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
 }

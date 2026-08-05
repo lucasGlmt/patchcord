@@ -1,4 +1,4 @@
-import { PatchcordClient } from "@patchcord/sdk";
+import { PatchcordClient } from "@glmtsolutions/patchcord-sdk";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
 import SettingsIcon from "@mui/icons-material/Settings";

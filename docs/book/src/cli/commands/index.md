@@ -1,6 +1,6 @@
 # Command Reference
 
-Every command below accepts `--data-dir` (default `./data`); see [Configuration](../configuration.md). Each takes no arguments beyond what's listed and prints plain, tab-separated or `key: value` text to stdout — there is no `--output json` yet.
+Every command below accepts `--data-dir` (default: a per-user system directory, [ADR-0052](../../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)); see [Configuration](../configuration.md). Each takes no arguments beyond what's listed and prints plain, tab-separated or `key: value` text to stdout — there is no `--output json` yet.
 
 | Group | Subcommands |
 |---|---|

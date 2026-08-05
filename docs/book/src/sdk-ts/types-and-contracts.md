@@ -22,4 +22,4 @@ A route that exists in `internal/api` but has no SDK method yet is a gap, not a 
 
 ## Versioning
 
-The agent's public HTTP API has no version segment in its paths (`/v1/...` is the only version marker, and it hasn't moved). `@patchcord/sdk` itself is versioned independently in `sdk/typescript/package.json` (currently `0.1.0`, pre-1.0 — no stability guarantee yet). Until the SDK reaches 1.0, treat a minor version bump as potentially containing a breaking type or method-signature change; there is no separate changelog process yet beyond the package's own commit history.
+The agent's public HTTP API has no version segment in its paths (`/v1/...` is the only version marker, and it hasn't moved). `@glmtsolutions/patchcord-sdk` itself is versioned independently in `sdk/typescript/package.json` (currently `0.1.0`, pre-1.0 — no stability guarantee yet). Until the SDK reaches 1.0, treat a minor version bump as potentially containing a breaking type or method-signature change; there is no separate changelog process yet beyond the package's own commit history.

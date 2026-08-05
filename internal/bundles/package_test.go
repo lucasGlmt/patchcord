@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/apps"
@@ -244,6 +245,42 @@ func TestInstallPackage_ReinstallWithNewVersionUpdatesEmbeddedApp(t *testing.T) 
 	}
 }
 
+// TestInstallPackage_ReinstallingUnchangedPackageIsANoOp is the
+// InstallPackage counterpart of
+// TestInstallDir_ReinstallingUnchangedWorkflowIsANoOp: re-running `bundle
+// install` on the exact same package a second time must succeed, not hit
+// ADR-0008's rejection on the embedded workflow it already installed
+// byte-for-byte.
+func TestInstallPackage_ReinstallingUnchangedPackageIsANoOp(t *testing.T) {
+	db := openTestDB(t)
+	dataDir := t.TempDir()
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	packagePath := packBundle(t, newTestBundleSourceDir(t), nil)
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, knownActions, false); err != nil {
+		t.Fatalf("first InstallPackage() error = %v", err)
+	}
+
+	if _, _, err := InstallPackage(context.Background(), db, dataDir, packagePath, knownActions, false); err != nil {
+		t.Fatalf("reinstalling the same package error = %v, want nil (no-op)", err)
+	}
+
+	def, err := runs.LatestWorkflow(context.Background(), db, "bundle_workflow")
+	if err != nil {
+		t.Fatalf("embedded workflow no longer installed: %v", err)
+	}
+	if def.Version != 1 {
+		t.Fatalf("embedded workflow version = %d, want 1 (reinstall must not have bumped or duplicated it)", def.Version)
+	}
+}
+
 func TestInstallPackage_FailsWhenARequiredPluginIsMissing(t *testing.T) {
 	db := openTestDB(t)
 	dataDir := t.TempDir()
@@ -301,6 +338,179 @@ func TestInstallPackage_SignatureAndTrustPolicy(t *testing.T) {
 			t.Fatal("Trusted = false, want true")
 		}
 	})
+}
+
+// TestInstallDir_InstallsAppLiveAndWorkflow exercises InstallDir directly
+// against a source directory — no Pack/InstallPackage round trip — and
+// confirms the embedded app is served straight from dir's app
+// subdirectory (apps.Get's StaticDir), not copied or moved anywhere,
+// mirroring apps.InstallOrUpdate's own "live" contract behind `app dev`.
+func TestInstallDir_InstallsAppLiveAndWorkflow(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	sourceDir := newTestBundleSourceDir(t)
+
+	b, err := InstallDir(context.Background(), db, sourceDir, knownActions)
+	if err != nil {
+		t.Fatalf("InstallDir() error = %v", err)
+	}
+	if b.ID != "io.patchcord.example-bundle" || b.Version != "1.0.0" {
+		t.Fatalf("bundle = %+v, want id=io.patchcord.example-bundle version=1.0.0", b)
+	}
+
+	app, err := apps.Get(context.Background(), db, "dashboard")
+	if err != nil {
+		t.Fatalf("embedded app was not installed: %v", err)
+	}
+	wantStaticDir, err := filepath.Abs(filepath.Join(sourceDir, "app"))
+	if err != nil {
+		t.Fatalf("filepath.Abs() error = %v", err)
+	}
+	if app.StaticDir != wantStaticDir {
+		t.Fatalf("app.StaticDir = %q, want %q (InstallDir must serve the app live off sourceDir, never copy or move it)", app.StaticDir, wantStaticDir)
+	}
+
+	def, err := runs.LatestWorkflow(context.Background(), db, "bundle_workflow")
+	if err != nil {
+		t.Fatalf("embedded workflow was not installed: %v", err)
+	}
+	if def.Version != 1 {
+		t.Fatalf("embedded workflow version = %d, want 1", def.Version)
+	}
+}
+
+// TestInstallDir_ReinstallUpdatesAppInPlace exercises the `bundle dev`
+// loop: install, then reinstall from a changed source directory (new app
+// version, new workflow version — bumping the workflow version is
+// required, ADR-0008), and confirm it succeeds and updates in place,
+// exactly like `app dev`'s own reinstall test.
+func TestInstallDir_ReinstallUpdatesAppInPlace(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	firstDir := newTestBundleSourceDirVersions(t, "1.0.0", "0.1.0", 1)
+	if _, err := InstallDir(context.Background(), db, firstDir, knownActions); err != nil {
+		t.Fatalf("first InstallDir() error = %v", err)
+	}
+
+	secondDir := newTestBundleSourceDirVersions(t, "1.1.0", "0.2.0", 2)
+	b, err := InstallDir(context.Background(), db, secondDir, knownActions)
+	if err != nil {
+		t.Fatalf("second InstallDir() error = %v, want it to update in place instead of failing", err)
+	}
+	if b.Version != "1.1.0" {
+		t.Fatalf("bundle version = %q, want 1.1.0", b.Version)
+	}
+
+	app, err := apps.Get(context.Background(), db, "dashboard")
+	if err != nil {
+		t.Fatalf("embedded app was not installed: %v", err)
+	}
+	if app.Version != "0.2.0" {
+		t.Fatalf("embedded app version = %q, want 0.2.0 (reinstall did not take effect)", app.Version)
+	}
+}
+
+// TestInstallDir_RejectsRedeclaringAWorkflowVersionWithDifferentContent
+// guards ADR-0008 through InstallDir specifically: reinstalling the same
+// source directory with an unchanged workflow `version` field but a
+// different step body must be rejected, not silently accepted — the
+// friction `bundle dev`'s doc comment tells the developer to expect
+// (bump the version).
+func TestInstallDir_RejectsRedeclaringAWorkflowVersionWithDifferentContent(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	sourceDir := newTestBundleSourceDir(t)
+	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err != nil {
+		t.Fatalf("first InstallDir() error = %v", err)
+	}
+
+	// Edit the workflow's step body in place, without bumping its
+	// `version: 1` field.
+	workflowPath := filepath.Join(sourceDir, "workflows", "main.yaml")
+	changed := strings.Replace(fmt.Sprintf(bundleWorkflowYAMLTemplate, 1), `value: "hi"`, `value: "bye"`, 1)
+	if err := os.WriteFile(workflowPath, []byte(changed), 0o644); err != nil {
+		t.Fatalf("rewrite workflow: %v", err)
+	}
+
+	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err == nil {
+		t.Fatal("expected an error redeclaring workflow version 1 with different content, got nil")
+	}
+}
+
+// TestInstallDir_ReinstallingUnchangedWorkflowIsANoOp is the regression
+// test for the `bundle dev --watch` bug Lucas reported: reinstalling from
+// the exact same, untouched source directory (e.g. because an unrelated
+// file under dir changed and the watcher reinstalled the whole bundle,
+// internal/cli/bundle.go's newBundleDevCommand) must succeed, not hit
+// ADR-0008's "UNIQUE constraint failed: workflow_versions.workflow_id,
+// workflow_versions.version" rejection on the untouched embedded workflow.
+func TestInstallDir_ReinstallingUnchangedWorkflowIsANoOp(t *testing.T) {
+	db := openTestDB(t)
+
+	if _, err := plugins.Install(context.Background(), db, examplePluginPath); err != nil {
+		t.Fatalf("install dependency plugin: %v", err)
+	}
+	knownActions, err := plugins.KnownActions(context.Background(), db)
+	if err != nil {
+		t.Fatalf("KnownActions() error = %v", err)
+	}
+
+	sourceDir := newTestBundleSourceDir(t)
+	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err != nil {
+		t.Fatalf("first InstallDir() error = %v", err)
+	}
+
+	if _, err := InstallDir(context.Background(), db, sourceDir, knownActions); err != nil {
+		t.Fatalf("second InstallDir() on an unchanged directory error = %v, want nil (no-op)", err)
+	}
+
+	def, err := runs.LatestWorkflow(context.Background(), db, "bundle_workflow")
+	if err != nil {
+		t.Fatalf("embedded workflow no longer installed: %v", err)
+	}
+	if def.Version != 1 {
+		t.Fatalf("embedded workflow version = %d, want 1 (reinstall must not have bumped or duplicated it)", def.Version)
+	}
+}
+
+// TestInstallDir_FailsWhenARequiredPluginIsMissing mirrors
+// TestInstallPackage_FailsWhenARequiredPluginIsMissing for the directory
+// path: the plugin dependency check runs before anything is installed.
+func TestInstallDir_FailsWhenARequiredPluginIsMissing(t *testing.T) {
+	db := openTestDB(t)
+	sourceDir := newTestBundleSourceDir(t)
+
+	if _, err := InstallDir(context.Background(), db, sourceDir, map[string]struct{}{}); err == nil {
+		t.Fatal("expected an error for a missing required plugin, got nil")
+	}
+
+	if _, err := apps.Get(context.Background(), db, "dashboard"); !errors.Is(err, apps.ErrNotFound) {
+		t.Fatalf("app was installed despite the missing dependency check failing first: err = %v", err)
+	}
 }
 
 func TestPack_RejectsAnInvalidManifest(t *testing.T) {

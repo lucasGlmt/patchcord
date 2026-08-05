@@ -1,4 +1,4 @@
-import type { PatchcordClient, WorkflowSummary } from "@patchcord/sdk";
+import type { PatchcordClient, WorkflowSummary } from "@glmtsolutions/patchcord-sdk";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import Alert from "@mui/material/Alert";

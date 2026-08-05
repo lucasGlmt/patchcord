@@ -1,4 +1,4 @@
-import type { Connector, PatchcordClient, Run, WorkflowDetail, WorkflowSummary } from "@patchcord/sdk";
+import type { Connector, PatchcordClient, Run, WorkflowDetail, WorkflowSummary } from "@glmtsolutions/patchcord-sdk";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";

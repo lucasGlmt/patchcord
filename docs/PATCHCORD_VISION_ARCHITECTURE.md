@@ -766,7 +766,7 @@ Le SDK TypeScript permet aux applications Vite d’utiliser l’agent.
 Exemple :
 
 ```ts
-import { PatchcordClient } from "@patchcord/sdk";
+import { PatchcordClient } from "@glmtsolutions/patchcord-sdk";
 
 const client = new PatchcordClient({
   baseUrl: window.__PATCHCORD_BASE_URL__,
@@ -803,7 +803,7 @@ client.storage
 
 ```bash
 npm create vite@latest invoice-manager
-npm install @patchcord/sdk
+npm install @glmtsolutions/patchcord-sdk
 ```
 
 Mode développement :
