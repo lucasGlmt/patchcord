@@ -94,3 +94,13 @@ publishers si un seul échoue, sauf configuration contraire).
   `dpkg -i`/`rpm -i` à chaque nouvelle version.
 - Chocolatey reste absent ; un utilisateur Windows n'a que l'archive brute
   de la GitHub Release comme option pour l'instant.
+- **Le binaire macOS n'est pas signé** (pas de compte Apple Developer ID —
+  99$/an, non engagé pour l'instant, même arbitrage de proportion que pour
+  apt/Chocolatey ci-dessus). Conséquence vérifiée en conditions réelles
+  après la publication de v0.1.0 : Gatekeeper bloque le premier lancement
+  d'un binaire installé via `brew` ou téléchargé directement
+  (`spctl -a` répond `rejected`, le process meurt sans message clair côté
+  utilisateur). Contournement documenté dans le README :
+  `xattr -d com.apple.quarantine "$(which patchcord)"` une fois après
+  installation. Un vrai fix demanderait la signature + notarisation dans
+  le pipeline goreleaser (`notarize:`), pas fait ici.

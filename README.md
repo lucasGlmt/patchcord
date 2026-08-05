@@ -39,10 +39,18 @@ sudo dpkg -i patchcord_*_linux_amd64.deb
 sudo rpm -i patchcord_*_linux_amd64.rpm
 ```
 
-These work from the first tagged release onward (see Status below — none
-has shipped yet). There is deliberately no hosted apt/dnf repository or
-Chocolatey package — see
-[ADR-0057](docs/adr/0057-distribution-homebrew-et-paquets-linux.md) for why.
+There is deliberately no hosted apt/dnf repository or Chocolatey package —
+see [ADR-0057](docs/adr/0057-distribution-homebrew-et-paquets-linux.md)
+for why.
+
+**macOS**: the binary isn't code-signed (no Apple Developer ID — see
+ADR-0057), so Gatekeeper blocks the first run of a `brew`-installed or
+directly downloaded copy (`patchcord: rejected` / the process just dies).
+Clear the quarantine flag once, after installing:
+
+```bash
+xattr -d com.apple.quarantine "$(which patchcord)"
+```
 
 ## Repository layout
 
