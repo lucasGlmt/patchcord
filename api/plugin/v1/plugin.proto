@@ -52,12 +52,61 @@ message HandshakeResponse {
   repeated string permissions = 5;
 }
 
-// Contributions lists the identifiers a plugin adds to the agent's
-// registries once installed. Every entry is a stable, versioned identifier
-// such as "postgresql.query@1".
+// Contributions lists what a plugin adds to the agent's registries once
+// installed, as full descriptors rather than bare identifiers (ADR-0062) —
+// each carries a human-readable description and a JSON Schema for its
+// shape, so both a human and a coding agent can discover how to use it
+// without reading the plugin's source.
+//
+// Field numbers 1 and 2 carried plain identifier lists in protocol version
+// 1 ("io.patchcord.example-text" et al. spoke it) and are reserved rather
+// than reused for the differently-typed fields below: changing a field's
+// wire type in place, instead of retiring its number, would make a v1
+// plugin's response silently decode as an empty v2 Contributions rather
+// than fail the handshake with a clear error. The names "connectors" and
+// "actions" are reused on the new field numbers deliberately — only the
+// numbers need to stay unique. See HandshakeResponse.protocol_version and
+// ADR-0062.
 message Contributions {
-  repeated string connectors = 1;
-  repeated string actions = 2;
+  reserved 1, 2;
+
+  repeated ConnectorDescriptor connectors = 3;
+  repeated ActionDescriptor actions = 4;
+}
+
+// ActionDescriptor fully describes one action a plugin contributes, as
+// specified by the vision document (section 7.4: identifier, inputs,
+// outputs, default timeout) and closed by ADR-0062.
+message ActionDescriptor {
+  // The action's stable, versioned identifier, e.g. "text.uppercase@1".
+  string id = 1;
+  // One human-readable sentence: what this action does.
+  string description = 2;
+  // JSON Schema describing the shape ExecuteActionRequest.input must
+  // match.
+  google.protobuf.Struct input_schema = 3;
+  // JSON Schema describing the shape ExecuteActionResponse.output will
+  // match.
+  google.protobuf.Struct output_schema = 4;
+  // Default timeout for a call to this action, in seconds. Zero means the
+  // agent's own default applies — an action does not have to declare one.
+  uint32 default_timeout_seconds = 5;
+}
+
+// ConnectorDescriptor fully describes one connector type a plugin
+// contributes, as specified by the vision document (section 7.3:
+// compatibility with certain actions, which requires being able to
+// describe a connector's configuration shape) and closed by ADR-0062.
+message ConnectorDescriptor {
+  // The connector type's stable, versioned identifier, e.g.
+  // "postgresql.connection@1".
+  string type = 1;
+  // One human-readable sentence: what system this connector reaches.
+  string description = 2;
+  // JSON Schema describing the shape of this connector's non-secret
+  // configuration (ConnectorConfig.config). Never covers secret values —
+  // those never appear in a schema meant to be shown or stored (ADR-0009).
+  google.protobuf.Struct config_schema = 3;
 }
 
 // ExecuteActionRequest asks the plugin to run one action.

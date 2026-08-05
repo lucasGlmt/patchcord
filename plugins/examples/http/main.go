@@ -29,9 +29,52 @@ const maxResponseBodyBytes = 10 << 20 // 10 MiB
 
 var httpClient = &http.Client{}
 
+// schema and stringProp are tiny local helpers to keep the JSON Schema
+// literals below readable — every example plugin in this directory repeats
+// this pattern rather than sharing it, since a plugin depends only on the
+// SDK, never on another plugin or an internal/ package (CLAUDE.md §2).
+func schema(properties map[string]any, required ...string) patchcord.Schema {
+	s := patchcord.Schema{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(required) > 0 {
+		req := make([]any, len(required))
+		for i, r := range required {
+			req[i] = r
+		}
+		s["required"] = req
+	}
+	return s
+}
+
+func stringProp(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
+}
+
 type httpRequestAction struct{}
 
 func (httpRequestAction) ID() string { return "http.request@1" }
+func (httpRequestAction) Description() string {
+	return "Performs one HTTP request against the bound connector's base_url."
+}
+
+func (httpRequestAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"method":  stringProp("The HTTP method to use, e.g. \"GET\", \"POST\". Defaults to \"GET\"."),
+		"path":    stringProp("Appended to the connector's base_url, e.g. \"/users/42\"."),
+		"body":    stringProp("The request body, sent as-is. Omit for no body."),
+		"headers": map[string]any{"type": "object", "description": "Extra request headers, name to string value."},
+	})
+}
+
+func (httpRequestAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"status":  map[string]any{"type": "integer", "description": "The response's HTTP status code."},
+		"headers": map[string]any{"type": "object", "description": "The response headers, name to string value."},
+		"body":    stringProp("The response body."),
+	}, "status", "headers", "body")
+}
 
 // Run performs one HTTP request against the bound connector's base_url. It
 // only returns an error for a request that never completed (bad
@@ -107,8 +150,16 @@ func main() {
 			ID:      "io.patchcord.example-http",
 			Version: "1.0.0",
 		},
-		Actions:     []patchcord.Action{httpRequestAction{}},
-		Connectors:  []string{"http.connection@1"},
+		Actions: []patchcord.Action{httpRequestAction{}},
+		Connectors: []patchcord.Connector{
+			{
+				Type:        "http.connection@1",
+				Description: "An HTTP base URL, with an optional bearer/authorization secret.",
+				ConfigSchema: schema(map[string]any{
+					"base_url": stringProp("The base URL every request is made against, e.g. \"https://api.example.com\"."),
+				}, "base_url"),
+			},
+		},
 		Permissions: []string{"network.outbound"},
 	}
 

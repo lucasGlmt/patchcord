@@ -190,8 +190,8 @@ func newPluginInstallCommand() *cobra.Command {
 			}
 
 			fmt.Fprintf(out, "Installed %s@%s\n", entry.PluginID, entry.Version)
-			fmt.Fprintf(out, "  actions:     %s\n", joinOrNone(entry.Actions))
-			fmt.Fprintf(out, "  connectors:  %s\n", joinOrNone(entry.Connectors))
+			fmt.Fprintf(out, "  actions:     %s\n", joinOrNone(plugins.ActionIDs(entry.Actions)))
+			fmt.Fprintf(out, "  connectors:  %s\n", joinOrNone(plugins.ConnectorTypes(entry.Connectors)))
 			fmt.Fprintf(out, "  permissions: %s\n", joinOrNone(entry.Permissions))
 			fmt.Fprintln(out, "It will start with the agent the next time `patchcord serve` runs.")
 
@@ -329,8 +329,8 @@ func newPluginInspectCommand() *cobra.Command {
 			fmt.Fprintf(out, "version:          %s\n", entry.Version)
 			fmt.Fprintf(out, "executable:       %s\n", entry.ExecutablePath)
 			fmt.Fprintf(out, "protocol version: %d\n", entry.ProtocolVersion)
-			fmt.Fprintf(out, "actions:          %s\n", joinOrNone(entry.Actions))
-			fmt.Fprintf(out, "connectors:       %s\n", joinOrNone(entry.Connectors))
+			fmt.Fprintf(out, "actions:          %s\n", joinOrNone(plugins.ActionIDs(entry.Actions)))
+			fmt.Fprintf(out, "connectors:       %s\n", joinOrNone(plugins.ConnectorTypes(entry.Connectors)))
 			fmt.Fprintf(out, "permissions:      %s\n", joinOrNone(entry.Permissions))
 			fmt.Fprintf(out, "installed at:     %s\n", entry.InstalledAt.Format(time.RFC3339))
 

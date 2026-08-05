@@ -48,8 +48,18 @@ func TestBindingName(t *testing.T) {
 
 func TestBindingConnectorType(t *testing.T) {
 	catalog := []plugins.CatalogEntry{
-		{PluginID: "io.patchcord.postgresql", Connectors: []string{"postgresql.connection@1"}, Actions: []string{"postgresql.query@1"}},
-		{PluginID: "io.patchcord.multi", Connectors: []string{"multi.a@1", "multi.b@1"}, Actions: []string{"multi.do@1"}},
+		{
+			PluginID:   "io.patchcord.postgresql",
+			Connectors: []plugins.ConnectorDescriptor{{Type: "postgresql.connection@1"}},
+			Actions:    []plugins.ActionDescriptor{{ID: "postgresql.query@1"}},
+		},
+		{
+			PluginID: "io.patchcord.multi",
+			Connectors: []plugins.ConnectorDescriptor{
+				{Type: "multi.a@1"}, {Type: "multi.b@1"},
+			},
+			Actions: []plugins.ActionDescriptor{{ID: "multi.do@1"}},
+		},
 	}
 
 	tests := []struct {

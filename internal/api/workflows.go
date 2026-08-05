@@ -94,13 +94,13 @@ func bindingName(connectorExpr string) (name string, ok bool) {
 func bindingConnectorType(uses string, catalog []plugins.CatalogEntry) (connectorType string, ok bool) {
 	for _, entry := range catalog {
 		for _, action := range entry.Actions {
-			if action != uses {
+			if action.ID != uses {
 				continue
 			}
 			if len(entry.Connectors) != 1 {
 				return "", false
 			}
-			return entry.Connectors[0], true
+			return entry.Connectors[0].Type, true
 		}
 	}
 	return "", false

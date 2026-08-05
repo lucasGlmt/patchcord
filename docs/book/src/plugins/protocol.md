@@ -28,7 +28,7 @@ Three RPCs, added incrementally as the protocol grew:
 rpc Handshake(HandshakeRequest) returns (HandshakeResponse);
 ```
 
-The agent sends the highest protocol version it supports (`CurrentProtocolVersion`, currently `1`). The plugin replies with the version it will speak for the rest of the session (must not exceed the agent's), its `plugin_id` and `plugin_version`, the actions and connector types it contributes (`Contributions`), and its declared permissions. The agent rejects the plugin if the negotiated version is `0` (no compatible version) or if `plugin_id`/`plugin_version` is missing. This is what `internal/plugins.Handshake` validates, tested against a mocked transport rather than a real process (`handshake_test.go`).
+The agent sends the highest protocol version it supports (`CurrentProtocolVersion`, currently `2`). The plugin replies with `plugin_id`, `plugin_version`, the actions and connector types it contributes (`Contributions`), and its declared permissions. Since version 2 ([ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md)), a plugin must speak *exactly* `CurrentProtocolVersion` — there is no negotiating down to a lower version like version 1 allowed: `Contributions` changed field type, not just content, so a v1 response cannot be read as a (possibly empty) v2 one, only rejected outright. The agent rejects the plugin if its reported version is `0`, differs from `CurrentProtocolVersion`, or if `plugin_id`/`plugin_version` is missing. This is what `internal/plugins.Handshake` validates, tested against a mocked transport rather than a real process (`handshake_test.go`).
 
 ## `ExecuteAction`
 
@@ -45,6 +45,28 @@ rpc TestConnector(TestConnectorRequest) returns (TestConnectorResponse);
 ```
 
 `TestConnectorResponse{ok, message}` distinguishes a test that ran and failed (`ok: false`, a legitimate result) from a test that could not run at all — the latter is a gRPC error, in particular `codes.Unimplemented` if the plugin doesn't support connector testing. See [Connectors → Testing a Connector](connectors/testing.md).
+
+## `Contributions`
+
+`Contributions` carries full descriptors, not bare identifiers ([ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md)):
+
+```protobuf
+message ActionDescriptor {
+  string id = 1;
+  string description = 2;
+  google.protobuf.Struct input_schema = 3;
+  google.protobuf.Struct output_schema = 4;
+  uint32 default_timeout_seconds = 5;
+}
+
+message ConnectorDescriptor {
+  string type = 1;
+  string description = 2;
+  google.protobuf.Struct config_schema = 3;
+}
+```
+
+`input_schema`/`output_schema`/`config_schema` are JSON Schema, encoded the same way action input/output already are — a `google.protobuf.Struct`, not a typed message. See [Manifest & Actions](manifest-and-actions.md) for what an action must declare to produce them.
 
 ## Numeric caveat
 

@@ -22,6 +22,28 @@ type exampleAction struct{}
 
 func (exampleAction) ID() string { return "example.echo@1" }
 
+func (exampleAction) Description() string { return "Returns the given value unchanged." }
+
+func (exampleAction) InputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type": "object",
+		"properties": map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+		"required": []any{"value"},
+	}
+}
+
+func (exampleAction) OutputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type": "object",
+		"properties": map[string]any{
+			"value": map[string]any{"type": "string"},
+		},
+		"required": []any{"value"},
+	}
+}
+
 func (exampleAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	value, ok := input["value"].(string)
 	if !ok {

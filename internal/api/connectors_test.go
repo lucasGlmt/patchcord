@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/plugins"
 )
 
 // fakeConnectorTester is an in-memory ConnectorTester: it never launches a
@@ -27,15 +28,26 @@ func (f fakeConnectorTester) TestConnector(_ context.Context, _ *connectors.Reso
 // insertTestPlugin records a plugin catalog entry directly in the database
 // — the same shape plugins.Install would record after a real handshake —
 // so a test can exercise connector-type validation and the plugins listing
-// endpoint without launching an actual plugin process.
+// endpoint without launching an actual plugin process. It only names ids,
+// not full descriptors (description, JSON Schema, ADR-0062): the tests that
+// call it only care about identity and binding, not documentation content.
 func insertTestPlugin(t *testing.T, db *sql.DB, pluginID string, connectorTypes, actions []string) {
 	t.Helper()
 
-	connectorsJSON, err := json.Marshal(connectorTypes)
+	connectorDescs := make([]plugins.ConnectorDescriptor, len(connectorTypes))
+	for i, typ := range connectorTypes {
+		connectorDescs[i] = plugins.ConnectorDescriptor{Type: typ}
+	}
+	actionDescs := make([]plugins.ActionDescriptor, len(actions))
+	for i, id := range actions {
+		actionDescs[i] = plugins.ActionDescriptor{ID: id}
+	}
+
+	connectorsJSON, err := json.Marshal(connectorDescs)
 	if err != nil {
 		t.Fatalf("marshal connectors: %v", err)
 	}
-	actionsJSON, err := json.Marshal(actions)
+	actionsJSON, err := json.Marshal(actionDescs)
 	if err != nil {
 		t.Fatalf("marshal actions: %v", err)
 	}

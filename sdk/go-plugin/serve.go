@@ -17,7 +17,11 @@ import (
 )
 
 // protocolVersion is the highest plugin protocol version this SDK speaks.
-const protocolVersion = 1
+// Bumped to 2 by ADR-0062, which changed Contributions from bare
+// identifier lists to full descriptors (description + JSON Schema) — a
+// wire-incompatible change, not just an additive one, so a plugin built
+// against this SDK cannot speak v1.
+const protocolVersion = 2
 
 // Serve starts the plugin's gRPC server on a local TCP port, prints its
 // bootstrap ready message on stdout so the agent can discover it, and
@@ -59,12 +63,12 @@ func Serve(plugin Plugin) error {
 type server struct {
 	pluginv1.UnimplementedPluginServiceServer
 
-	manifest     Manifest
-	actionIDs    []string
-	actions      map[string]Action
-	connectorIDs []string
-	tester       ConnectorTester
-	permissions  []string
+	manifest    Manifest
+	actionDescs []*pluginv1.ActionDescriptor
+	actions     map[string]Action
+	connDescs   []*pluginv1.ConnectorDescriptor
+	tester      ConnectorTester
+	permissions []string
 }
 
 func newServer(plugin Plugin) (*server, error) {
@@ -76,43 +80,71 @@ func newServer(plugin Plugin) (*server, error) {
 	}
 
 	actions := make(map[string]Action, len(plugin.Actions))
-	actionIDs := make([]string, 0, len(plugin.Actions))
+	actionDescs := make([]*pluginv1.ActionDescriptor, 0, len(plugin.Actions))
 	for _, action := range plugin.Actions {
 		if _, exists := actions[action.ID()]; exists {
 			return nil, fmt.Errorf("duplicate action id %q", action.ID())
 		}
 		actions[action.ID()] = action
-		actionIDs = append(actionIDs, action.ID())
+
+		inputSchema, err := structpb.NewStruct(action.InputSchema())
+		if err != nil {
+			return nil, fmt.Errorf("encode input schema for action %q: %w", action.ID(), err)
+		}
+		outputSchema, err := structpb.NewStruct(action.OutputSchema())
+		if err != nil {
+			return nil, fmt.Errorf("encode output schema for action %q: %w", action.ID(), err)
+		}
+		actionDescs = append(actionDescs, &pluginv1.ActionDescriptor{
+			Id:           action.ID(),
+			Description:  action.Description(),
+			InputSchema:  inputSchema,
+			OutputSchema: outputSchema,
+		})
+	}
+
+	connDescs := make([]*pluginv1.ConnectorDescriptor, 0, len(plugin.Connectors))
+	for _, connector := range plugin.Connectors {
+		configSchema, err := structpb.NewStruct(connector.ConfigSchema)
+		if err != nil {
+			return nil, fmt.Errorf("encode config schema for connector %q: %w", connector.Type, err)
+		}
+		connDescs = append(connDescs, &pluginv1.ConnectorDescriptor{
+			Type:         connector.Type,
+			Description:  connector.Description,
+			ConfigSchema: configSchema,
+		})
 	}
 
 	return &server{
-		manifest:     plugin.Manifest,
-		actionIDs:    actionIDs,
-		actions:      actions,
-		connectorIDs: plugin.Connectors,
-		tester:       plugin.Tester,
-		permissions:  plugin.Permissions,
+		manifest:    plugin.Manifest,
+		actionDescs: actionDescs,
+		actions:     actions,
+		connDescs:   connDescs,
+		tester:      plugin.Tester,
+		permissions: plugin.Permissions,
 	}, nil
 }
 
 func (s *server) Handshake(_ context.Context, req *pluginv1.HandshakeRequest) (*pluginv1.HandshakeResponse, error) {
-	negotiated := uint32(protocolVersion)
-	if req.GetProtocolVersion() < negotiated {
-		negotiated = req.GetProtocolVersion()
-	}
-	if negotiated == 0 {
+	// Unlike protocol version 1, this SDK cannot negotiate down to a lower
+	// version on request: Contributions' wire shape changed (ADR-0062), not
+	// just its content, so there is no lower-version response this server
+	// could still produce. An agent that requests less than protocolVersion
+	// is simply too old for this plugin.
+	if req.GetProtocolVersion() < protocolVersion {
 		return nil, status.Errorf(codes.FailedPrecondition,
-			"no compatible protocol version: agent supports up to %d, plugin supports %d",
+			"agent supports up to protocol version %d, this plugin requires %d — upgrade the agent",
 			req.GetProtocolVersion(), protocolVersion)
 	}
 
 	return &pluginv1.HandshakeResponse{
-		ProtocolVersion: negotiated,
+		ProtocolVersion: protocolVersion,
 		PluginId:        s.manifest.ID,
 		PluginVersion:   s.manifest.Version,
 		Contributes: &pluginv1.Contributions{
-			Actions:    s.actionIDs,
-			Connectors: s.connectorIDs,
+			Actions:    s.actionDescs,
+			Connectors: s.connDescs,
 		},
 		Permissions: s.permissions,
 	}, nil

@@ -16,6 +16,25 @@ import (
 	"github.com/lucasglmt/patchcord/migrations"
 )
 
+// actionDescriptors and connectorDescriptors build minimal descriptor
+// slices from bare ids, for tests that only care about identity, not about
+// the description/schema fields ADR-0062 added.
+func actionDescriptors(ids ...string) []ActionDescriptor {
+	descs := make([]ActionDescriptor, len(ids))
+	for i, id := range ids {
+		descs[i] = ActionDescriptor{ID: id}
+	}
+	return descs
+}
+
+func connectorDescriptors(types ...string) []ConnectorDescriptor {
+	descs := make([]ConnectorDescriptor, len(types))
+	for i, typ := range types {
+		descs[i] = ConnectorDescriptor{Type: typ}
+	}
+	return descs
+}
+
 // openCatalogTestDB returns a freshly migrated, empty database, ready for
 // the plugins table catalog.go operates on.
 func openCatalogTestDB(t *testing.T) *sql.DB {
@@ -53,8 +72,13 @@ func TestInstall_LaunchesHandshakesAndRecordsTheManifest(t *testing.T) {
 		t.Fatalf("ExecutablePath = %q, want %q", entry.ExecutablePath, examplePluginPath)
 	}
 	wantActions := []string{"text.uppercase@1", "text.lowercase@1", "text.join@1", "text.split@1", "text.echo_connector@1", "text.replace@1"}
-	if !slices.Equal(entry.Actions, wantActions) {
+	if !slices.Equal(ActionIDs(entry.Actions), wantActions) {
 		t.Fatalf("Actions = %v, want %v", entry.Actions, wantActions)
+	}
+	for _, action := range entry.Actions {
+		if action.Description == "" {
+			t.Fatalf("action %q has an empty Description", action.ID)
+		}
 	}
 
 	got, err := Get(context.Background(), db, entry.PluginID)
@@ -236,13 +260,13 @@ func TestKnownActions(t *testing.T) {
 
 	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
 		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
-		Actions: []string{"a.one@1", "a.two@1"},
+		Actions: actionDescriptors("a.one@1", "a.two@1"),
 	}); err != nil {
 		t.Fatalf("seed a: %v", err)
 	}
 	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
 		PluginID: "io.patchcord.b", Version: "1.0.0", ExecutablePath: "/bin/b", ProtocolVersion: 1,
-		Actions: []string{"b.one@1"},
+		Actions: actionDescriptors("b.one@1"),
 	}); err != nil {
 		t.Fatalf("seed b: %v", err)
 	}
@@ -267,13 +291,13 @@ func TestKnownConnectorTypes(t *testing.T) {
 
 	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
 		PluginID: "io.patchcord.a", Version: "1.0.0", ExecutablePath: "/bin/a", ProtocolVersion: 1,
-		Connectors: []string{"a.connection@1"},
+		Connectors: connectorDescriptors("a.connection@1"),
 	}); err != nil {
 		t.Fatalf("seed a: %v", err)
 	}
 	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
 		PluginID: "io.patchcord.b", Version: "1.0.0", ExecutablePath: "/bin/b", ProtocolVersion: 1,
-		Connectors: []string{"b.connection@1"},
+		Connectors: connectorDescriptors("b.connection@1"),
 	}); err != nil {
 		t.Fatalf("seed b: %v", err)
 	}
@@ -281,7 +305,7 @@ func TestKnownConnectorTypes(t *testing.T) {
 	// not blow up KnownConnectorTypes.
 	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
 		PluginID: "io.patchcord.c", Version: "1.0.0", ExecutablePath: "/bin/c", ProtocolVersion: 1,
-		Actions: []string{"c.one@1"},
+		Actions: actionDescriptors("c.one@1"),
 	}); err != nil {
 		t.Fatalf("seed c: %v", err)
 	}

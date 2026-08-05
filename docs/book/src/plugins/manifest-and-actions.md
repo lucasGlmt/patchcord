@@ -9,17 +9,24 @@ Both describe the same plugin, but neither replaces the other: the package manif
 
 ## What an action declares
 
-In this version, an action is deliberately minimal ([ADR-0014](../../../adr/0014-executeaction-struct-generique.md)): a stable, versioned identifier, and a `Run` function taking generic input/output maps. There is no typed schema, no declared capability list, no declared timeout, and no declared list of known errors yet — the full model sketched in the vision document (section 7.4) belongs to the workflow compiler (phase 3+) and hasn't been built. Don't document a richer contract than what actually exists.
+As of [ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md), an action declares its full shape — closing the gap with what the vision document (section 7.4) specified from the start: a stable, versioned identifier, a human-readable description, JSON Schema for its input and output, and a `Run` function. Declared capabilities, known errors, and test-mode behavior from that same section still aren't built — don't document a richer contract than what actually exists.
 
 ```go
 type Action interface {
     ID() string
+    Description() string
+    InputSchema() Schema
+    OutputSchema() Schema
     Run(ctx context.Context, input ActionInput, connector *ConnectorConfig) (ActionOutput, error)
 }
 ```
 
 - **`ID()`** returns the action's identifier, by convention `<name>.<subtype>@<version>` (e.g. `text.uppercase@1`, `postgresql.query@1`). The version suffix exists so a breaking change to an action ships as a new identifier, not a silent behavior change under the same name.
+- **`Description()`** is one human-readable sentence: what the action does. Shown by the CLI/dashboard and readable by a coding agent building a workflow — never left empty.
+- **`InputSchema()`/`OutputSchema()`** return a `Schema` (`map[string]any`, a JSON Schema document) describing `Run`'s input and output. They cross the protocol as a `google.protobuf.Struct`, the same encoding the values themselves use at execution time — see [Protocol](protocol.md#contributions).
 - **`Run`** receives `input` (a `map[string]any`, decoded from the workflow step's resolved inputs) and `connector` (non-nil only if the calling step bound one — see [Connectors](connectors/index.md)). It returns `output` (a `map[string]any`, encoded back across the protocol as `google.protobuf.Struct`) or an error.
+
+Declaring a schema does not make the protocol type-safe: nothing on the wire validates a step's `input:` against `InputSchema()` before `Run` is called yet (that's a workflow-compiler feature, still to come) — an action must still check its own inputs and return a clear error on mismatch. The schema exists today for discovery and documentation, human or agentic, not yet for enforcement.
 
 ## Minimal reference example
 
@@ -28,7 +35,24 @@ type Action interface {
 ```go
 type uppercaseAction struct{}
 
-func (uppercaseAction) ID() string { return "text.uppercase@1" }
+func (uppercaseAction) ID() string          { return "text.uppercase@1" }
+func (uppercaseAction) Description() string { return "Converts a string to upper case." }
+
+func (uppercaseAction) InputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type":       "object",
+		"properties": map[string]any{"value": map[string]any{"type": "string", "description": "The string to convert."}},
+		"required":   []any{"value"},
+	}
+}
+
+func (uppercaseAction) OutputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type":       "object",
+		"properties": map[string]any{"value": map[string]any{"type": "string", "description": "value, converted to upper case."}},
+		"required":   []any{"value"},
+	}
+}
 
 func (uppercaseAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	value, ok := input["value"].(string)
@@ -39,7 +63,7 @@ func (uppercaseAction) Run(_ context.Context, input patchcord.ActionInput, _ *pa
 }
 ```
 
-Note the manual type assertion on `input["value"]` — there is no schema validating this before `Run` is called, so an action must check its own inputs and return a clear error on mismatch.
+Note the manual type assertion on `input["value"]` inside `Run` — `InputSchema()` documents the contract, it does not enforce it before `Run` is called, so an action must still check its own inputs and return a clear error on mismatch.
 
 ## Encoding caveats
 

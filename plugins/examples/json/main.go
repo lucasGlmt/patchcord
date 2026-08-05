@@ -28,9 +28,45 @@ import (
 	patchcord "github.com/lucasglmt/patchcord/sdk/go-plugin"
 )
 
+// schema and anySchema are tiny local helpers to keep the JSON Schema
+// literals below readable — every example plugin in this directory repeats
+// this pattern rather than sharing it, since a plugin depends only on the
+// SDK, never on another plugin or an internal/ package (CLAUDE.md §2).
+func schema(properties map[string]any, required ...string) patchcord.Schema {
+	s := patchcord.Schema{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(required) > 0 {
+		req := make([]any, len(required))
+		for i, r := range required {
+			req[i] = r
+		}
+		s["required"] = req
+	}
+	return s
+}
+
+func anySchema(description string) map[string]any {
+	return map[string]any{"description": description}
+}
+
+func stringProp(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
+}
+
 type parseAction struct{}
 
-func (parseAction) ID() string { return "json.parse@1" }
+func (parseAction) ID() string          { return "json.parse@1" }
+func (parseAction) Description() string { return "Parses a JSON-encoded string into a value." }
+
+func (parseAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{"value": stringProp("The JSON-encoded string to parse.")}, "value")
+}
+
+func (parseAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{"value": anySchema("The decoded value.")}, "value")
+}
 
 func (parseAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	raw, ok := input["value"].(string)
@@ -47,7 +83,19 @@ func (parseAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchc
 
 type stringifyAction struct{}
 
-func (stringifyAction) ID() string { return "json.stringify@1" }
+func (stringifyAction) ID() string          { return "json.stringify@1" }
+func (stringifyAction) Description() string { return "Encodes a value as a JSON string." }
+
+func (stringifyAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"value":  anySchema("The value to encode."),
+		"pretty": map[string]any{"type": "boolean", "description": "Whether to indent the output. Defaults to false."},
+	}, "value")
+}
+
+func (stringifyAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{"value": stringProp("value, encoded as JSON.")}, "value")
+}
 
 func (stringifyAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	value, present := input["value"]
@@ -73,7 +121,19 @@ func (stringifyAction) Run(_ context.Context, input patchcord.ActionInput, _ *pa
 
 type mergeAction struct{}
 
-func (mergeAction) ID() string { return "json.merge@1" }
+func (mergeAction) ID() string          { return "json.merge@1" }
+func (mergeAction) Description() string { return "Shallow-merges patch's keys onto base." }
+
+func (mergeAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"base":  map[string]any{"type": "object", "description": "The base object."},
+		"patch": map[string]any{"type": "object", "description": "The object whose keys overwrite base's."},
+	}, "base", "patch")
+}
+
+func (mergeAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{"value": map[string]any{"type": "object", "description": "base merged with patch."}}, "value")
+}
 
 func (mergeAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	base, ok := input["base"].(map[string]any)
@@ -220,6 +280,24 @@ func evaluateJSONPath(segments []jsonpathSegment, root any) []any {
 type jsonpathExtractAction struct{}
 
 func (jsonpathExtractAction) ID() string { return "json.jsonpath@1" }
+func (jsonpathExtractAction) Description() string {
+	return "Extracts the value(s) matching a JSONPath expression."
+}
+
+func (jsonpathExtractAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"path":  stringProp("The JSONPath expression, e.g. \"$.items[0].name\"."),
+		"value": anySchema("The value to search in."),
+	}, "path", "value")
+}
+
+func (jsonpathExtractAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"found":  map[string]any{"type": "boolean", "description": "Whether the path matched anything."},
+		"value":  anySchema("The first match, or null if none."),
+		"values": map[string]any{"type": "array", "items": map[string]any{}, "description": "Every match, in order."},
+	}, "found", "values")
+}
 
 func (jsonpathExtractAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	path, ok := input["path"].(string)

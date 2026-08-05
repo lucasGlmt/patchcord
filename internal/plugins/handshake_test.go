@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -86,26 +87,44 @@ func TestHandshake(t *testing.T) {
 		{
 			name: "accepts a compatible manifest",
 			response: &pluginv1.HandshakeResponse{
-				ProtocolVersion: 1,
+				ProtocolVersion: CurrentProtocolVersion,
 				PluginId:        "io.patchcord.example-text",
 				PluginVersion:   "1.0.0",
 				Contributes: &pluginv1.Contributions{
-					Actions: []string{"text.uppercase@1"},
+					Actions: []*pluginv1.ActionDescriptor{
+						{Id: "text.uppercase@1", Description: "Converts a string to upper case."},
+					},
 				},
 				Permissions: []string{"network.outbound"},
 			},
 			want: &Manifest{
-				ProtocolVersion: 1,
+				ProtocolVersion: CurrentProtocolVersion,
 				PluginID:        "io.patchcord.example-text",
 				PluginVersion:   "1.0.0",
-				Actions:         []string{"text.uppercase@1"},
-				Permissions:     []string{"network.outbound"},
+				Actions: []ActionDescriptor{
+					{
+						ID:           "text.uppercase@1",
+						Description:  "Converts a string to upper case.",
+						InputSchema:  map[string]any{},
+						OutputSchema: map[string]any{},
+					},
+				},
+				Permissions: []string{"network.outbound"},
 			},
 		},
 		{
 			name: "rejects a protocol version higher than the agent supports",
 			response: &pluginv1.HandshakeResponse{
-				ProtocolVersion: 2,
+				ProtocolVersion: CurrentProtocolVersion + 1,
+				PluginId:        "io.patchcord.example-text",
+				PluginVersion:   "1.0.0",
+			},
+			wantErr: true,
+		},
+		{
+			name: "rejects a protocol version lower than the agent requires",
+			response: &pluginv1.HandshakeResponse{
+				ProtocolVersion: CurrentProtocolVersion - 1,
 				PluginId:        "io.patchcord.example-text",
 				PluginVersion:   "1.0.0",
 			},
@@ -122,7 +141,7 @@ func TestHandshake(t *testing.T) {
 		{
 			name: "rejects a manifest without a plugin id",
 			response: &pluginv1.HandshakeResponse{
-				ProtocolVersion: 1,
+				ProtocolVersion: CurrentProtocolVersion,
 				PluginVersion:   "1.0.0",
 			},
 			wantErr: true,
@@ -130,7 +149,7 @@ func TestHandshake(t *testing.T) {
 		{
 			name: "rejects a manifest without a plugin version",
 			response: &pluginv1.HandshakeResponse{
-				ProtocolVersion: 1,
+				ProtocolVersion: CurrentProtocolVersion,
 				PluginId:        "io.patchcord.example-text",
 			},
 			wantErr: true,
@@ -161,8 +180,11 @@ func TestHandshake(t *testing.T) {
 			if got.ProtocolVersion != tt.want.ProtocolVersion ||
 				got.PluginID != tt.want.PluginID ||
 				got.PluginVersion != tt.want.PluginVersion ||
-				!slices.Equal(got.Connectors, tt.want.Connectors) ||
-				!slices.Equal(got.Actions, tt.want.Actions) ||
+				// Connectors/Actions hold a map[string]any (the decoded JSON
+				// Schema), which isn't comparable — slices.Equal can't be
+				// used for them like it still can for Permissions.
+				!reflect.DeepEqual(got.Connectors, tt.want.Connectors) ||
+				!reflect.DeepEqual(got.Actions, tt.want.Actions) ||
 				!slices.Equal(got.Permissions, tt.want.Permissions) {
 				t.Fatalf("Handshake() = %+v, want %+v", got, tt.want)
 			}

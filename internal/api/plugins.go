@@ -18,7 +18,12 @@ type pluginSummary struct {
 }
 
 func toPluginSummary(entry plugins.CatalogEntry) pluginSummary {
-	return pluginSummary{ID: entry.PluginID, Version: entry.Version, Connectors: entry.Connectors, Actions: entry.Actions}
+	return pluginSummary{
+		ID:         entry.PluginID,
+		Version:    entry.Version,
+		Connectors: plugins.ConnectorTypes(entry.Connectors),
+		Actions:    plugins.ActionIDs(entry.Actions),
+	}
 }
 
 // @Summary      List installed plugins

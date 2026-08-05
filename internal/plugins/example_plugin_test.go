@@ -39,9 +39,15 @@ func TestExamplePlugin_EndToEnd(t *testing.T) {
 	if manifest.PluginID != "io.patchcord.example-text" {
 		t.Fatalf("PluginID = %q, want %q", manifest.PluginID, "io.patchcord.example-text")
 	}
+	actionIDs := ActionIDs(manifest.Actions)
 	for _, action := range []string{"text.uppercase@1", "text.lowercase@1", "text.join@1", "text.split@1", "text.echo_connector@1"} {
-		if !slices.Contains(manifest.Actions, action) {
-			t.Fatalf("Actions = %v, want it to contain %q", manifest.Actions, action)
+		if !slices.Contains(actionIDs, action) {
+			t.Fatalf("Actions = %v, want it to contain %q", actionIDs, action)
+		}
+	}
+	for _, action := range manifest.Actions {
+		if action.Description == "" {
+			t.Fatalf("action %q has an empty Description", action.ID)
 		}
 	}
 

@@ -21,8 +21,8 @@ type CatalogEntry struct {
 	Version         string
 	ExecutablePath  string
 	ProtocolVersion uint32
-	Connectors      []string
-	Actions         []string
+	Connectors      []ConnectorDescriptor
+	Actions         []ActionDescriptor
 	Permissions     []string
 	InstalledAt     time.Time
 }
@@ -106,6 +106,29 @@ func upsertCatalogEntry(ctx context.Context, db *sql.DB, entry *CatalogEntry) er
 	return nil
 }
 
+// ActionIDs returns just the identifiers of a list of action descriptors,
+// for callers that only need to display or compare ids — the CLI's plain
+// listing and the public API's summary shape (internal/api/plugins.go)
+// both stay at that level deliberately (ADR-0062 scopes richer exposure of
+// descriptions/schemas to a later change).
+func ActionIDs(actions []ActionDescriptor) []string {
+	ids := make([]string, len(actions))
+	for i, action := range actions {
+		ids[i] = action.ID
+	}
+	return ids
+}
+
+// ConnectorTypes returns just the type identifiers of a list of connector
+// descriptors — the same role ActionIDs plays for actions.
+func ConnectorTypes(connectors []ConnectorDescriptor) []string {
+	types := make([]string, len(connectors))
+	for i, connector := range connectors {
+		types[i] = connector.Type
+	}
+	return types
+}
+
 // List returns every installed plugin, ordered by plugin id.
 func List(ctx context.Context, db *sql.DB) ([]CatalogEntry, error) {
 	rows, err := db.QueryContext(ctx, `
@@ -145,7 +168,7 @@ func KnownActions(ctx context.Context, db *sql.DB) (map[string]struct{}, error) 
 	actions := make(map[string]struct{})
 	for _, entry := range entries {
 		for _, action := range entry.Actions {
-			actions[action] = struct{}{}
+			actions[action.ID] = struct{}{}
 		}
 	}
 
@@ -164,8 +187,8 @@ func KnownConnectorTypes(ctx context.Context, db *sql.DB) (map[string]struct{}, 
 
 	types := make(map[string]struct{})
 	for _, entry := range entries {
-		for _, connectorType := range entry.Connectors {
-			types[connectorType] = struct{}{}
+		for _, connector := range entry.Connectors {
+			types[connector.Type] = struct{}{}
 		}
 	}
 

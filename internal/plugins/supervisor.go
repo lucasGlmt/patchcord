@@ -155,7 +155,7 @@ func (s *Supervisor) ExecuteAction(ctx context.Context, actionID string, input m
 	var rp *runningPlugin
 	for _, candidate := range s.running {
 		for _, action := range candidate.entry.Actions {
-			if action == actionID {
+			if action.ID == actionID {
 				rp = candidate
 				break
 			}
@@ -187,8 +187,8 @@ func (s *Supervisor) TestConnector(ctx context.Context, connector *connectors.Re
 	s.mu.Lock()
 	var rp *runningPlugin
 	for _, candidate := range s.running {
-		for _, connectorType := range candidate.entry.Connectors {
-			if connectorType == connector.Type {
+		for _, candidateConnector := range candidate.entry.Connectors {
+			if candidateConnector.Type == connector.Type {
 				rp = candidate
 				break
 			}

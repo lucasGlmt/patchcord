@@ -21,7 +21,24 @@ import (
 
 type uppercaseAction struct{}
 
-func (uppercaseAction) ID() string { return "text.uppercase@1" }
+func (uppercaseAction) ID() string          { return "text.uppercase@1" }
+func (uppercaseAction) Description() string { return "Converts a string to upper case." }
+
+func (uppercaseAction) InputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type":       "object",
+		"properties": map[string]any{"value": map[string]any{"type": "string"}},
+		"required":   []any{"value"},
+	}
+}
+
+func (uppercaseAction) OutputSchema() patchcord.Schema {
+	return patchcord.Schema{
+		"type":       "object",
+		"properties": map[string]any{"value": map[string]any{"type": "string"}},
+		"required":   []any{"value"},
+	}
+}
 
 func (uppercaseAction) Run(_ context.Context, input patchcord.ActionInput, _ *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	value, ok := input["value"].(string)
@@ -31,6 +48,8 @@ func (uppercaseAction) Run(_ context.Context, input patchcord.ActionInput, _ *pa
 	return patchcord.ActionOutput{"value": strings.ToUpper(value)}, nil
 }
 ```
+
+`Description()`, `InputSchema()` and `OutputSchema()` are mandatory, not optional — see [Manifest & Actions](manifest-and-actions.md) for why ([ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md)).
 
 ## 2. Declare the plugin and serve it
 
@@ -57,16 +76,26 @@ func main() {
 
 ## 3. Optional: contribute connector types
 
-If your plugin's actions need a bound connector (e.g. a database connection), declare the connector type(s) they accept:
+If your plugin's actions need a bound connector (e.g. a database connection), declare the connector type(s) they accept, each with a description and a JSON Schema for its non-secret configuration ([ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md)):
 
 ```go
 plugin := patchcord.Plugin{
 	// ...
-	Connectors: []string{"postgresql.connection@1"},
+	Connectors: []patchcord.Connector{
+		{
+			Type:        "postgresql.connection@1",
+			Description: "A PostgreSQL server, with an optional password secret.",
+			ConfigSchema: patchcord.Schema{
+				"type":       "object",
+				"properties": map[string]any{"host": map[string]any{"type": "string"}},
+				"required":   []any{"host"},
+			},
+		},
+	},
 }
 ```
 
-This is declarative only — the SDK does not enforce that an action actually requires a connector; each action must check `connector == nil` itself. See [Connectors](connectors/index.md) for how a connector reaches your action.
+Never describe a secret field in `ConfigSchema` — a connector's secrets never appear in a schema meant to be shown or stored ([ADR-0009](../../../adr/0009-secrets-jamais-dans-workflows.md)). This is declarative only — the SDK does not enforce that an action actually requires a connector; each action must check `connector == nil` itself. See [Connectors](connectors/index.md) for how a connector reaches your action.
 
 ## 4. Optional: support `patchcord connector test`
 

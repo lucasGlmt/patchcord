@@ -29,6 +29,38 @@ import (
 	patchcord "github.com/lucasglmt/patchcord/sdk/go-plugin"
 )
 
+// schema and stringProp are tiny local helpers to keep the JSON Schema
+// literals below readable — every example plugin in this directory repeats
+// this pattern rather than sharing it, since a plugin depends only on the
+// SDK, never on another plugin or an internal/ package (CLAUDE.md §2).
+func schema(properties map[string]any, required ...string) patchcord.Schema {
+	s := patchcord.Schema{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(required) > 0 {
+		req := make([]any, len(required))
+		for i, r := range required {
+			req[i] = r
+		}
+		s["required"] = req
+	}
+	return s
+}
+
+func stringProp(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
+}
+
+// sqlInputSchema and sqlArgsProp are shared by postgresql.query@1 and
+// postgresql.execute@1, whose input shape is identical.
+func sqlInputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"sql":  stringProp("The SQL statement to run, with \"$1\", \"$2\", … placeholders."),
+		"args": map[string]any{"type": "array", "items": map[string]any{}, "description": "Values bound to the statement's placeholders, in order."},
+	}, "sql")
+}
+
 // driverName is the database/sql driver registered by pgx's stdlib package.
 const driverName = "pgx"
 
@@ -196,6 +228,17 @@ func runExecute(ctx context.Context, db *sql.DB, sqlText string, args []any) (pa
 type queryAction struct{}
 
 func (queryAction) ID() string { return "postgresql.query@1" }
+func (queryAction) Description() string {
+	return "Runs a SELECT-shaped statement and returns its rows."
+}
+func (queryAction) InputSchema() patchcord.Schema { return sqlInputSchema() }
+
+func (queryAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"rows":      map[string]any{"type": "array", "items": map[string]any{"type": "object"}, "description": "Every returned row, column name to value."},
+		"row_count": map[string]any{"type": "integer", "description": "The number of rows returned."},
+	}, "rows", "row_count")
+}
 
 func (queryAction) Run(ctx context.Context, input patchcord.ActionInput, connector *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	db, sqlText, args, err := prepareCall("postgresql.query@1", connector, input)
@@ -209,6 +252,16 @@ func (queryAction) Run(ctx context.Context, input patchcord.ActionInput, connect
 type executeAction struct{}
 
 func (executeAction) ID() string { return "postgresql.execute@1" }
+func (executeAction) Description() string {
+	return "Runs an INSERT/UPDATE/DELETE/DDL-shaped statement."
+}
+func (executeAction) InputSchema() patchcord.Schema { return sqlInputSchema() }
+
+func (executeAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"rows_affected": map[string]any{"type": "integer", "description": "The number of rows the statement affected."},
+	}, "rows_affected")
+}
 
 func (executeAction) Run(ctx context.Context, input patchcord.ActionInput, connector *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	db, sqlText, args, err := prepareCall("postgresql.execute@1", connector, input)
@@ -249,8 +302,20 @@ func main() {
 			ID:      "io.patchcord.example-postgresql",
 			Version: "1.0.0",
 		},
-		Actions:     []patchcord.Action{queryAction{}, executeAction{}},
-		Connectors:  []string{"postgresql.connection@1"},
+		Actions: []patchcord.Action{queryAction{}, executeAction{}},
+		Connectors: []patchcord.Connector{
+			{
+				Type:        "postgresql.connection@1",
+				Description: "A PostgreSQL server, with an optional password secret.",
+				ConfigSchema: schema(map[string]any{
+					"host":     stringProp("The server host."),
+					"port":     map[string]any{"type": "integer", "description": "The server port. Defaults to 5432."},
+					"database": stringProp("The database name."),
+					"user":     stringProp("The user to connect as."),
+					"sslmode":  stringProp("libpq sslmode, e.g. \"disable\", \"require\". Defaults to \"disable\"."),
+				}, "host", "database", "user"),
+			},
+		},
 		Tester:      connectorTester{},
 		Permissions: []string{"network.outbound"},
 	}

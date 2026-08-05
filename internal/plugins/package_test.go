@@ -136,7 +136,7 @@ func TestPackAndInstallPackage(t *testing.T) {
 
 	found := false
 	for _, action := range entry.Actions {
-		if action == "text.uppercase@1" {
+		if action.ID == "text.uppercase@1" {
 			found = true
 		}
 	}

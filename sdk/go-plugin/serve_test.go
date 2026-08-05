@@ -18,7 +18,10 @@ import (
 
 type echoAction struct{}
 
-func (echoAction) ID() string { return "test.echo@1" }
+func (echoAction) ID() string           { return "test.echo@1" }
+func (echoAction) Description() string  { return "Echoes its input back as output." }
+func (echoAction) InputSchema() Schema  { return Schema{"type": "object"} }
+func (echoAction) OutputSchema() Schema { return Schema{"type": "object"} }
 
 func (echoAction) Run(_ context.Context, input ActionInput, _ *ConnectorConfig) (ActionOutput, error) {
 	return ActionOutput(input), nil
@@ -26,7 +29,10 @@ func (echoAction) Run(_ context.Context, input ActionInput, _ *ConnectorConfig) 
 
 type failingAction struct{}
 
-func (failingAction) ID() string { return "test.fail@1" }
+func (failingAction) ID() string           { return "test.fail@1" }
+func (failingAction) Description() string  { return "Always fails." }
+func (failingAction) InputSchema() Schema  { return Schema{"type": "object"} }
+func (failingAction) OutputSchema() Schema { return Schema{"type": "object"} }
 
 func (failingAction) Run(context.Context, ActionInput, *ConnectorConfig) (ActionOutput, error) {
 	return nil, errors.New("boom")
@@ -144,15 +150,20 @@ func TestServer_Handshake(t *testing.T) {
 		wantActionCount int
 	}{
 		{
-			name:            "negotiates the plugin's protocol version when the agent supports it",
-			agentProtocol:   1,
-			wantProtocol:    1,
+			name:            "accepts an agent that supports this plugin's protocol version",
+			agentProtocol:   protocolVersion,
+			wantProtocol:    protocolVersion,
 			wantPluginID:    "io.example.test",
 			wantActionCount: 1,
 		},
 		{
 			name:          "rejects an agent that supports no protocol version",
 			agentProtocol: 0,
+			wantErr:       true,
+		},
+		{
+			name:          "rejects an agent whose supported version is below this plugin's",
+			agentProtocol: protocolVersion - 1,
 			wantErr:       true,
 		},
 	}
@@ -196,23 +207,28 @@ func TestServer_Handshake(t *testing.T) {
 
 func TestServer_Handshake_ReportsConnectors(t *testing.T) {
 	srv, err := newServer(Plugin{
-		Manifest:   Manifest{ID: "io.example.test", Version: "1.0.0"},
-		Actions:    []Action{echoAction{}},
-		Connectors: []string{"http.connection@1"},
+		Manifest: Manifest{ID: "io.example.test", Version: "1.0.0"},
+		Actions:  []Action{echoAction{}},
+		Connectors: []Connector{
+			{Type: "http.connection@1", Description: "An HTTP base URL.", ConfigSchema: Schema{"type": "object"}},
+		},
 	})
 	if err != nil {
 		t.Fatalf("newServer() error = %v", err)
 	}
 	client := dialServer(t, srv)
 
-	resp, err := client.Handshake(context.Background(), &pluginv1.HandshakeRequest{ProtocolVersion: 1})
+	resp, err := client.Handshake(context.Background(), &pluginv1.HandshakeRequest{ProtocolVersion: protocolVersion})
 	if err != nil {
 		t.Fatalf("Handshake() error = %v", err)
 	}
 
 	gotConnectors := resp.GetContributes().GetConnectors()
-	if len(gotConnectors) != 1 || gotConnectors[0] != "http.connection@1" {
+	if len(gotConnectors) != 1 || gotConnectors[0].GetType() != "http.connection@1" {
 		t.Fatalf("Connectors = %v, want [http.connection@1]", gotConnectors)
+	}
+	if gotConnectors[0].GetDescription() == "" {
+		t.Fatal("Connectors[0].Description is empty, want the plugin's description")
 	}
 }
 

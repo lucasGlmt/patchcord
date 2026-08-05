@@ -150,13 +150,25 @@ func (x *HandshakeResponse) GetPermissions() []string {
 	return nil
 }
 
-// Contributions lists the identifiers a plugin adds to the agent's
-// registries once installed. Every entry is a stable, versioned identifier
-// such as "postgresql.query@1".
+// Contributions lists what a plugin adds to the agent's registries once
+// installed, as full descriptors rather than bare identifiers (ADR-0062) —
+// each carries a human-readable description and a JSON Schema for its
+// shape, so both a human and a coding agent can discover how to use it
+// without reading the plugin's source.
+//
+// Field numbers 1 and 2 carried plain identifier lists in protocol version
+// 1 ("io.patchcord.example-text" et al. spoke it) and are reserved rather
+// than reused for the differently-typed fields below: changing a field's
+// wire type in place, instead of retiring its number, would make a v1
+// plugin's response silently decode as an empty v2 Contributions rather
+// than fail the handshake with a clear error. The names "connectors" and
+// "actions" are reused on the new field numbers deliberately — only the
+// numbers need to stay unique. See HandshakeResponse.protocol_version and
+// ADR-0062.
 type Contributions struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Connectors    []string               `protobuf:"bytes,1,rep,name=connectors,proto3" json:"connectors,omitempty"`
-	Actions       []string               `protobuf:"bytes,2,rep,name=actions,proto3" json:"actions,omitempty"`
+	Connectors    []*ConnectorDescriptor `protobuf:"bytes,3,rep,name=connectors,proto3" json:"connectors,omitempty"`
+	Actions       []*ActionDescriptor    `protobuf:"bytes,4,rep,name=actions,proto3" json:"actions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -191,16 +203,173 @@ func (*Contributions) Descriptor() ([]byte, []int) {
 	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *Contributions) GetConnectors() []string {
+func (x *Contributions) GetConnectors() []*ConnectorDescriptor {
 	if x != nil {
 		return x.Connectors
 	}
 	return nil
 }
 
-func (x *Contributions) GetActions() []string {
+func (x *Contributions) GetActions() []*ActionDescriptor {
 	if x != nil {
 		return x.Actions
+	}
+	return nil
+}
+
+// ActionDescriptor fully describes one action a plugin contributes, as
+// specified by the vision document (section 7.4: identifier, inputs,
+// outputs, default timeout) and closed by ADR-0062.
+type ActionDescriptor struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The action's stable, versioned identifier, e.g. "text.uppercase@1".
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// One human-readable sentence: what this action does.
+	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	// JSON Schema describing the shape ExecuteActionRequest.input must
+	// match.
+	InputSchema *structpb.Struct `protobuf:"bytes,3,opt,name=input_schema,json=inputSchema,proto3" json:"input_schema,omitempty"`
+	// JSON Schema describing the shape ExecuteActionResponse.output will
+	// match.
+	OutputSchema *structpb.Struct `protobuf:"bytes,4,opt,name=output_schema,json=outputSchema,proto3" json:"output_schema,omitempty"`
+	// Default timeout for a call to this action, in seconds. Zero means the
+	// agent's own default applies — an action does not have to declare one.
+	DefaultTimeoutSeconds uint32 `protobuf:"varint,5,opt,name=default_timeout_seconds,json=defaultTimeoutSeconds,proto3" json:"default_timeout_seconds,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ActionDescriptor) Reset() {
+	*x = ActionDescriptor{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ActionDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ActionDescriptor) ProtoMessage() {}
+
+func (x *ActionDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ActionDescriptor.ProtoReflect.Descriptor instead.
+func (*ActionDescriptor) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ActionDescriptor) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ActionDescriptor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ActionDescriptor) GetInputSchema() *structpb.Struct {
+	if x != nil {
+		return x.InputSchema
+	}
+	return nil
+}
+
+func (x *ActionDescriptor) GetOutputSchema() *structpb.Struct {
+	if x != nil {
+		return x.OutputSchema
+	}
+	return nil
+}
+
+func (x *ActionDescriptor) GetDefaultTimeoutSeconds() uint32 {
+	if x != nil {
+		return x.DefaultTimeoutSeconds
+	}
+	return 0
+}
+
+// ConnectorDescriptor fully describes one connector type a plugin
+// contributes, as specified by the vision document (section 7.3:
+// compatibility with certain actions, which requires being able to
+// describe a connector's configuration shape) and closed by ADR-0062.
+type ConnectorDescriptor struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The connector type's stable, versioned identifier, e.g.
+	// "postgresql.connection@1".
+	Type string `protobuf:"bytes,1,opt,name=type,proto3" json:"type,omitempty"`
+	// One human-readable sentence: what system this connector reaches.
+	Description string `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	// JSON Schema describing the shape of this connector's non-secret
+	// configuration (ConnectorConfig.config). Never covers secret values —
+	// those never appear in a schema meant to be shown or stored (ADR-0009).
+	ConfigSchema  *structpb.Struct `protobuf:"bytes,3,opt,name=config_schema,json=configSchema,proto3" json:"config_schema,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConnectorDescriptor) Reset() {
+	*x = ConnectorDescriptor{}
+	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectorDescriptor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectorDescriptor) ProtoMessage() {}
+
+func (x *ConnectorDescriptor) ProtoReflect() protoreflect.Message {
+	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectorDescriptor.ProtoReflect.Descriptor instead.
+func (*ConnectorDescriptor) Descriptor() ([]byte, []int) {
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ConnectorDescriptor) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *ConnectorDescriptor) GetDescription() string {
+	if x != nil {
+		return x.Description
+	}
+	return ""
+}
+
+func (x *ConnectorDescriptor) GetConfigSchema() *structpb.Struct {
+	if x != nil {
+		return x.ConfigSchema
 	}
 	return nil
 }
@@ -222,7 +391,7 @@ type ExecuteActionRequest struct {
 
 func (x *ExecuteActionRequest) Reset() {
 	*x = ExecuteActionRequest{}
-	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +403,7 @@ func (x *ExecuteActionRequest) String() string {
 func (*ExecuteActionRequest) ProtoMessage() {}
 
 func (x *ExecuteActionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_v1_plugin_proto_msgTypes[3]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,7 +416,7 @@ func (x *ExecuteActionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteActionRequest.ProtoReflect.Descriptor instead.
 func (*ExecuteActionRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ExecuteActionRequest) GetAction() string {
@@ -284,7 +453,7 @@ type ConnectorConfig struct {
 
 func (x *ConnectorConfig) Reset() {
 	*x = ConnectorConfig{}
-	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +465,7 @@ func (x *ConnectorConfig) String() string {
 func (*ConnectorConfig) ProtoMessage() {}
 
 func (x *ConnectorConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_v1_plugin_proto_msgTypes[4]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,7 +478,7 @@ func (x *ConnectorConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConnectorConfig.ProtoReflect.Descriptor instead.
 func (*ConnectorConfig) Descriptor() ([]byte, []int) {
-	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ConnectorConfig) GetType() string {
@@ -343,7 +512,7 @@ type ExecuteActionResponse struct {
 
 func (x *ExecuteActionResponse) Reset() {
 	*x = ExecuteActionResponse{}
-	mi := &file_plugin_v1_plugin_proto_msgTypes[5]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -355,7 +524,7 @@ func (x *ExecuteActionResponse) String() string {
 func (*ExecuteActionResponse) ProtoMessage() {}
 
 func (x *ExecuteActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_v1_plugin_proto_msgTypes[5]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,7 +537,7 @@ func (x *ExecuteActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecuteActionResponse.ProtoReflect.Descriptor instead.
 func (*ExecuteActionResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{5}
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExecuteActionResponse) GetOutput() *structpb.Struct {
@@ -389,7 +558,7 @@ type TestConnectorRequest struct {
 
 func (x *TestConnectorRequest) Reset() {
 	*x = TestConnectorRequest{}
-	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -401,7 +570,7 @@ func (x *TestConnectorRequest) String() string {
 func (*TestConnectorRequest) ProtoMessage() {}
 
 func (x *TestConnectorRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_v1_plugin_proto_msgTypes[6]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -414,7 +583,7 @@ func (x *TestConnectorRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestConnectorRequest.ProtoReflect.Descriptor instead.
 func (*TestConnectorRequest) Descriptor() ([]byte, []int) {
-	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *TestConnectorRequest) GetConnector() *ConnectorConfig {
@@ -440,7 +609,7 @@ type TestConnectorResponse struct {
 
 func (x *TestConnectorResponse) Reset() {
 	*x = TestConnectorResponse{}
-	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -452,7 +621,7 @@ func (x *TestConnectorResponse) String() string {
 func (*TestConnectorResponse) ProtoMessage() {}
 
 func (x *TestConnectorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_plugin_v1_plugin_proto_msgTypes[7]
+	mi := &file_plugin_v1_plugin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -465,7 +634,7 @@ func (x *TestConnectorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestConnectorResponse.ProtoReflect.Descriptor instead.
 func (*TestConnectorResponse) Descriptor() ([]byte, []int) {
-	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{7}
+	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *TestConnectorResponse) GetOk() bool {
@@ -494,12 +663,22 @@ const file_plugin_v1_plugin_proto_rawDesc = "" +
 	"\tplugin_id\x18\x02 \x01(\tR\bpluginId\x12%\n" +
 	"\x0eplugin_version\x18\x03 \x01(\tR\rpluginVersion\x12:\n" +
 	"\vcontributes\x18\x04 \x01(\v2\x18.plugin.v1.ContributionsR\vcontributes\x12 \n" +
-	"\vpermissions\x18\x05 \x03(\tR\vpermissions\"I\n" +
-	"\rContributions\x12\x1e\n" +
+	"\vpermissions\x18\x05 \x03(\tR\vpermissions\"\x92\x01\n" +
+	"\rContributions\x12>\n" +
 	"\n" +
-	"connectors\x18\x01 \x03(\tR\n" +
-	"connectors\x12\x18\n" +
-	"\aactions\x18\x02 \x03(\tR\aactions\"\x97\x01\n" +
+	"connectors\x18\x03 \x03(\v2\x1e.plugin.v1.ConnectorDescriptorR\n" +
+	"connectors\x125\n" +
+	"\aactions\x18\x04 \x03(\v2\x1b.plugin.v1.ActionDescriptorR\aactionsJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03\"\xf6\x01\n" +
+	"\x10ActionDescriptor\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12:\n" +
+	"\finput_schema\x18\x03 \x01(\v2\x17.google.protobuf.StructR\vinputSchema\x12<\n" +
+	"\routput_schema\x18\x04 \x01(\v2\x17.google.protobuf.StructR\foutputSchema\x126\n" +
+	"\x17default_timeout_seconds\x18\x05 \x01(\rR\x15defaultTimeoutSeconds\"\x89\x01\n" +
+	"\x13ConnectorDescriptor\x12\x12\n" +
+	"\x04type\x18\x01 \x01(\tR\x04type\x12 \n" +
+	"\vdescription\x18\x02 \x01(\tR\vdescription\x12<\n" +
+	"\rconfig_schema\x18\x03 \x01(\v2\x17.google.protobuf.StructR\fconfigSchema\"\x97\x01\n" +
 	"\x14ExecuteActionRequest\x12\x16\n" +
 	"\x06action\x18\x01 \x01(\tR\x06action\x12-\n" +
 	"\x05input\x18\x02 \x01(\v2\x17.google.protobuf.StructR\x05input\x128\n" +
@@ -532,37 +711,44 @@ func file_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 	return file_plugin_v1_plugin_proto_rawDescData
 }
 
-var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_plugin_v1_plugin_proto_goTypes = []any{
 	(*HandshakeRequest)(nil),      // 0: plugin.v1.HandshakeRequest
 	(*HandshakeResponse)(nil),     // 1: plugin.v1.HandshakeResponse
 	(*Contributions)(nil),         // 2: plugin.v1.Contributions
-	(*ExecuteActionRequest)(nil),  // 3: plugin.v1.ExecuteActionRequest
-	(*ConnectorConfig)(nil),       // 4: plugin.v1.ConnectorConfig
-	(*ExecuteActionResponse)(nil), // 5: plugin.v1.ExecuteActionResponse
-	(*TestConnectorRequest)(nil),  // 6: plugin.v1.TestConnectorRequest
-	(*TestConnectorResponse)(nil), // 7: plugin.v1.TestConnectorResponse
-	(*structpb.Struct)(nil),       // 8: google.protobuf.Struct
+	(*ActionDescriptor)(nil),      // 3: plugin.v1.ActionDescriptor
+	(*ConnectorDescriptor)(nil),   // 4: plugin.v1.ConnectorDescriptor
+	(*ExecuteActionRequest)(nil),  // 5: plugin.v1.ExecuteActionRequest
+	(*ConnectorConfig)(nil),       // 6: plugin.v1.ConnectorConfig
+	(*ExecuteActionResponse)(nil), // 7: plugin.v1.ExecuteActionResponse
+	(*TestConnectorRequest)(nil),  // 8: plugin.v1.TestConnectorRequest
+	(*TestConnectorResponse)(nil), // 9: plugin.v1.TestConnectorResponse
+	(*structpb.Struct)(nil),       // 10: google.protobuf.Struct
 }
 var file_plugin_v1_plugin_proto_depIdxs = []int32{
 	2,  // 0: plugin.v1.HandshakeResponse.contributes:type_name -> plugin.v1.Contributions
-	8,  // 1: plugin.v1.ExecuteActionRequest.input:type_name -> google.protobuf.Struct
-	4,  // 2: plugin.v1.ExecuteActionRequest.connector:type_name -> plugin.v1.ConnectorConfig
-	8,  // 3: plugin.v1.ConnectorConfig.config:type_name -> google.protobuf.Struct
-	8,  // 4: plugin.v1.ConnectorConfig.secrets:type_name -> google.protobuf.Struct
-	8,  // 5: plugin.v1.ExecuteActionResponse.output:type_name -> google.protobuf.Struct
-	4,  // 6: plugin.v1.TestConnectorRequest.connector:type_name -> plugin.v1.ConnectorConfig
-	0,  // 7: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
-	3,  // 8: plugin.v1.PluginService.ExecuteAction:input_type -> plugin.v1.ExecuteActionRequest
-	6,  // 9: plugin.v1.PluginService.TestConnector:input_type -> plugin.v1.TestConnectorRequest
-	1,  // 10: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
-	5,  // 11: plugin.v1.PluginService.ExecuteAction:output_type -> plugin.v1.ExecuteActionResponse
-	7,  // 12: plugin.v1.PluginService.TestConnector:output_type -> plugin.v1.TestConnectorResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	4,  // 1: plugin.v1.Contributions.connectors:type_name -> plugin.v1.ConnectorDescriptor
+	3,  // 2: plugin.v1.Contributions.actions:type_name -> plugin.v1.ActionDescriptor
+	10, // 3: plugin.v1.ActionDescriptor.input_schema:type_name -> google.protobuf.Struct
+	10, // 4: plugin.v1.ActionDescriptor.output_schema:type_name -> google.protobuf.Struct
+	10, // 5: plugin.v1.ConnectorDescriptor.config_schema:type_name -> google.protobuf.Struct
+	10, // 6: plugin.v1.ExecuteActionRequest.input:type_name -> google.protobuf.Struct
+	6,  // 7: plugin.v1.ExecuteActionRequest.connector:type_name -> plugin.v1.ConnectorConfig
+	10, // 8: plugin.v1.ConnectorConfig.config:type_name -> google.protobuf.Struct
+	10, // 9: plugin.v1.ConnectorConfig.secrets:type_name -> google.protobuf.Struct
+	10, // 10: plugin.v1.ExecuteActionResponse.output:type_name -> google.protobuf.Struct
+	6,  // 11: plugin.v1.TestConnectorRequest.connector:type_name -> plugin.v1.ConnectorConfig
+	0,  // 12: plugin.v1.PluginService.Handshake:input_type -> plugin.v1.HandshakeRequest
+	5,  // 13: plugin.v1.PluginService.ExecuteAction:input_type -> plugin.v1.ExecuteActionRequest
+	8,  // 14: plugin.v1.PluginService.TestConnector:input_type -> plugin.v1.TestConnectorRequest
+	1,  // 15: plugin.v1.PluginService.Handshake:output_type -> plugin.v1.HandshakeResponse
+	7,  // 16: plugin.v1.PluginService.ExecuteAction:output_type -> plugin.v1.ExecuteActionResponse
+	9,  // 17: plugin.v1.PluginService.TestConnector:output_type -> plugin.v1.TestConnectorResponse
+	15, // [15:18] is the sub-list for method output_type
+	12, // [12:15] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_plugin_v1_plugin_proto_init() }
@@ -576,7 +762,7 @@ func file_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_plugin_v1_plugin_proto_rawDesc), len(file_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

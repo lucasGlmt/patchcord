@@ -53,12 +53,14 @@ type server struct {
 
 func (server) Handshake(context.Context, *pluginv1.HandshakeRequest) (*pluginv1.HandshakeResponse, error) {
 	resp := &pluginv1.HandshakeResponse{
-		ProtocolVersion: 1,
+		ProtocolVersion: 2,
 		PluginId:        "io.patchcord.fake",
 		PluginVersion:   "0.0.1",
 	}
 	if connectorType := os.Getenv("FAKE_PLUGIN_CONNECTOR_TYPE"); connectorType != "" {
-		resp.Contributes = &pluginv1.Contributions{Connectors: []string{connectorType}}
+		resp.Contributes = &pluginv1.Contributions{
+			Connectors: []*pluginv1.ConnectorDescriptor{{Type: connectorType}},
+		}
 	}
 	return resp, nil
 }

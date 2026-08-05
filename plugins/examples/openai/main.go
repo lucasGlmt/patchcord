@@ -31,6 +31,29 @@ import (
 	patchcord "github.com/lucasglmt/patchcord/sdk/go-plugin"
 )
 
+// schema and stringProp are tiny local helpers to keep the JSON Schema
+// literals below readable — every example plugin in this directory repeats
+// this pattern rather than sharing it, since a plugin depends only on the
+// SDK, never on another plugin or an internal/ package (CLAUDE.md §2).
+func schema(properties map[string]any, required ...string) patchcord.Schema {
+	s := patchcord.Schema{
+		"type":       "object",
+		"properties": properties,
+	}
+	if len(required) > 0 {
+		req := make([]any, len(required))
+		for i, r := range required {
+			req[i] = r
+		}
+		s["required"] = req
+	}
+	return s
+}
+
+func stringProp(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
+}
+
 // defaultBaseURL is used when the connector's config omits base_url —
 // overriding it is how this plugin also reaches Azure OpenAI or another
 // OpenAI-compatible proxy without any code change.
@@ -86,6 +109,35 @@ func resolveBaseURL(config map[string]any) string {
 type generateTextAction struct{}
 
 func (generateTextAction) ID() string { return "ai.generate_text@1" }
+func (generateTextAction) Description() string {
+	return "Generates text from a prompt using the bound connector's chat completion API."
+}
+
+func (generateTextAction) InputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"model":       stringProp("The model to use, e.g. \"gpt-4o-mini\"."),
+		"prompt":      stringProp("The user prompt."),
+		"system":      stringProp("An optional system prompt, prepended before prompt."),
+		"temperature": map[string]any{"type": "number", "description": "Sampling temperature. Provider default if omitted."},
+		"max_tokens":  map[string]any{"type": "integer", "description": "Maximum tokens to generate. Provider default if omitted."},
+	}, "model", "prompt")
+}
+
+func (generateTextAction) OutputSchema() patchcord.Schema {
+	return schema(map[string]any{
+		"text":          stringProp("The generated text."),
+		"finish_reason": stringProp("Why generation stopped, e.g. \"stop\", \"length\"."),
+		"usage": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"prompt_tokens":     map[string]any{"type": "integer"},
+				"completion_tokens": map[string]any{"type": "integer"},
+				"total_tokens":      map[string]any{"type": "integer"},
+			},
+			"description": "Token usage for this call.",
+		},
+	}, "text", "finish_reason")
+}
 
 func (generateTextAction) Run(ctx context.Context, input patchcord.ActionInput, connector *patchcord.ConnectorConfig) (patchcord.ActionOutput, error) {
 	if connector == nil {
@@ -181,8 +233,16 @@ func main() {
 			ID:      "io.patchcord.example-openai",
 			Version: "1.0.0",
 		},
-		Actions:     []patchcord.Action{generateTextAction{}},
-		Connectors:  []string{"openai.connection@1"},
+		Actions: []patchcord.Action{generateTextAction{}},
+		Connectors: []patchcord.Connector{
+			{
+				Type:        "openai.connection@1",
+				Description: "An OpenAI-compatible chat completions API, with an api_key secret.",
+				ConfigSchema: schema(map[string]any{
+					"base_url": stringProp("Overrides the default OpenAI API base URL — for Azure OpenAI or a compatible proxy."),
+				}),
+			},
+		},
 		Permissions: []string{"network.outbound"},
 	}
 
