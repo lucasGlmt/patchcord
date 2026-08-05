@@ -40,6 +40,14 @@ GET /apps/{id}/  →  http.StripPrefix("/apps/{id}/", http.FileServer(http.Dir(a
 
 A build tool that emits absolute asset URLs (`/assets/index-xxxx.js`) breaks under this scheme: the browser resolves them against the origin, not against `/apps/<id>/index.html`, so every static file 404s and the app renders a blank page — `npm run dev`/`vite preview` never show this, since they serve from the domain root themselves. Vite apps must set `base: "./"` in `vite.config.ts` so emitted URLs stay relative to `index.html` (see [ADR-0058](../../../adr/0058-base-relatif-pour-les-apps-vite-servies-sous-apps-id.md)); `patchcord app new --template vite` and `apps/examples/dashboard` already do.
 
+## Directory listing
+
+```text
+GET /apps/  →  an Apache-style index page, one link per installed app's /apps/<id>/
+```
+
+Off by default: `GET /apps/` returns a plain 404, same as before this route existed. Turn it on with `apps.directory_listing.enabled: true` in `--config`'s YAML file or `PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED=true` — see [Configuration](../cli/configuration.md#serves-layered-settings). `handleAppsDirectory` (`internal/api/apps_directory.go`) lists every row `apps.List` returns (id + version — the manifest carries no display name yet) and renders them with `html/template`; unauthenticated, same as `/apps/{id}/` itself, for the same reason (see [ADR-0061](../../../adr/0061-page-de-listage-des-apps-sous-apps.md)).
+
 ## Sessions
 
 ```bash

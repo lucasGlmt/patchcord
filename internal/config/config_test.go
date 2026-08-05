@@ -41,6 +41,18 @@ func TestLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("parses apps.directory_listing.enabled", func(t *testing.T) {
+		path := writeConfigFile(t, "apps:\n  directory_listing:\n    enabled: true\n")
+
+		cfg, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if !cfg.Apps.DirectoryListing.Enabled {
+			t.Fatal("Apps.DirectoryListing.Enabled = false, want true")
+		}
+	})
+
 	t.Run("a missing file is an error", func(t *testing.T) {
 		if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
 			t.Fatal("expected an error for a missing config file, got nil")
@@ -92,6 +104,27 @@ func TestFromEnv(t *testing.T) {
 		if cfg.Listen != "" || cfg.DataDir != "" || cfg.SecretsMasterKeyFile != "" {
 			t.Fatalf("FromEnv() = %+v, want all fields empty", cfg)
 		}
+		if cfg.Apps.DirectoryListing.Enabled {
+			t.Fatal("Apps.DirectoryListing.Enabled = true, want false")
+		}
+	})
+
+	t.Run("reads PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED", func(t *testing.T) {
+		t.Setenv(envAppsDirectoryListingEnabled, "true")
+
+		cfg := FromEnv()
+		if !cfg.Apps.DirectoryListing.Enabled {
+			t.Fatal("Apps.DirectoryListing.Enabled = false, want true")
+		}
+	})
+
+	t.Run("an unparseable PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED is treated as unset", func(t *testing.T) {
+		t.Setenv(envAppsDirectoryListingEnabled, "not-a-bool")
+
+		cfg := FromEnv()
+		if cfg.Apps.DirectoryListing.Enabled {
+			t.Fatal("Apps.DirectoryListing.Enabled = true, want false")
+		}
 	})
 }
 
@@ -125,6 +158,18 @@ func TestMerge(t *testing.T) {
 			base:     Config{SecretsMasterKeyFile: "/old/key"},
 			override: Config{SecretsMasterKeyFile: "/new/key"},
 			want:     Config{SecretsMasterKeyFile: "/new/key"},
+		},
+		{
+			name:     "override's directory listing true enables it on top of base's false",
+			base:     Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: false}}},
+			override: Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: true}}},
+			want:     Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: true}}},
+		},
+		{
+			name:     "override's directory listing false never disables base's true",
+			base:     Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: true}}},
+			override: Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: false}}},
+			want:     Config{Apps: AppsConfig{DirectoryListing: DirectoryListingConfig{Enabled: true}}},
 		},
 	}
 

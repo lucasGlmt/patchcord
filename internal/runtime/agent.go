@@ -35,6 +35,10 @@ type Config struct {
 	// references simply don't resolve on this agent — see
 	// secrets.BuildStore and ADR-0040.
 	SecretsMasterKeyFile string
+	// AppsDirectoryListingEnabled turns on GET /apps/, an index page listing
+	// every installed application. Left false (the default), that route
+	// keeps returning a plain 404 — see ADR-0061.
+	AppsDirectoryListingEnabled bool
 	// ShutdownTimeout bounds how long in-flight requests are given to
 	// complete once shutdown starts. Defaults to 10s when zero.
 	ShutdownTimeout time.Duration
@@ -123,13 +127,14 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		logger: logger,
 		server: &http.Server{
 			Handler: api.NewRouter(api.Deps{
-				DB:              db,
-				Executor:        supervisor,
-				RunCtx:          runCtx,
-				Logger:          logger,
-				Sessions:        auth.NewStore(),
-				ConnectorTester: supervisor,
-				Secrets:         secretStore,
+				DB:                          db,
+				Executor:                    supervisor,
+				RunCtx:                      runCtx,
+				Logger:                      logger,
+				Sessions:                    auth.NewStore(),
+				ConnectorTester:             supervisor,
+				Secrets:                     secretStore,
+				AppsDirectoryListingEnabled: cfg.AppsDirectoryListingEnabled,
 			}),
 			// ReadHeaderTimeout bounds how long a client may take sending
 			// its request headers — standard Go hardening against a

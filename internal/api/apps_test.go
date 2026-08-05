@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -190,6 +191,80 @@ func TestHandleServeApp(t *testing.T) {
 
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+}
+
+func TestHandleAppsDirectory(t *testing.T) {
+	t.Run("disabled returns not found, matching pre-ADR-0061 behavior", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		installTestApp(t, db, "dashboard")
+		router := NewRouter(Deps{DB: db})
+
+		req := httptest.NewRequest(http.MethodGet, "/apps/", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("enabled with no apps installed lists none", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		router := NewRouter(Deps{DB: db, AppsDirectoryListingEnabled: true})
+
+		req := httptest.NewRequest(http.MethodGet, "/apps/", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("Content-Type = %q, want text/html prefix", ct)
+		}
+		if strings.Contains(rec.Body.String(), "/apps/dashboard/") {
+			t.Fatalf("body unexpectedly links to an app: %s", rec.Body.String())
+		}
+	})
+
+	t.Run("enabled with apps installed links to each one", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		installTestApp(t, db, "dashboard")
+		installTestApp(t, db, "notes")
+		router := NewRouter(Deps{DB: db, AppsDirectoryListingEnabled: true})
+
+		req := httptest.NewRequest(http.MethodGet, "/apps/", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, `href="/apps/dashboard/"`) {
+			t.Fatalf("body does not link to /apps/dashboard/: %s", body)
+		}
+		if !strings.Contains(body, `href="/apps/notes/"`) {
+			t.Fatalf("body does not link to /apps/notes/: %s", body)
+		}
+	})
+
+	t.Run("an individual app is still served, not shadowed by the new route", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		installTestApp(t, db, "dashboard")
+		router := NewRouter(Deps{DB: db, AppsDirectoryListingEnabled: true})
+
+		req := httptest.NewRequest(http.MethodGet, "/apps/dashboard/", nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		if rec.Body.String() != "<h1>dashboard</h1>" {
+			t.Fatalf("body = %q, want %q", rec.Body.String(), "<h1>dashboard</h1>")
 		}
 	})
 }

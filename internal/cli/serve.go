@@ -56,9 +56,10 @@ func resolveRuntimeConfig(cmd *cobra.Command, listenAddr, dataDir, configPath, s
 	resolved = config.Merge(resolved, flagCfg)
 
 	return runtime.Config{
-		ListenAddr:           resolved.Listen,
-		DataDir:              resolved.DataDir,
-		SecretsMasterKeyFile: resolved.SecretsMasterKeyFile,
+		ListenAddr:                  resolved.Listen,
+		DataDir:                     resolved.DataDir,
+		SecretsMasterKeyFile:        resolved.SecretsMasterKeyFile,
+		AppsDirectoryListingEnabled: resolved.Apps.DirectoryListing.Enabled,
 	}, nil
 }
 

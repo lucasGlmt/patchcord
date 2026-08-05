@@ -2,7 +2,7 @@
 
 An application is a client of the agent per the [vocabulary](../introduction.md#vocabulary): built with Vite, React, Flutter, Electron, plain HTML — anything that can call the public API — and using only that API and the [TypeScript SDK](../sdk-ts/index.md). It never receives the agent's full privileges: it declares the permissions it needs in a manifest and, at runtime, holds a session limited to exactly those (vision document, §7.6, §15.4; [ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)).
 
-`internal/apps` manages installed applications; `internal/auth` issues and validates their sessions; the agent serves an installed app's static files itself, at `/apps/<id>/` — see [Hosting & Sessions](hosting-and-sessions.md).
+`internal/apps` manages installed applications; `internal/auth` issues and validates their sessions; the agent serves an installed app's static files itself, at `/apps/<id>/`, and can optionally list every installed app at `/apps/` — see [Hosting & Sessions](hosting-and-sessions.md).
 
 ## Example applications
 

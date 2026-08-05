@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestServeCommand_InvalidListenAddressFailsFast(t *testing.T) {
@@ -88,6 +90,52 @@ func TestServeCommand_ConfigPrecedence(t *testing.T) {
 		err := cmd.Execute()
 		if err == nil || !strings.Contains(err.Error(), "load config file") {
 			t.Fatalf("error = %v, want it to mention config file loading", err)
+		}
+	})
+}
+
+func TestResolveRuntimeConfig_AppsDirectoryListingEnabled(t *testing.T) {
+	newTestCmd := func() *cobra.Command {
+		cmd := newServeCommand()
+		cmd.SetArgs([]string{})
+		return cmd
+	}
+
+	t.Run("defaults to false", func(t *testing.T) {
+		cmd := newTestCmd()
+		cfg, err := resolveRuntimeConfig(cmd, "", "", "", "")
+		if err != nil {
+			t.Fatalf("resolveRuntimeConfig() error = %v", err)
+		}
+		if cfg.AppsDirectoryListingEnabled {
+			t.Fatal("AppsDirectoryListingEnabled = true, want false")
+		}
+	})
+
+	t.Run("a config file can enable it", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(path, []byte("apps:\n  directory_listing:\n    enabled: true\n"), 0o644); err != nil {
+			t.Fatalf("write config file: %v", err)
+		}
+		cmd := newTestCmd()
+		cfg, err := resolveRuntimeConfig(cmd, "", "", path, "")
+		if err != nil {
+			t.Fatalf("resolveRuntimeConfig() error = %v", err)
+		}
+		if !cfg.AppsDirectoryListingEnabled {
+			t.Fatal("AppsDirectoryListingEnabled = false, want true")
+		}
+	})
+
+	t.Run("an environment variable can enable it", func(t *testing.T) {
+		t.Setenv("PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED", "true")
+		cmd := newTestCmd()
+		cfg, err := resolveRuntimeConfig(cmd, "", "", "", "")
+		if err != nil {
+			t.Fatalf("resolveRuntimeConfig() error = %v", err)
+		}
+		if !cfg.AppsDirectoryListingEnabled {
+			t.Fatal("AppsDirectoryListingEnabled = false, want true")
 		}
 	})
 }

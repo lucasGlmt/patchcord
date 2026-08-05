@@ -9,6 +9,7 @@
 | Listen address | `--listen` | `PATCHCORD_LISTEN` | `listen` | `127.0.0.1:7331` |
 | Data directory | `--data-dir` | `PATCHCORD_DATA_DIR` | `data_dir` | a per-user system directory ([ADR-0052](../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)) |
 | Secrets master key file | `--secrets-master-key-file` | `PATCHCORD_SECRETS_MASTER_KEY_FILE` | `secrets_master_key_file` | *(unset — `file` secret references don't resolve)* |
+| Apps directory listing | *(none)* | `PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED` | `apps.directory_listing.enabled` | `false` — `GET /apps/` returns 404 |
 
 ```yaml
 # config.yaml
@@ -31,6 +32,21 @@ patchcord serve --config ./config.yaml --listen 0.0.0.0:9001
 ```
 
 `internal/config` (`Load`, `FromEnv`, `Merge`) implements the three non-flag layers; `internal/cli/serve.go` owns the flag layer and the built-in defaults, since only it knows — via cobra's `Flags().Changed()` — whether a flag was actually typed versus left at its default.
+
+Enabling the apps directory listing:
+
+```yaml
+# config.yaml
+apps:
+  directory_listing:
+    enabled: true
+```
+
+```bash
+PATCHCORD_APPS_DIRECTORY_LISTING_ENABLED=true patchcord serve
+```
+
+Once on, `GET /apps/` lists every installed application with a link to its `/apps/<id>/` — same unauthenticated route as `/apps/{id}/` itself, since it exposes nothing an end user couldn't already reach one app at a time (see [Hosting & Sessions](../apps/hosting-and-sessions.md#directory-listing) and [ADR-0061](../../../adr/0061-page-de-listage-des-apps-sous-apps.md)). Unlike the other three settings, this one has no `--flag` yet and, being boolean, only the config file or the environment variable can turn it *on* — neither can force it back *off* once a lower-precedence source has enabled it.
 
 ## `--data-dir`
 

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Index of /apps/</title>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 2rem auto;
+    max-width: 40rem;
+    color: #1a1a1a;
+    background: #ffffff;
+  }
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 0.5rem;
+  }
+  ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  li {
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+  }
+  a {
+    color: #2563eb;
+    text-decoration: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+  .version {
+    color: #888;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85em;
+  }
+  .empty {
+    color: #888;
+    padding: 0.75rem 0;
+  }
+  footer {
+    margin-top: 1.5rem;
+    color: #999;
+    font-size: 0.8em;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #111315; color: #e6e6e6; }
+    h1 { border-color: #333; }
+    li { border-color: #2a2a2a; }
+    a { color: #6ea8fe; }
+    .version, .empty, footer { color: #8a8a8a; }
+  }
+</style>
+</head>
+<body>
+<h1>Index of /apps/</h1>
+{{if .Apps}}
+<ul>
+{{range .Apps}}
+  <li><a href="/apps/{{.ID}}/">{{.ID}}/</a><span class="version">v{{.Version}}</span></li>
+{{end}}
+</ul>
+{{else}}
+<p class="empty">No applications installed.</p>
+{{end}}
+<footer>Patchcord — served from GET /apps/</footer>
+</body>
+</html>

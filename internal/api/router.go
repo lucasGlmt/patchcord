@@ -54,6 +54,11 @@ type Deps struct {
 	// build Deps{DB: db} directly keep resolving "env" references exactly
 	// as before secrets.MultiStore existed (ADR-0040).
 	Secrets secrets.Store
+	// AppsDirectoryListingEnabled turns on GET /apps/, an Apache-style index
+	// page listing every installed application with a link to its
+	// /apps/{id}/. Defaults to false, so existing callers that build
+	// Deps{DB: db} directly keep the pre-ADR-0061 behavior: a plain 404.
+	AppsDirectoryListingEnabled bool
 }
 
 func (d Deps) secrets() secrets.Store {
@@ -78,13 +83,17 @@ func (d Deps) logger() *slog.Logger {
 }
 
 // NewRouter returns the agent's public HTTP API handler, wiring every route
-// behind withAdminAuth (ADR-0036) except three deliberate exceptions:
+// behind withAdminAuth (ADR-0036) except four deliberate exceptions:
 // GET /v1/system/health (a liveness check has to answer before any caller
 // could prove who it is), GET /v1/openapi.json (public API documentation,
-// same convention as an authenticated API's docs page), and GET /apps/{id}/
+// same convention as an authenticated API's docs page), GET /apps/{id}/
 // (serves an installed application's own static UI to whichever end user's
 // browser loads it — that end user is never expected to hold an admin
-// token). Three routes get their own dedicated wrapping instead:
+// token), and GET /apps/ (an index of the same, opt-in via
+// AppsDirectoryListingEnabled — see ADR-0061; it stays unauthenticated for
+// the same reason /apps/{id}/ does, since it exposes nothing an end user
+// couldn't already reach one /apps/{id}/ URL at a time). Three routes get
+// their own dedicated wrapping instead:
 // POST /v1/workflows/{id}/run and POST /v1/apps/{id}/sessions (see
 // withRunAuth and handleCreateAppSession's doc comment), and
 // POST /v1/webhooks/{id} (never admin-gated at all — see
@@ -103,6 +112,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /v1/webhooks/{id}", handleWebhookTrigger(deps))
 	mux.HandleFunc("GET /v1/apps", withAdminAuth(deps, handleListApps(deps)))
 	mux.HandleFunc("POST /v1/apps/{id}/sessions", withAdminAuth(deps, handleCreateAppSession(deps)))
+	mux.HandleFunc("GET /apps/", handleAppsDirectory(deps))
 	mux.HandleFunc("GET /apps/{id}/", handleServeApp(deps))
 	mux.HandleFunc("GET /v1/connectors", withAdminAuth(deps, handleListConnectors(deps)))
 	mux.HandleFunc("POST /v1/connectors", withAdminAuth(deps, handleCreateConnector(deps)))
