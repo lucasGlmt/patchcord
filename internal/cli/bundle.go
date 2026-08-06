@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -390,13 +391,9 @@ func newBundlePackCommand() *cobra.Command {
 				out = fmt.Sprintf("%s-%s%s", manifest.ID, manifest.Version, bundles.PackageExtension)
 			}
 
-			f, err := os.Create(out)
-			if err != nil {
-				return fmt.Errorf("pack bundle: %w", err)
-			}
-			defer f.Close()
-
-			if err := bundles.Pack(args[0], key, f); err != nil {
+			if err := packToFile(out, func(w io.Writer) error {
+				return bundles.Pack(args[0], key, w)
+			}); err != nil {
 				return fmt.Errorf("pack bundle: %w", err)
 			}
 

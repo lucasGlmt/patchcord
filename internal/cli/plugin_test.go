@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -531,5 +533,212 @@ func TestPluginNewCommand_CustomModulePath(t *testing.T) {
 	}
 	if !strings.Contains(string(manifest), `"id": "`+id+`"`) {
 		t.Fatalf("manifest.json = %q, want plugin id unchanged", manifest)
+	}
+}
+
+// buildGitHubReleasePackage builds a real .patchcord-plugin package (same
+// shape as TestPluginPackCommand_ThenInstall) for the GitHub-install tests
+// below, returning its bytes ready to be served as a fake release asset.
+func buildGitHubReleasePackage(t *testing.T) []byte {
+	t.Helper()
+
+	sourceDir := t.TempDir()
+	platform := runtime.GOOS + "-" + runtime.GOARCH
+	relExecutable := filepath.Join("binaries", platform, "plugin")
+
+	execPath := filepath.Join(sourceDir, relExecutable)
+	if err := os.MkdirAll(filepath.Dir(execPath), 0o755); err != nil {
+		t.Fatalf("mkdir binaries dir: %v", err)
+	}
+	body, err := os.ReadFile(examplePluginPath)
+	if err != nil {
+		t.Fatalf("read example plugin binary: %v", err)
+	}
+	if err := os.WriteFile(execPath, body, 0o755); err != nil {
+		t.Fatalf("write staged executable: %v", err)
+	}
+
+	manifest := fmt.Sprintf(`{
+		"schemaVersion": 1,
+		"kind": "plugin",
+		"id": "io.patchcord.example-text",
+		"version": "1.0.0",
+		"protocolVersion": 1,
+		"permissions": [],
+		"executables": {%q: %q}
+	}`, platform, filepath.ToSlash(relExecutable))
+	if err := os.WriteFile(filepath.Join(sourceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest.json: %v", err)
+	}
+
+	packagePath := filepath.Join(t.TempDir(), "text-1.0.0.patchcord-plugin")
+	pack := newPluginPackCommand()
+	pack.SetArgs([]string{sourceDir, "--output", packagePath})
+	pack.SetContext(context.Background())
+	if err := pack.Execute(); err != nil {
+		t.Fatalf("plugin pack error = %v", err)
+	}
+
+	pkgBytes, err := os.ReadFile(packagePath)
+	if err != nil {
+		t.Fatalf("read packaged plugin: %v", err)
+	}
+	return pkgBytes
+}
+
+// githubReleaseServer serves a fake GitHub Releases API (releases/latest
+// and releases/tags/<tagName>) plus, when assetName is non-empty, the
+// asset's download at /download/<assetName> — enough for `plugin install
+// github.com/owner/repo[@tag]` to be exercised end to end without ever
+// touching the real network. assetName == "" serves a release with no
+// assets at all, for the "no matching asset" error path.
+func githubReleaseServer(t *testing.T, tagName, assetName string, assetBytes []byte, checkAuth func(*http.Request)) *httptest.Server {
+	t.Helper()
+
+	var mux http.ServeMux
+	var server *httptest.Server
+
+	writeRelease := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "application/json")
+		if assetName == "" {
+			fmt.Fprintf(w, `{"tag_name":%q,"assets":[]}`, tagName)
+			return
+		}
+		fmt.Fprintf(w, `{"tag_name":%q,"assets":[{"name":%q,"browser_download_url":%q,"size":%d}]}`,
+			tagName, assetName, server.URL+"/download/"+assetName, len(assetBytes))
+	}
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if checkAuth != nil {
+			checkAuth(r)
+		}
+		writeRelease(w)
+	}
+	mux.HandleFunc("/repos/owner/repo/releases/latest", handler)
+	mux.HandleFunc("/repos/owner/repo/releases/tags/"+tagName, handler)
+	if assetName != "" {
+		mux.HandleFunc("/download/"+assetName, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write(assetBytes)
+		})
+	}
+
+	server = httptest.NewServer(&mux)
+	return server
+}
+
+// withGHReleaseAPIBaseURL points ghrelease's GitHub API base URL at url
+// for the duration of the calling test, restoring it afterwards. Safe
+// because this package's tests never run in parallel with each other.
+func withGHReleaseAPIBaseURL(t *testing.T, url string) {
+	t.Helper()
+	old := ghreleaseAPIBaseURL
+	ghreleaseAPIBaseURL = url
+	t.Cleanup(func() { ghreleaseAPIBaseURL = old })
+}
+
+// TestPluginInstallCommand_FromGitHubRelease_EndToEnd exercises `plugin
+// install github.com/owner/repo` against a fake GitHub Releases API,
+// proving the full path: ref parsing, release resolution, asset download,
+// and installation through the existing package pipeline.
+func TestPluginInstallCommand_FromGitHubRelease_EndToEnd(t *testing.T) {
+	pkgBytes := buildGitHubReleasePackage(t)
+	server := githubReleaseServer(t, "v1.0.0", "text-1.0.0.patchcord-plugin", pkgBytes, nil)
+	defer server.Close()
+	withGHReleaseAPIBaseURL(t, server.URL)
+
+	dataDir := t.TempDir()
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{"github.com/owner/repo", "--data-dir", dataDir})
+	install.SetContext(context.Background())
+	var out bytes.Buffer
+	install.SetOut(&out)
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+	if !strings.Contains(out.String(), "Installed io.patchcord.example-text@1.0.0") {
+		t.Fatalf("install output = %q, want it to mention the installed plugin id", out.String())
+	}
+	if !strings.Contains(out.String(), "source:      github.com/owner/repo@v1.0.0") {
+		t.Fatalf("install output = %q, want it to mention the resolved GitHub source", out.String())
+	}
+
+	inspect := newPluginInspectCommand()
+	inspect.SetArgs([]string{"io.patchcord.example-text", "--data-dir", dataDir})
+	inspect.SetContext(context.Background())
+	if err := inspect.Execute(); err != nil {
+		t.Fatalf("plugin inspect error = %v (plugin not recorded in the catalog)", err)
+	}
+}
+
+func TestPluginInstallCommand_GitHubRef_NoMatchingAsset_FailsWithClearError(t *testing.T) {
+	server := githubReleaseServer(t, "v1.0.0", "", nil, nil)
+	defer server.Close()
+	withGHReleaseAPIBaseURL(t, server.URL)
+
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{"github.com/owner/repo", "--data-dir", t.TempDir()})
+	install.SetContext(context.Background())
+	err := install.Execute()
+	if err == nil {
+		t.Fatal("expected an error for a release with no matching asset, got nil")
+	}
+	if !strings.Contains(err.Error(), ".patchcord-plugin") {
+		t.Fatalf("error = %q, want it to mention the missing asset", err.Error())
+	}
+}
+
+func TestPluginInstallCommand_GitHubRef_RepositoryNotFound_FailsWithClearError(t *testing.T) {
+	var mux http.ServeMux
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	server := httptest.NewServer(&mux)
+	defer server.Close()
+	withGHReleaseAPIBaseURL(t, server.URL)
+
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{"github.com/owner/repo", "--data-dir", t.TempDir()})
+	install.SetContext(context.Background())
+	err := install.Execute()
+	if err == nil {
+		t.Fatal("expected an error for a missing repository/release, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %q, want it to mention \"not found\"", err.Error())
+	}
+}
+
+func TestPluginInstallCommand_NeitherLocalFileNorGitHubRef_FailsWithClearError(t *testing.T) {
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{"not-a-path-or-ref", "--data-dir", t.TempDir()})
+	install.SetContext(context.Background())
+	err := install.Execute()
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not a local file") || !strings.Contains(err.Error(), "github.com") {
+		t.Fatalf("error = %q, want it to mention both a local file and a GitHub reference", err.Error())
+	}
+}
+
+func TestPluginInstallCommand_GitHubToken_ReadFromEnvWhenFlagUnset(t *testing.T) {
+	pkgBytes := buildGitHubReleasePackage(t)
+	var gotAuth string
+	server := githubReleaseServer(t, "v1.0.0", "text-1.0.0.patchcord-plugin", pkgBytes, func(r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+	})
+	defer server.Close()
+	withGHReleaseAPIBaseURL(t, server.URL)
+
+	t.Setenv("GITHUB_TOKEN", "env-token")
+
+	install := newPluginInstallCommand()
+	install.SetArgs([]string{"github.com/owner/repo", "--data-dir", t.TempDir()})
+	install.SetContext(context.Background())
+	if err := install.Execute(); err != nil {
+		t.Fatalf("plugin install error = %v", err)
+	}
+	if gotAuth != "Bearer env-token" {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer env-token")
 	}
 }

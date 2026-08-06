@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/lucasglmt/patchcord/internal/ghrelease"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/signing"
@@ -144,24 +145,108 @@ func isPackageArchive(path string) (bool, error) {
 	return prefix == gzipMagic, nil
 }
 
+// pluginInstallSource is what resolvePluginInstallSource found for one
+// `plugin install <path-or-ref>` argument.
+type pluginInstallSource struct {
+	// path is a local .patchcord-plugin/executable path ready for the
+	// existing install logic — either arg itself (a local file) or a
+	// freshly downloaded temp file (a GitHub release asset).
+	path string
+
+	// isGitHubPackage is true when path was downloaded from a GitHub
+	// Release: always a .patchcord-plugin package (ghrelease.Resolve only
+	// ever selects such an asset), so the caller must skip
+	// isPackageArchive's gzip sniff and go straight to InstallPackage.
+	isGitHubPackage bool
+
+	// source is a human-readable "github.com/owner/repo@tag" description
+	// for the success message, empty when path was a local file (nothing
+	// to report — the user already knows what they passed).
+	source string
+
+	// cleanup is always non-nil; removes any temp download directory.
+	cleanup func()
+}
+
+// ghreleaseAPIBaseURL overrides ghrelease's GitHub API base URL. Empty in
+// production, meaning the real api.github.com; set by tests only.
+var ghreleaseAPIBaseURL string
+
+// resolvePluginInstallSource returns a local path plugin install's
+// existing package/executable logic can consume for arg: arg itself, if
+// it names an existing local file; otherwise, if arg matches ghrelease's
+// github.com/<owner>/<repo>[@<tag>] syntax, the repository's resolved
+// release's single .patchcord-plugin asset, downloaded into a fresh temp
+// directory. Neither local file nor GitHub ref: a plain error naming both
+// possibilities.
+func resolvePluginInstallSource(ctx context.Context, arg, githubToken string) (pluginInstallSource, error) {
+	if _, err := os.Stat(arg); err == nil {
+		return pluginInstallSource{path: arg, cleanup: func() {}}, nil
+	}
+
+	ref, ok := ghrelease.ParseRef(arg)
+	if !ok {
+		return pluginInstallSource{}, fmt.Errorf("%q is not a local file and not a github.com/<owner>/<repo>[@<tag>] reference", arg)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "patchcord-plugin-github-*")
+	if err != nil {
+		return pluginInstallSource{}, fmt.Errorf("create download directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tmpDir) }
+
+	opts := ghrelease.Options{APIBaseURL: ghreleaseAPIBaseURL, Token: githubToken}
+
+	resolved, err := ghrelease.Resolve(ctx, ref, plugins.PackageExtension, opts)
+	if err != nil {
+		cleanup()
+		return pluginInstallSource{}, err
+	}
+
+	path, err := ghrelease.Download(ctx, resolved, tmpDir, opts)
+	if err != nil {
+		cleanup()
+		return pluginInstallSource{}, err
+	}
+
+	return pluginInstallSource{
+		path:            path,
+		isGitHubPackage: true,
+		source:          fmt.Sprintf("github.com/%s/%s@%s", ref.Owner, ref.Repo, resolved.Tag),
+		cleanup:         cleanup,
+	}, nil
+}
+
 func newPluginInstallCommand() *cobra.Command {
 	var dataDir string
 	var requireSignature bool
+	var githubToken string
 
 	cmd := &cobra.Command{
-		Use:   "install <path>",
-		Short: "Install a plugin from a local executable or a .patchcord-plugin package",
-		Long: "Installs a plugin from either:\n\n" +
+		Use:   "install <path-or-ref>",
+		Short: "Install a plugin from a local executable, a .patchcord-plugin package, or a GitHub Releases reference",
+		Long: "Installs a plugin from any of:\n\n" +
 			"  - a raw executable path, launched directly for the current platform;\n" +
 			"  - a .patchcord-plugin package produced by `plugin pack` — the\n" +
 			"    executable matching the current platform is extracted under the\n" +
 			"    agent's data directory, so the package file itself does not need\n" +
-			"    to stick around afterwards.\n\n" +
-			"The two are told apart by sniffing the file's content (gzip magic\n" +
-			"bytes), not its extension. --require-signature only applies to a\n" +
-			"package: it rejects one that is unsigned or signed by a key not yet\n" +
-			"`patchcord trust add`ed for its id, and errors immediately (nothing\n" +
-			"to verify) if path turns out to be a raw executable.",
+			"    to stick around afterwards;\n" +
+			"  - a github.com/<owner>/<repo>[@<tag>] reference: the repository's\n" +
+			"    latest release (or the release tagged <tag>, taken verbatim, no\n" +
+			"    \"v\"-prefix guessing) must have exactly one .patchcord-plugin\n" +
+			"    asset attached — produced by the plugin author's own `plugin\n" +
+			"    pack` and uploaded to the GitHub Release. patchcord never clones\n" +
+			"    or builds the repository; the downloaded asset goes through the\n" +
+			"    exact same verification as a local package. Public repositories\n" +
+			"    only. --github-token (or GITHUB_TOKEN) is optional and only\n" +
+			"    raises GitHub's unauthenticated API rate limit — it does not\n" +
+			"    enable installing from a private repository. See ADR-0067.\n\n" +
+			"A local file and a package archive are told apart by sniffing the\n" +
+			"file's content (gzip magic bytes), not its extension.\n" +
+			"--require-signature rejects a package that is unsigned or signed by a\n" +
+			"key not yet `patchcord trust add`ed for its id, whether the package\n" +
+			"came from a local path or a GitHub release; it errors immediately\n" +
+			"(nothing to verify) if path-or-ref resolves to a raw executable.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dataDir = resolveDataDir(cmd, dataDir)
@@ -171,9 +256,23 @@ func newPluginInstallCommand() *cobra.Command {
 			}
 			defer db.Close()
 
-			isPackage, err := isPackageArchive(args[0])
+			token := githubToken
+			if token == "" {
+				token = os.Getenv("GITHUB_TOKEN")
+			}
+
+			src, err := resolvePluginInstallSource(cmd.Context(), args[0], token)
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
+			}
+			defer src.cleanup()
+
+			isPackage := src.isGitHubPackage
+			if !isPackage {
+				isPackage, err = isPackageArchive(src.path)
+				if err != nil {
+					return fmt.Errorf("install plugin: %w", err)
+				}
 			}
 			if requireSignature && !isPackage {
 				return fmt.Errorf("install plugin: --require-signature was given but %q is a raw executable, not a package — nothing to verify", args[0])
@@ -184,18 +283,21 @@ func newPluginInstallCommand() *cobra.Command {
 			var entry *plugins.CatalogEntry
 			if isPackage {
 				var policy trust.PolicyResult
-				entry, policy, err = plugins.InstallPackage(cmd.Context(), db, dataDir, args[0], requireSignature)
+				entry, policy, err = plugins.InstallPackage(cmd.Context(), db, dataDir, src.path, requireSignature)
 				if err == nil {
 					defer printVerificationStatus(out, entry.PluginID, policy)
 				}
 			} else {
-				entry, err = plugins.Install(cmd.Context(), db, args[0])
+				entry, err = plugins.Install(cmd.Context(), db, src.path)
 			}
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
 			}
 
 			fmt.Fprintf(out, "Installed %s@%s\n", entry.PluginID, entry.Version)
+			if src.source != "" {
+				fmt.Fprintf(out, "  source:      %s\n", src.source)
+			}
 			fmt.Fprintf(out, "  actions:     %s\n", joinOrNone(plugins.ActionIDs(entry.Actions)))
 			fmt.Fprintf(out, "  connectors:  %s\n", joinOrNone(plugins.ConnectorTypes(entry.Connectors)))
 			fmt.Fprintf(out, "  permissions: %s\n", joinOrNone(entry.Permissions))
@@ -207,6 +309,7 @@ func newPluginInstallCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 	cmd.Flags().BoolVar(&requireSignature, "require-signature", false, "reject a package that is unsigned or signed by an untrusted key")
+	cmd.Flags().StringVar(&githubToken, "github-token", "", "GitHub token used only to raise the unauthenticated API rate limit for a github.com/<owner>/<repo> install (also read from GITHUB_TOKEN); public repositories only")
 
 	return cmd
 }
@@ -246,13 +349,9 @@ func newPluginPackCommand() *cobra.Command {
 				out = fmt.Sprintf("%s-%s%s", manifest.ID, manifest.Version, plugins.PackageExtension)
 			}
 
-			f, err := os.Create(out)
-			if err != nil {
-				return fmt.Errorf("pack plugin: %w", err)
-			}
-			defer f.Close()
-
-			if err := plugins.Pack(args[0], key, f); err != nil {
+			if err := packToFile(out, func(w io.Writer) error {
+				return plugins.Pack(args[0], key, w)
+			}); err != nil {
 				return fmt.Errorf("pack plugin: %w", err)
 			}
 

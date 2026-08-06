@@ -18,16 +18,24 @@ The scaffolded plugin is a standalone Go module: it writes `go.mod`, `main.go`, 
 
 `AGENTS.md` orients a coding agent working in the scaffolded directory: how to register this agent's [MCP server](mcp.md) to ground itself in the real plugin/action/connector catalog instead of guessing ids or schemas, a link to the full [Writing a Plugin in Go](../../plugins/writing-a-plugin-go.md) guide, the `patchcord.Action`/`patchcord.Connector` protocol basics, and the dev loop (`make build`/`make pack`/`make install-local`). Never archived by `plugin pack` — it isn't part of `manifest.json`'s declared contents.
 
-## `install <path>`
+## `install <path-or-ref>`
 
 ```bash
 patchcord plugin install bin/plugins/text
 patchcord plugin install text-1.0.0.patchcord-plugin
+patchcord plugin install github.com/lucasglmt/patchcord-imap-plugin
+patchcord plugin install github.com/lucasglmt/patchcord-imap-plugin@v1.2.0
 ```
 
-Installs a plugin from either a raw executable path, or a `.patchcord-plugin` package produced by `plugin pack`. The two are told apart by sniffing the file's content (gzip magic bytes), never by extension — see [ADR-0042](../../../../adr/0042-formats-de-package-plugin-workflow-bundle.md). For a package, the executable matching the current platform (`GOOS-GOARCH`, e.g. `darwin-arm64`) is extracted under the agent's data directory; for a raw path, the executable is used in place. Either way, the plugin is launched, the protocol handshake is performed, and it is recorded in the catalog (replacing any existing entry with the same plugin ID — this is an upsert, unlike `connector create`). Prints the negotiated actions, connectors, and permissions.
+Installs a plugin from any of:
 
-`--require-signature` rejects a package that is unsigned or signed by a key not yet trusted for its id (errors immediately if `path` turns out to be a raw executable — nothing to verify there). See [Package Signing & Trust](../package-signing.md).
+- a raw executable path, launched directly for the current platform;
+- a `.patchcord-plugin` package produced by `plugin pack` — the executable matching the current platform (`GOOS-GOARCH`, e.g. `darwin-arm64`) is extracted under the agent's data directory;
+- a `github.com/<owner>/<repo>[@<tag>]` reference — the repository's latest release (or the release tagged `<tag>` verbatim, no `v`-prefix guessing) must have exactly one `.patchcord-plugin` asset attached, produced by the plugin author's own `plugin pack` and uploaded to the GitHub Release. `patchcord` never clones or builds the repository — the downloaded asset goes through the exact same verification as a local package. Public repositories only; `--github-token` (or `GITHUB_TOKEN`) is optional and only raises GitHub's unauthenticated API rate limit (60 requests/hour/IP) — it does not enable installing from a private repository. See [ADR-0067](../../../../adr/0067-installation-greffon-depuis-release-github.md).
+
+A local file and a package archive are told apart by sniffing the file's content (gzip magic bytes), never by extension — see [ADR-0042](../../../../adr/0042-formats-de-package-plugin-workflow-bundle.md). Either way, the plugin is launched, the protocol handshake is performed, and it is recorded in the catalog (replacing any existing entry with the same plugin ID — this is an upsert, unlike `connector create`). Prints the negotiated actions, connectors, and permissions, plus the resolved `github.com/owner/repo@tag` source when installed from a GitHub release.
+
+`--require-signature` rejects a package that is unsigned or signed by a key not yet trusted for its id, whether the package came from a local path or a GitHub release (errors immediately if `path-or-ref` resolves to a raw executable — nothing to verify there). See [Package Signing & Trust](../package-signing.md).
 
 ## `pack <dir>`
 

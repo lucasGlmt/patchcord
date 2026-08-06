@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -218,13 +219,9 @@ func newAppPackCommand() *cobra.Command {
 				out = fmt.Sprintf("%s-%s%s", manifest.ID, manifest.Version, apps.PackageExtension)
 			}
 
-			f, err := os.Create(out)
-			if err != nil {
-				return fmt.Errorf("pack app: %w", err)
-			}
-			defer f.Close()
-
-			if err := apps.Pack(args[0], key, f); err != nil {
+			if err := packToFile(out, func(w io.Writer) error {
+				return apps.Pack(args[0], key, w)
+			}); err != nil {
 				return fmt.Errorf("pack app: %w", err)
 			}
 
