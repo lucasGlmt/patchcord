@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"time"
 
@@ -155,6 +156,20 @@ func List(ctx context.Context, db *sql.DB) ([]CatalogEntry, error) {
 	for rows.Next() {
 		entry, err := scanCatalogEntry(rows)
 		if err != nil {
+			// A row whose stored connectors/actions/permissions can't
+			// decode into the current shape is almost always one plugin
+			// installed under an older protocol version (ADR-0062 changed
+			// the wire shape without a SQL migration for already-installed
+			// entries — see docs/adr/0062). Skipping it, loudly, keeps
+			// every other installed plugin usable instead of one stale
+			// entry taking down plugin list/KnownActions/FindAction for
+			// the whole catalog; the plugin id is named so it's
+			// actionable rather than a bare Go decode error.
+			var decodeErr *catalogDecodeError
+			if errors.As(err, &decodeErr) {
+				slog.Default().Warn("skipping plugin with an unreadable catalog entry", slog.String("error", decodeErr.Error()))
+				continue
+			}
 			return nil, err
 		}
 		entries = append(entries, entry)
@@ -294,6 +309,30 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+// catalogDecodeError names the plugin, and the column, behind a catalog
+// row whose stored JSON can't decode into the current Go shape — as
+// opposed to a plain database/scan failure, which stays an untyped error.
+// List uses errors.As to recognize this case and skip the row instead of
+// failing the whole catalog (see the comment at its call site); Get and
+// FindAction/FindConnector let it surface as-is, since %w keeps the
+// underlying json error available to callers that want it.
+type catalogDecodeError struct {
+	pluginID string
+	field    string
+	err      error
+}
+
+func (e *catalogDecodeError) Error() string {
+	return fmt.Sprintf(
+		"plugin %q has a %s catalog entry this agent build can't decode, most likely because it was installed under an older plugin protocol version — reinstall it (patchcord plugin uninstall %s, then patchcord plugin install <path> from a build matching the current protocol): %v",
+		e.pluginID, e.field, e.pluginID, e.err,
+	)
+}
+
+func (e *catalogDecodeError) Unwrap() error {
+	return e.err
+}
+
 func scanCatalogEntry(row rowScanner) (CatalogEntry, error) {
 	var (
 		entry                            CatalogEntry
@@ -314,13 +353,13 @@ func scanCatalogEntry(row rowScanner) (CatalogEntry, error) {
 	}
 
 	if err := json.Unmarshal([]byte(connectors), &entry.Connectors); err != nil {
-		return CatalogEntry{}, fmt.Errorf("decode connectors: %w", err)
+		return CatalogEntry{}, &catalogDecodeError{pluginID: entry.PluginID, field: "connectors", err: err}
 	}
 	if err := json.Unmarshal([]byte(actions), &entry.Actions); err != nil {
-		return CatalogEntry{}, fmt.Errorf("decode actions: %w", err)
+		return CatalogEntry{}, &catalogDecodeError{pluginID: entry.PluginID, field: "actions", err: err}
 	}
 	if err := json.Unmarshal([]byte(permissions), &entry.Permissions); err != nil {
-		return CatalogEntry{}, fmt.Errorf("decode permissions: %w", err)
+		return CatalogEntry{}, &catalogDecodeError{pluginID: entry.PluginID, field: "permissions", err: err}
 	}
 
 	return entry, nil

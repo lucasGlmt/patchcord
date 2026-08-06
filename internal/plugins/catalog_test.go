@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/lucasglmt/patchcord/internal/persistence"
@@ -216,6 +217,70 @@ func TestList_OrdersByPluginID(t *testing.T) {
 	}
 	if len(entries) != 2 || entries[0].PluginID != "io.patchcord.aaa" || entries[1].PluginID != "io.patchcord.zzz" {
 		t.Fatalf("entries = %v, want [aaa, zzz] in order", entries)
+	}
+}
+
+// TestList_SkipsAPluginWithAnUndecodableCatalogEntry reproduces the bug
+// that surfaced in production: a plugin seeded before ADR-0062 (protocol
+// v1, actions stored as a bare JSON string array) sits in the same catalog
+// as plugins installed after it (protocol v2, actions stored as full
+// descriptor objects). List must keep returning the still-readable
+// entries instead of one legacy row failing the whole call — every caller
+// downstream of List (plugin list, KnownActions, KnownConnectorTypes,
+// FindAction, FindConnector) would otherwise break for every installed
+// plugin because of one unrelated stale entry.
+func TestList_SkipsAPluginWithAnUndecodableCatalogEntry(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if err := upsertCatalogEntry(context.Background(), db, &CatalogEntry{
+		PluginID: "io.patchcord.readable", Version: "1.0.0", ExecutablePath: "/bin/readable", ProtocolVersion: 2,
+		Actions: actionDescriptors("readable.action@1"),
+	}); err != nil {
+		t.Fatalf("seed readable: %v", err)
+	}
+
+	// Bypasses upsertCatalogEntry deliberately: it always marshals from an
+	// ActionDescriptor slice, which can never produce the bare-string
+	// shape a real protocol-v1 catalog entry has on disk.
+	if _, err := db.ExecContext(context.Background(), `
+		INSERT INTO plugins (plugin_id, version, executable_path, protocol_version, connectors, actions, permissions)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, "io.patchcord.legacy", "1.0.0", "/bin/legacy", 1, "[]", `["legacy.action@1"]`, "[]"); err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+
+	entries, err := List(context.Background(), db)
+	if err != nil {
+		t.Fatalf("List() error = %v, want nil (the legacy entry should be skipped, not fail the call)", err)
+	}
+	if len(entries) != 1 || entries[0].PluginID != "io.patchcord.readable" {
+		t.Fatalf("entries = %v, want only io.patchcord.readable", entries)
+	}
+}
+
+// TestGet_ReturnsAnActionableErrorForAnUndecodableCatalogEntry checks that
+// asking for one specific stale plugin by id — as opposed to List, which
+// skips it — still fails, but with an error that names the plugin and
+// suggests reinstalling it, rather than a bare encoding/json type error.
+func TestGet_ReturnsAnActionableErrorForAnUndecodableCatalogEntry(t *testing.T) {
+	db := openCatalogTestDB(t)
+
+	if _, err := db.ExecContext(context.Background(), `
+		INSERT INTO plugins (plugin_id, version, executable_path, protocol_version, connectors, actions, permissions)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, "io.patchcord.legacy", "1.0.0", "/bin/legacy", 1, "[]", `["legacy.action@1"]`, "[]"); err != nil {
+		t.Fatalf("seed legacy: %v", err)
+	}
+
+	_, err := Get(context.Background(), db, "io.patchcord.legacy")
+	if err == nil {
+		t.Fatal("Get() error = nil, want a decode error naming the plugin")
+	}
+	if !strings.Contains(err.Error(), "io.patchcord.legacy") {
+		t.Fatalf("Get() error = %v, want it to name the plugin id", err)
+	}
+	if !strings.Contains(err.Error(), "plugin uninstall") {
+		t.Fatalf("Get() error = %v, want it to suggest reinstalling", err)
 	}
 }
 
