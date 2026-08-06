@@ -20,6 +20,14 @@ import (
 	"github.com/lucasglmt/patchcord/internal/version"
 )
 
+// docsURL is the published mdBook documentation (docs/book) — the *how to
+// use* companion to the schemas these tools return. Surfaced in
+// ServerOptions.Instructions rather than as an MCP resource: it is a
+// static external pointer, not content this server fetches or serves
+// itself (ADR-0007 — the cloud, including this URL, is never required for
+// any of these tools to work).
+const docsURL = "https://lucasglmt.github.io/patchcord/"
+
 // New builds an MCP server exposing every tool this package defines,
 // unstarted — the caller runs it over whatever transport it chooses
 // (stdio, for patchcord mcp serve).
@@ -27,7 +35,9 @@ func New(db *sql.DB) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "patchcord",
 		Version: version.Version,
-	}, nil)
+	}, &mcp.ServerOptions{
+		Instructions: "Query the installed plugin catalog (list_plugins, list_actions, describe_action, list_connectors, describe_connector) and validate workflow drafts before writing them to disk. Full documentation: " + docsURL,
+	})
 
 	registerPluginTools(server, db)
 	registerWorkflowTools(server, db)

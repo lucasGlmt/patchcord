@@ -49,6 +49,8 @@ or, in a project's `.mcp.json`:
 
 `scaffold_app`/`scaffold_bundle` are the only two tools with a side effect (they write files) — every other tool is read-only. Both refuse to write into a directory that already has files in it, the same guard `app new`/`bundle new` already enforce.
 
+The server's `Instructions` (surfaced to the client at initialization, not a tool) point to the published documentation: <https://lucasglmt.github.io/patchcord/>.
+
 ### Manual testing
 
 [`@modelcontextprotocol/inspector`](https://github.com/modelcontextprotocol/inspector) is the standard way to exercise a stdio MCP server by hand — it launches the command as a subprocess and gives you a browser UI to list tools, fill in arguments, and inspect raw JSON-RPC traffic:
