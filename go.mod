@@ -8,6 +8,8 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/lucasglmt/patchcord/api/plugin v0.0.0-00010101000000-000000000000
+	github.com/lucasglmt/patchcord/sdk/go-plugin v0.0.0-00010101000000-000000000000
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
@@ -18,6 +20,17 @@ require (
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.55.0
+)
+
+// api/plugin and sdk/go-plugin are nested modules of this monorepo (see
+// docs/adr/0066); they have no published tag yet at this module version, so
+// they are resolved from the local checkout instead of the module proxy.
+// This replace only affects builds of this module itself — it never
+// applies to downstream consumers that import api/plugin or sdk/go-plugin
+// directly.
+replace (
+	github.com/lucasglmt/patchcord/api/plugin => ./api/plugin
+	github.com/lucasglmt/patchcord/sdk/go-plugin => ./sdk/go-plugin
 )
 
 require (

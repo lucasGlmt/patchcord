@@ -54,9 +54,11 @@ func TestScaffold_WritesAValidPluginDir(t *testing.T) {
 
 // TestScaffold_GeneratedSourceCompiles is the real proof: the scaffolded
 // main.go must actually build against the real SDK as a standalone Go
-// module, not just parse as syntactically plausible Go. The temporary
-// replace directive points at this checkout so the test does not depend on
-// the published module being available.
+// module, not just parse as syntactically plausible Go. sdk/go-plugin and
+// api/plugin are nested modules of this monorepo (see docs/adr/0066)
+// without a published tag yet, so temporary replace directives point at
+// this checkout instead — the test does not depend on the published
+// modules being available.
 func TestScaffold_GeneratedSourceCompiles(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-plugin")
 
@@ -69,7 +71,10 @@ func TestScaffold_GeneratedSourceCompiles(t *testing.T) {
 		t.Fatalf("resolve repo root: %v", err)
 	}
 
-	edit := exec.Command("go", "mod", "edit", "-replace", "github.com/lucasglmt/patchcord="+repoRoot)
+	edit := exec.Command("go", "mod", "edit",
+		"-replace", "github.com/lucasglmt/patchcord/sdk/go-plugin="+filepath.Join(repoRoot, "sdk", "go-plugin"),
+		"-replace", "github.com/lucasglmt/patchcord/api/plugin="+filepath.Join(repoRoot, "api", "plugin"),
+	)
 	edit.Dir = dir
 	if out, err := edit.CombinedOutput(); err != nil {
 		t.Fatalf("go mod edit error = %v\n%s", err, out)

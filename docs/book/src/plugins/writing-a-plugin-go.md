@@ -126,6 +126,14 @@ patchcord plugin inspect io.patchcord.example-text
 
 `plugin pack` archives the directory using `manifest.json`; `plugin install` extracts the matching executable, launches it, performs the handshake, and records it in the catalog. It takes effect the next time `patchcord serve` (or `workflow run` / `connector test`) starts — see [CLI → plugin](../cli/commands/plugin.md).
 
+`sdk/go-plugin` and `api/plugin` are independently versioned nested Go modules of the `patchcord_core` repository (ADR-0066), tagged separately from the core (`sdk/go-plugin/vX.Y.Z`, `api/plugin/vX.Y.Z`) — `go mod tidy` in your plugin only pulls in these two modules and their own dependencies, never the whole agent. Until their first tagged release, resolve them against a local checkout instead:
+
+```bash
+go mod edit -replace github.com/lucasglmt/patchcord/sdk/go-plugin=/path/to/patchcord_core/sdk/go-plugin
+go mod edit -replace github.com/lucasglmt/patchcord/api/plugin=/path/to/patchcord_core/api/plugin
+go mod tidy
+```
+
 ## Reference
 
 `plugins/examples/text/main.go` shows a plugin contributing five actions from one process, plus a demo connector type used only to validate binding end to end. `plugins/examples/postgresql/main.go` shows a real connector-consuming plugin implementing `ConnectorTester`.

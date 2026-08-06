@@ -95,10 +95,14 @@ This plugin imports only the public Go SDK:
 
 	github.com/lucasglmt/patchcord/sdk/go-plugin
 
-If you are testing against a local Patchcord checkout instead of a released
-module version, add a temporary replace directive:
+sdk/go-plugin and the plugin protocol it wraps (github.com/lucasglmt/patchcord/api/plugin)
+are independently versioned nested modules of the Patchcord monorepo — see
+docs/adr/0066 in that repo. If you are testing against a local Patchcord
+checkout instead of released module versions, add temporary replace
+directives for both:
 
-	go mod edit -replace github.com/lucasglmt/patchcord=/path/to/patchcord
+	go mod edit -replace github.com/lucasglmt/patchcord/sdk/go-plugin=/path/to/patchcord/sdk/go-plugin
+	go mod edit -replace github.com/lucasglmt/patchcord/api/plugin=/path/to/patchcord/api/plugin
 `
 
 const scaffoldMakefileTemplate = `.PHONY: deps build pack install-local

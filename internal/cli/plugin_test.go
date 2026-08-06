@@ -430,8 +430,9 @@ func TestPluginInstallCommand_SigningAndTrustLifecycle(t *testing.T) {
 // TestPluginNewCommand_ThenPackThenInstall exercises `plugin new` through
 // to a real install, exactly as a user would: scaffold, go build, pack,
 // install, inspect. The scaffold is a standalone Go module, so the test
-// builds it from t.TempDir() and uses a temporary replace directive to
-// point the public SDK import at this checkout.
+// builds it from t.TempDir() and uses temporary replace directives to
+// point the public SDK and protocol imports at this checkout's nested
+// modules (sdk/go-plugin, api/plugin — see docs/adr/0066).
 func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
 	id := "io.patchcord.scaffold-test"
 	dir := filepath.Join(t.TempDir(), "scaffold-test")
@@ -451,7 +452,10 @@ func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve repo root: %v", err)
 	}
-	edit := exec.Command("go", "mod", "edit", "-replace", "github.com/lucasglmt/patchcord="+repoRoot)
+	edit := exec.Command("go", "mod", "edit",
+		"-replace", "github.com/lucasglmt/patchcord/sdk/go-plugin="+filepath.Join(repoRoot, "sdk", "go-plugin"),
+		"-replace", "github.com/lucasglmt/patchcord/api/plugin="+filepath.Join(repoRoot, "api", "plugin"),
+	)
 	edit.Dir = dir
 	if out, err := edit.CombinedOutput(); err != nil {
 		t.Fatalf("go mod edit error = %v\n%s", err, out)
