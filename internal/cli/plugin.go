@@ -261,7 +261,12 @@ func newPluginInstallCommand() *cobra.Command {
 				token = os.Getenv("GITHUB_TOKEN")
 			}
 
+			out := cmd.OutOrStdout()
+			sp := newSpinner(out)
+
+			sp.start("Resolving plugin source…")
 			src, err := resolvePluginInstallSource(cmd.Context(), args[0], token)
+			sp.stop()
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
 			}
@@ -278,8 +283,7 @@ func newPluginInstallCommand() *cobra.Command {
 				return fmt.Errorf("install plugin: --require-signature was given but %q is a raw executable, not a package — nothing to verify", args[0])
 			}
 
-			out := cmd.OutOrStdout()
-
+			sp.start("Installing plugin…")
 			var entry *plugins.CatalogEntry
 			if isPackage {
 				var policy trust.PolicyResult
@@ -290,6 +294,7 @@ func newPluginInstallCommand() *cobra.Command {
 			} else {
 				entry, err = plugins.Install(cmd.Context(), db, src.path)
 			}
+			sp.stop()
 			if err != nil {
 				return fmt.Errorf("install plugin: %w", err)
 			}
