@@ -50,7 +50,8 @@ Register this agent's MCP server rather than hallucinating action ids or
 field names:
 
 ` + "```bash" + `
-claude mcp add patchcord -- patchcord mcp serve
+claude mcp add patchcord -- patchcord mcp serve   # Claude Code
+codex mcp add patchcord -- patchcord mcp serve    # Codex
 ` + "```" + `
 
 Then use ` + "`list_actions`" + `/` + "`describe_action`" + `/` + "`list_connectors`" + `/` + "`describe_connector`" + ` to

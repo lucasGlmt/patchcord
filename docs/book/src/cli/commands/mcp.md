@@ -32,6 +32,20 @@ or, in a project's `.mcp.json`:
 }
 ```
 
+### Registering with Codex
+
+```bash
+codex mcp add patchcord -- patchcord mcp serve --data-dir /path/to/data
+```
+
+or, in `~/.codex/config.toml` (or a trusted project's `.codex/config.toml`):
+
+```toml
+[mcp_servers.patchcord]
+command = "patchcord"
+args = ["mcp", "serve", "--data-dir", "/path/to/data"]
+```
+
 ### Tools
 
 | Tool | Purpose |

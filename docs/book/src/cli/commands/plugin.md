@@ -14,7 +14,9 @@ patchcord plugin new io.patchcord.example-text --module github.com/acme/example-
 
 Scaffolds a minimal Go plugin into `-o/--output` (default: the id's last `.`-separated segment): `main.go` with one example action, and a `manifest.json` already declaring an executable for the current platform — enough to `go build` then `plugin pack` without hand-editing the manifest. See its generated `README.md` for the exact next commands. Fails if the target directory already exists and is not empty — `new` never overwrites.
 
-The scaffolded plugin is a standalone Go module: it writes `go.mod`, `main.go`, `manifest.json`, `README.md`, a minimal `Makefile`, and `.gitignore`. By default the Go module path is the plugin id; pass `--module github.com/acme/my-plugin` when the code will live under a different module path. The generated plugin imports only the public Go SDK, so the directory can be committed as the root of its own git repository. See [ADR-0065](../../../../adr/0065-scaffold-greffon-go-autonome.md).
+The scaffolded plugin is a standalone Go module: it writes `go.mod`, `main.go`, `manifest.json`, `README.md`, a minimal `Makefile`, `.gitignore`, and `AGENTS.md`. By default the Go module path is the plugin id; pass `--module github.com/acme/my-plugin` when the code will live under a different module path. The generated plugin imports only the public Go SDK, so the directory can be committed as the root of its own git repository. See [ADR-0065](../../../../adr/0065-scaffold-greffon-go-autonome.md).
+
+`AGENTS.md` orients a coding agent working in the scaffolded directory: how to register this agent's [MCP server](mcp.md) to ground itself in the real plugin/action/connector catalog instead of guessing ids or schemas, a link to the full [Writing a Plugin in Go](../../plugins/writing-a-plugin-go.md) guide, the `patchcord.Action`/`patchcord.Connector` protocol basics, and the dev loop (`make build`/`make pack`/`make install-local`). Never archived by `plugin pack` — it isn't part of `manifest.json`'s declared contents.
 
 ## `install <path>`
 

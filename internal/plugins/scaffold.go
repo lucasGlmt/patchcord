@@ -134,6 +134,77 @@ const scaffoldGitignore = `binaries/
 *.patchcord-plugin
 `
 
+// scaffoldAgentsMD is written at dir's root, alongside go.mod — not part of
+// the plugin package itself (`plugin pack` only archives what manifest.json
+// declares, so it's never distributed), but the first thing a coding agent
+// working in this directory should read. AGENTS.md, not CLAUDE.md — same
+// choice as apps.Scaffold/bundles.Scaffold, see apps.scaffoldAgentsMD's doc
+// comment for why (emerging cross-tool convention, avoids two files with
+// the same content to keep in sync).
+const scaffoldAgentsMD = `# Agent instructions — Patchcord plugin
+
+This directory is a standalone Go module scaffolded by ` + "`patchcord plugin new`" + `:
+a Patchcord plugin, an independent process the agent supervises and talks
+to over the plugin protocol — never linked into the core. It imports only
+` + "`github.com/lucasglmt/patchcord/sdk/go-plugin`" + ` and the public protocol it
+wraps, never an ` + "`internal/`" + ` package (non-negotiable #4, ` + "`CLAUDE.md`" + `
+section 1).
+
+## Ground yourself in the real catalog and protocol, don't guess
+
+Register this agent's MCP server rather than hallucinating action ids,
+connector types, or schema shapes already in use elsewhere:
+
+` + "```bash" + `
+claude mcp add patchcord -- patchcord mcp serve   # Claude Code
+codex mcp add patchcord -- patchcord mcp serve    # Codex
+` + "```" + `
+
+Then use ` + "`list_plugins`" + `/` + "`list_actions`" + `/` + "`describe_action`" + `/` + "`list_connectors`" + `/
+` + "`describe_connector`" + ` to see what's already installed before picking this
+plugin's action ids and connector types — avoid colliding with an existing
+id, and match the conventions already in use (e.g. ` + "`<domain>.<verb>@<version>`" + `).
+Once this plugin is installed locally (see the dev loop below),
+` + "`describe_action`" + ` also confirms the schema it actually negotiated matches
+what ` + "`InputSchema()`" + `/` + "`OutputSchema()`" + ` declare. See
+[MCP command reference](https://github.com/lucasglmt/patchcord/blob/main/docs/book/src/cli/commands/mcp.md).
+
+Full plugin-authoring guide:
+[Writing a Plugin in Go](https://github.com/lucasglmt/patchcord/blob/main/docs/book/src/plugins/writing-a-plugin-go.md)
+(all docs: https://lucasglmt.github.io/patchcord/plugins/).
+
+## Protocol basics
+
+Replace ` + "`exampleAction`" + ` in ` + "`main.go`" + ` with your own action(s). Each action
+implements ` + "`patchcord.Action`" + `: ` + "`ID()`" + `, ` + "`Description()`" + `,
+` + "`InputSchema()`" + `, ` + "`OutputSchema()`" + ` and ` + "`Run(ctx, input, connector)`" + ` — the first
+three are mandatory, not optional
+([ADR-0062](https://github.com/lucasglmt/patchcord/blob/main/docs/adr/0062-descripteurs-schema-actions-et-connecteurs.md)).
+If an action needs a bound connector (e.g. a database connection), declare
+a ` + "`patchcord.Connector`" + ` type on ` + "`Plugin.Connectors`" + ` with a description and a
+JSON Schema for its non-secret configuration only — a secret never appears
+in a schema
+([ADR-0009](https://github.com/lucasglmt/patchcord/blob/main/docs/adr/0009-secrets-jamais-dans-workflows.md)).
+Implement ` + "`ConnectorTester`" + ` and set ` + "`Plugin.Tester`" + ` to support
+` + "`patchcord connector test`" + `; leaving it unset is fine, it just reports
+` + "`Unimplemented`" + `.
+
+## Dev loop
+
+` + "```bash" + `
+make build          # go build into binaries/<platform>/plugin
+make pack           # patchcord plugin pack . -o <id>-<version>.patchcord-plugin
+make install-local  # pack, then patchcord plugin install the result
+patchcord plugin inspect <id>
+` + "```" + `
+
+manifest.json only declares an executable for the platform this was
+scaffolded on — add more entries to its ` + "`executables`" + ` map when
+cross-compiling for others. A change to the installed catalog takes effect
+the next time ` + "`patchcord serve`" + ` (or ` + "`workflow run`" + `/` + "`connector test`" + `) starts,
+not immediately.
+`
+
 // Scaffold writes a minimal standalone Go plugin module using id as both
 // the plugin id and Go module path. See ScaffoldWithModule for details.
 func Scaffold(dir, id, version string) error {
@@ -198,6 +269,10 @@ func ScaffoldWithModule(dir, id, version, modulePath string) error {
 
 	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(scaffoldGitignore), 0o644); err != nil {
 		return fmt.Errorf("write .gitignore: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(scaffoldAgentsMD), 0o644); err != nil {
+		return fmt.Errorf("write AGENTS.md: %w", err)
 	}
 
 	return nil

@@ -28,6 +28,9 @@ func TestScaffold_WritesAValidPluginDir(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); err != nil {
 		t.Fatalf(".gitignore missing: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(dir, "AGENTS.md")); err != nil {
+		t.Fatalf("AGENTS.md missing: %v", err)
+	}
 	goMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 	if err != nil {
 		t.Fatalf("go.mod missing: %v", err)
