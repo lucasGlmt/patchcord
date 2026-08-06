@@ -2,7 +2,7 @@
 
 This walks through building a plugin with `sdk/go-plugin`, the official Go SDK. A plugin built this way depends only on this SDK and the public protocol (`api/plugin/v1`) — never on any `internal/` package of the agent (non-negotiable #4, `CLAUDE.md` section 1).
 
-`patchcord plugin new <id>` (see [`patchcord plugin`](../cli/commands/plugin.md)) scaffolds the boilerplate below for you — a `main.go` with one example action and a `manifest.json` ready for `plugin pack`. This page walks through what it generates and why, useful whether you use the scaffold or write it by hand.
+`patchcord plugin new <id>` (see [`patchcord plugin`](../cli/commands/plugin.md)) scaffolds the boilerplate below for you as a standalone Go module — `go.mod`, `main.go` with one example action, `manifest.json`, `README.md`, `Makefile`, and `.gitignore`. By default the Go module path is the plugin id; use `--module` when the plugin will live under a different git import path. This page walks through what it generates and why, useful whether you use the scaffold or write it by hand.
 
 ## 1. Implement one or more actions
 
@@ -115,12 +115,16 @@ Never include a secret value in the returned error's message — it becomes the 
 ## 5. Build and install it
 
 ```bash
-go build -o bin/plugins/text ./plugins/examples/text   # or your own module path
-patchcord plugin install bin/plugins/text
+patchcord plugin new io.patchcord.example-text --module github.com/acme/example-text
+cd example-text
+go mod tidy
+go build -o binaries/$(go env GOOS)-$(go env GOARCH)/plugin .
+patchcord plugin pack .
+patchcord plugin install io.patchcord.example-text-0.1.0.patchcord-plugin
 patchcord plugin inspect io.patchcord.example-text
 ```
 
-`plugin install` launches the binary, performs the handshake, and records it in the catalog. It takes effect the next time `patchcord serve` (or `workflow run` / `connector test`) starts — see [CLI → plugin](../cli/commands/plugin.md).
+`plugin pack` archives the directory using `manifest.json`; `plugin install` extracts the matching executable, launches it, performs the handshake, and records it in the catalog. It takes effect the next time `patchcord serve` (or `workflow run` / `connector test`) starts — see [CLI → plugin](../cli/commands/plugin.md).
 
 ## Reference
 

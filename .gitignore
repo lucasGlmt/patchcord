@@ -46,3 +46,6 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# OMX
+.omx/

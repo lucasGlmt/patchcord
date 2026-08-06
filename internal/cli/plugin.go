@@ -78,15 +78,17 @@ func newPluginCommand() *cobra.Command {
 func newPluginNewCommand() *cobra.Command {
 	var output string
 	var version string
+	var modulePath string
 
 	cmd := &cobra.Command{
 		Use:   "new <id>",
 		Short: "Scaffold a new plugin",
-		Long: "Writes a minimal Go plugin (main.go with one example action) and a\n" +
-			"manifest.json declaring an executable for the current platform, into\n" +
-			"--output — enough to `go build` then `plugin pack` without\n" +
-			"hand-editing the manifest. Fails if the target directory already\n" +
-			"exists and is not empty.",
+		Long: "Writes a standalone Go plugin module (go.mod, main.go with one\n" +
+			"example action, manifest.json, README.md, Makefile, .gitignore) into\n" +
+			"--output. The manifest declares an executable for the current\n" +
+			"platform — enough to `go build` then `plugin pack` without\n" +
+			"hand-editing it. Fails if the target directory already exists and is\n" +
+			"not empty.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id := args[0]
@@ -94,8 +96,11 @@ func newPluginNewCommand() *cobra.Command {
 			if dir == "" {
 				dir = scaffoldDirName(id)
 			}
+			if modulePath == "" {
+				modulePath = id
+			}
 
-			if err := plugins.Scaffold(dir, id, version); err != nil {
+			if err := plugins.ScaffoldWithModule(dir, id, version, modulePath); err != nil {
 				return fmt.Errorf("plugin new: %w", err)
 			}
 
@@ -107,6 +112,7 @@ func newPluginNewCommand() *cobra.Command {
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output directory (default: the id's last \".\"-separated segment)")
 	cmd.Flags().StringVar(&version, "version", "0.1.0", "version to scaffold")
+	cmd.Flags().StringVar(&modulePath, "module", "", "Go module path to write in go.mod (default: the plugin id)")
 
 	return cmd
 }

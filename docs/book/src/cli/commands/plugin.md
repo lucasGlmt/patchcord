@@ -9,11 +9,12 @@ Five reference plugins — `text`, `json`, `encoding`, `http`, `time` — are em
 ```bash
 patchcord plugin new io.patchcord.example-text
 patchcord plugin new io.patchcord.example-text -o my-plugin --version 1.0.0
+patchcord plugin new io.patchcord.example-text --module github.com/acme/example-text
 ```
 
 Scaffolds a minimal Go plugin into `-o/--output` (default: the id's last `.`-separated segment): `main.go` with one example action, and a `manifest.json` already declaring an executable for the current platform — enough to `go build` then `plugin pack` without hand-editing the manifest. See its generated `README.md` for the exact next commands. Fails if the target directory already exists and is not empty — `new` never overwrites.
 
-The scaffolded plugin has no `go.mod` of its own: it's meant to live inside this repository (like `plugins/examples/*`), not as a standalone module, consistent with the monorepo phase (ADR-0006).
+The scaffolded plugin is a standalone Go module: it writes `go.mod`, `main.go`, `manifest.json`, `README.md`, a minimal `Makefile`, and `.gitignore`. By default the Go module path is the plugin id; pass `--module github.com/acme/my-plugin` when the code will live under a different module path. The generated plugin imports only the public Go SDK, so the directory can be committed as the root of its own git repository. See [ADR-0065](../../../../adr/0065-scaffold-greffon-go-autonome.md).
 
 ## `install <path>`
 

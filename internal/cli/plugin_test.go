@@ -58,7 +58,7 @@ func TestMain(m *testing.M) {
 func TestNewRootCommand_HasPluginSubcommands(t *testing.T) {
 	root := NewRootCommand()
 
-	for _, name := range []string{"install", "pack", "list", "inspect", "uninstall"} {
+	for _, name := range []string{"new", "install", "pack", "list", "inspect", "uninstall"} {
 		t.Run(name, func(t *testing.T) {
 			cmd, _, err := root.Find([]string{"plugin", name})
 			if err != nil {
@@ -429,21 +429,12 @@ func TestPluginInstallCommand_SigningAndTrustLifecycle(t *testing.T) {
 
 // TestPluginNewCommand_ThenPackThenInstall exercises `plugin new` through
 // to a real install, exactly as a user would: scaffold, go build, pack,
-// install, inspect. It must run from a directory inside the repo (not
-// t.TempDir(), which lives under the OS temp dir) because a scaffolded
-// plugin has no go.mod of its own and relies on the repo's root module —
-// see internal/plugins/scaffold_test.go for the same constraint.
+// install, inspect. The scaffold is a standalone Go module, so the test
+// builds it from t.TempDir() and uses a temporary replace directive to
+// point the public SDK import at this checkout.
 func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
-	dir, err := os.MkdirTemp(".", "plugin-new-test-*")
-	if err != nil {
-		t.Fatalf("create scaffold dir inside the repo: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	if err := os.Remove(dir); err != nil { // `plugin new` expects to create it
-		t.Fatalf("remove placeholder dir: %v", err)
-	}
-
 	id := "io.patchcord.scaffold-test"
+	dir := filepath.Join(t.TempDir(), "scaffold-test")
 	newCmd := newPluginNewCommand()
 	newCmd.SetArgs([]string{id, "--output", dir})
 	newCmd.SetContext(context.Background())
@@ -454,6 +445,21 @@ func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
 	}
 	if !strings.Contains(newOut.String(), id) {
 		t.Fatalf("new output = %q, want it to mention %q", newOut.String(), id)
+	}
+
+	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	edit := exec.Command("go", "mod", "edit", "-replace", "github.com/lucasglmt/patchcord="+repoRoot)
+	edit.Dir = dir
+	if out, err := edit.CombinedOutput(); err != nil {
+		t.Fatalf("go mod edit error = %v\n%s", err, out)
+	}
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = dir
+	if out, err := tidy.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy error = %v\n%s", err, out)
 	}
 
 	platform := runtime.GOOS + "-" + runtime.GOARCH
@@ -493,5 +499,33 @@ func TestPluginNewCommand_ThenPackThenInstall(t *testing.T) {
 	}
 	if !strings.Contains(inspectOut.String(), "example.echo@1") {
 		t.Fatalf("inspect output = %q, want it to mention the scaffolded action", inspectOut.String())
+	}
+}
+
+func TestPluginNewCommand_CustomModulePath(t *testing.T) {
+	id := "io.patchcord.scaffold-module-test"
+	dir := filepath.Join(t.TempDir(), "scaffold-module-test")
+
+	cmd := newPluginNewCommand()
+	cmd.SetArgs([]string{id, "--output", dir, "--module", "github.com/acme/scaffold-module-test"})
+	cmd.SetContext(context.Background())
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("plugin new error = %v", err)
+	}
+
+	goMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+	if !strings.Contains(string(goMod), "module github.com/acme/scaffold-module-test") {
+		t.Fatalf("go.mod = %q, want custom module path", goMod)
+	}
+
+	manifest, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatalf("read manifest.json: %v", err)
+	}
+	if !strings.Contains(string(manifest), `"id": "`+id+`"`) {
+		t.Fatalf("manifest.json = %q, want plugin id unchanged", manifest)
 	}
 }
