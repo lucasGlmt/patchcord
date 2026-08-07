@@ -3,9 +3,11 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/lucasglmt/patchcord/internal/secrets"
 )
@@ -153,11 +155,26 @@ func openWritableSecretStore(secretType, dataDir, masterKeyFile string) (secrets
 	}
 }
 
-// readSecretValue reads all of r and trims exactly one trailing newline
-// (LF or CRLF), the same convention `printf '%s' value | ...` and `echo
-// value | ...` both produce — so either works without the caller having
-// to remember which.
+// readSecretValue returns the secret from the given reader.
+//
+// When r is connected to a terminal (interactive use), it prints a prompt
+// on stderr and reads without echo — like a password prompt — so the user
+// doesn't have to remember the pipe syntax.
+//
+// When r is a pipe or file (non-interactive use), it reads until EOF and
+// trims exactly one trailing newline (LF or CRLF), so both
+// `printf '%s' value | …` and `echo value | …` work.
 func readSecretValue(r io.Reader) (string, error) {
+	if f, ok := r.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		fmt.Fprint(os.Stderr, "Enter secret value: ")
+		raw, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(os.Stderr) // newline after the silent input
+		if err != nil {
+			return "", fmt.Errorf("read secret value from terminal: %w", err)
+		}
+		return string(raw), nil
+	}
+
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return "", fmt.Errorf("read secret value from stdin: %w", err)

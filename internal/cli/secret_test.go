@@ -133,6 +133,31 @@ func TestSecretSetCommand_UnknownTypeErrors(t *testing.T) {
 	}
 }
 
+func TestReadSecretValue_NonTTY(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain value", "s3cr3t", "s3cr3t"},
+		{"trailing LF", "s3cr3t\n", "s3cr3t"},
+		{"trailing CRLF", "s3cr3t\r\n", "s3cr3t"},
+		{"empty", "", ""},
+		{"only newline", "\n", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := readSecretValue(strings.NewReader(tt.input))
+			if err != nil {
+				t.Fatalf("readSecretValue() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("readSecretValue() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSecretSetAndRemoveCommand_Keychain(t *testing.T) {
 	keyring.MockInit()
 
