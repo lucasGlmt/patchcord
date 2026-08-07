@@ -399,7 +399,7 @@ func newPluginListCommand() *cobra.Command {
 			}
 
 			for _, entry := range entries {
-				fmt.Fprintf(out, "%s\t%s\t%s\n", entry.PluginID, entry.Version, entry.ExecutablePath)
+				fmt.Fprintf(out, "%s\t%s\t%s\t%s\n", entry.PluginID, entry.Version, entry.ExecutablePath, joinOrNone(entry.Permissions))
 			}
 
 			return nil

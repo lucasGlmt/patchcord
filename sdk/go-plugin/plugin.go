@@ -7,7 +7,21 @@
 // on any internal/ package of the agent.
 package patchcord
 
-import "context"
+import (
+	"context"
+
+	pluginv1 "github.com/lucasglmt/patchcord/api/plugin/v1"
+)
+
+// Permission is a scope string a plugin declares it needs from the agent —
+// an alias of api/plugin/v1's type, the shared contract both this SDK and
+// the agent validate a plugin's declared permissions against
+// (pluginv1.ValidatePermission, ADR-0072).
+type Permission = pluginv1.Permission
+
+// PermissionNetworkOutbound declares that the plugin makes outbound network
+// connections.
+const PermissionNetworkOutbound = pluginv1.PermissionNetworkOutbound
 
 // Manifest identifies a plugin and its version, as introduced in the
 // vision document (section 8.3).
@@ -106,7 +120,11 @@ type Plugin struct {
 	// `patchcord connector test` without running a full action.
 	Tester ConnectorTester
 	// Permissions this plugin requires from the agent, e.g.
-	// "network.outbound". Declarative only in this version: the agent does
-	// not yet enforce them.
-	Permissions []string
+	// PermissionNetworkOutbound. Validated for shape (a recognized scope
+	// string) by Serve, and again by the agent at handshake time
+	// (ADR-0072) — neither check enforces anything about what the running
+	// process actually does; there is no sandboxing or capability gating
+	// yet (vision document §15.5's "capability broker" remains a separate,
+	// later decision).
+	Permissions []Permission
 }

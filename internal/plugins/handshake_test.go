@@ -159,6 +159,16 @@ func TestHandshake(t *testing.T) {
 			rpcErr:  errors.New("boom"),
 			wantErr: true,
 		},
+		{
+			name: "rejects an unrecognized permission scope",
+			response: &pluginv1.HandshakeResponse{
+				ProtocolVersion: CurrentProtocolVersion,
+				PluginId:        "io.patchcord.example-text",
+				PluginVersion:   "1.0.0",
+				Permissions:     []string{"filesystem.read"},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

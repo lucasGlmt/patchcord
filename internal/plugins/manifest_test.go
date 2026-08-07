@@ -112,6 +112,53 @@ func TestParsePackageManifest(t *testing.T) {
 			t.Fatalf("ParsePackageManifest() error = %v, want ErrInvalidPackageManifest", err)
 		}
 	})
+
+	t.Run("accepts an empty permissions list", func(t *testing.T) {
+		body, _ := json.Marshal(packageManifestJSON{
+			Kind: "plugin", ID: "x", Version: "1.0.0", ProtocolVersion: 1,
+			Executables: map[string]string{"darwin-arm64": "binaries/darwin-arm64/plugin"},
+		})
+		m, err := ParsePackageManifest(body)
+		if err != nil {
+			t.Fatalf("ParsePackageManifest() error = %v", err)
+		}
+		if len(m.Permissions) != 0 {
+			t.Fatalf("Permissions = %v, want empty", m.Permissions)
+		}
+	})
+
+	t.Run("accepts a parameterized secrets.read permission", func(t *testing.T) {
+		body, _ := json.Marshal(packageManifestJSON{
+			Kind: "plugin", ID: "x", Version: "1.0.0", ProtocolVersion: 1,
+			Permissions: []string{"secrets.read:postgresql"},
+			Executables: map[string]string{"darwin-arm64": "binaries/darwin-arm64/plugin"},
+		})
+		if _, err := ParsePackageManifest(body); err != nil {
+			t.Fatalf("ParsePackageManifest() error = %v", err)
+		}
+	})
+
+	t.Run("rejects an unrecognized permission scope", func(t *testing.T) {
+		body, _ := json.Marshal(packageManifestJSON{
+			Kind: "plugin", ID: "x", Version: "1.0.0", ProtocolVersion: 1,
+			Permissions: []string{"filesystem.read"},
+			Executables: map[string]string{"darwin-arm64": "binaries/darwin-arm64/plugin"},
+		})
+		if _, err := ParsePackageManifest(body); !errors.Is(err, ErrInvalidPackageManifest) {
+			t.Fatalf("ParsePackageManifest() error = %v, want ErrInvalidPackageManifest", err)
+		}
+	})
+
+	t.Run("rejects a malformed parameterized permission", func(t *testing.T) {
+		body, _ := json.Marshal(packageManifestJSON{
+			Kind: "plugin", ID: "x", Version: "1.0.0", ProtocolVersion: 1,
+			Permissions: []string{"secrets.read:"},
+			Executables: map[string]string{"darwin-arm64": "binaries/darwin-arm64/plugin"},
+		})
+		if _, err := ParsePackageManifest(body); !errors.Is(err, ErrInvalidPackageManifest) {
+			t.Fatalf("ParsePackageManifest() error = %v, want ErrInvalidPackageManifest", err)
+		}
+	})
 }
 
 func TestLoadPackageManifest(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
@@ -12,6 +13,11 @@ import (
 	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
+
+// ErrConnectorNotPermitted is returned (wrapped) by resolveStepConnector
+// when a step resolves to a connector id outside ExecuteOptions'
+// AllowedConnectors — see the doc comment on that field.
+var ErrConnectorNotPermitted = errors.New("connector not permitted for this session")
 
 // ActionExecutor runs one action and returns its output. It is the only
 // thing the runner needs to actually execute a step, which keeps this
@@ -56,6 +62,16 @@ type ExecuteOptions struct {
 	// existing callers keep working exactly as before metrics existed —
 	// see ADR-0070.
 	Metrics *metrics.Registry
+	// AllowedConnectors, when non-nil, restricts which connector ids a
+	// step in this run may resolve to exactly the ids it contains — a
+	// resolved id outside the list fails that step with
+	// ErrConnectorNotPermitted. nil means unrestricted: every caller that
+	// has full access today (an admin token, the CLI, the scheduler, a
+	// webhook trigger) keeps that access with zero code change. Set by
+	// internal/api from an app session's Permissions.ConnectorsUse
+	// (ADR-0071) — deliberately a plain slice, not an auth.Session, so
+	// this package never depends on internal/auth.
+	AllowedConnectors *[]string
 }
 
 func (o ExecuteOptions) withDefaults() ExecuteOptions {
@@ -73,10 +89,20 @@ func (o ExecuteOptions) withDefaults() ExecuteOptions {
 // one, looks it up — shared by the regular step path and the foreach path,
 // since a step's bound connector is resolved once regardless of how many
 // times (zero, for an empty connector) its action ends up being called.
-func resolveStepConnector(ctx context.Context, db *sql.DB, connector string, exprCtx workflow.ExprContext, store secrets.Store) (*connectors.ResolvedConnector, error) {
+//
+// allowedConnectors, when non-nil, is checked against the resolved
+// connector id before it is looked up — see ExecuteOptions.AllowedConnectors.
+// This is the single place a connector id becomes known, uniformly for
+// every expression shape ("each", "workflow.inputs.*", "steps.*.outputs.*",
+// "bindings.*") — so it is also the single place this check can live and
+// still cover all of them.
+func resolveStepConnector(ctx context.Context, db *sql.DB, connector string, exprCtx workflow.ExprContext, store secrets.Store, allowedConnectors *[]string) (*connectors.ResolvedConnector, error) {
 	connectorID, err := workflow.ResolveConnector(connector, exprCtx)
 	if err != nil || connectorID == "" {
 		return nil, err
+	}
+	if allowedConnectors != nil && !slices.Contains(*allowedConnectors, connectorID) {
+		return nil, fmt.Errorf("%w: %q", ErrConnectorNotPermitted, connectorID)
 	}
 	return connectors.Resolve(ctx, db, connectorID, store)
 }
@@ -273,7 +299,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 			// it once, the same way a non-foreach step does.
 			var resolvedConnector *connectors.ResolvedConnector
 			if foreachErr == nil {
-				resolvedConnector, foreachErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets)
+				resolvedConnector, foreachErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets, opts.AllowedConnectors)
 			}
 
 			if foreachErr != nil {
@@ -345,7 +371,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		var resolvedConnector *connectors.ResolvedConnector
 		if resolveErr == nil {
-			resolvedConnector, resolveErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets)
+			resolvedConnector, resolveErr = resolveStepConnector(stepCtx, db, step.Connector, exprCtx, opts.Secrets, opts.AllowedConnectors)
 		}
 
 		if resolveErr != nil {

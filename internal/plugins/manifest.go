@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	pluginv1 "github.com/lucasglmt/patchcord/api/plugin/v1"
 )
 
 // PackageManifestFileName is the file a plugin package's source directory
@@ -36,7 +38,10 @@ type PackageManifest struct {
 	ID              string
 	Version         string
 	ProtocolVersion uint32
-	Permissions     []string
+	// Permissions is validated against api/plugin/v1's recognized
+	// vocabulary (pluginv1.ValidatePermission, ADR-0072) — shape only, not
+	// enforced against what the running process actually does.
+	Permissions []string
 	// Executables maps a "GOOS-GOARCH" platform key (e.g. "darwin-arm64",
 	// matching runtime.GOOS+"-"+runtime.GOARCH) to the executable's path
 	// relative to the package root.
@@ -85,6 +90,11 @@ func ParsePackageManifest(source []byte) (*PackageManifest, error) {
 		}
 		if path == "" {
 			return nil, fmt.Errorf("%w: executables[%q] must not be empty", ErrInvalidPackageManifest, platform)
+		}
+	}
+	for i, perm := range raw.Permissions {
+		if err := pluginv1.ValidatePermission(perm); err != nil {
+			return nil, fmt.Errorf("%w: permissions[%d]: %s", ErrInvalidPackageManifest, i, err)
 		}
 	}
 

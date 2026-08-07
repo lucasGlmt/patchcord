@@ -80,6 +80,21 @@ func TestNewServer(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "accepts a recognized permission",
+			plugin: Plugin{
+				Manifest:    Manifest{ID: "io.example.test", Version: "1.0.0"},
+				Permissions: []Permission{PermissionNetworkOutbound},
+			},
+		},
+		{
+			name: "rejects an unrecognized permission",
+			plugin: Plugin{
+				Manifest:    Manifest{ID: "io.example.test", Version: "1.0.0"},
+				Permissions: []Permission{"filesystem.read"},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

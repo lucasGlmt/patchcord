@@ -5,7 +5,7 @@
 Admin authentication ([ADR-0036](../../../adr/0036-authentification-admin-jetons-opt-in.md)) is opt-in — a fresh agent answers every request unauthenticated until an admin token exists — and full, unscoped access is not what an application should hold anyway. Applications get something narrower instead, deliberately built to be additive rather than a workaround for the admin-auth gap that predated it ([ADR-0024](../../../adr/0024-declenchement-asynchrone-workflows-api-http.md)): a **session**, issued for one installed app id, carrying exactly the permissions that app's manifest declared — nothing else, and never the ability to do anything a session-less request couldn't already do while admin auth is off ([ADR-0026](../../../adr/0026-applications-manifeste-hebergement-session-limitee.md)).
 
 ```text
-patchcord-app.yaml          →  AppPermissions{WorkflowsRun: [...]}
+patchcord-app.yaml          →  AppPermissions{WorkflowsRun: [...], ConnectorsUse: [...]}
        │  Install                       │  Issue
        ▼                                ▼
    apps table              →      auth.Session{AppID, Permissions, IssuedAt}
@@ -13,7 +13,12 @@ patchcord-app.yaml          →  AppPermissions{WorkflowsRun: [...]}
 
 ## What a session actually restricts
 
-Today, exactly one thing: `POST /v1/workflows/{id}/run`. `withRunAuth` (`internal/api/adminauth.go`) wraps that route; `Session.CanRunWorkflow(workflowID)` checks the requested workflow id against `Permissions.WorkflowsRun`. Every other route (listing runs, listing workflows, reading a connector, ...) is admin-gated by `withAdminAuth` instead and never even looks at a session — there is no broader session-based enforcement point yet. This mirrors a pattern already established for plugins: `plugins.CatalogEntry.Permissions` is recorded but unchecked too — declaring a permission ahead of an enforcement point that doesn't exist yet would be validation with nothing to validate.
+Two things, checked at two different moments:
+
+- **Whether a run may start at all.** `withRunAuth` (`internal/api/adminauth.go`) wraps `POST /v1/workflows/{id}/run`; `Session.CanRunWorkflow(workflowID)` checks the requested workflow id against `Permissions.WorkflowsRun`. This is a single upfront check — the whole run is rejected before anything is persisted.
+- **Which connectors a step already running may bind to.** Once a run has started, each step that names a connector resolves it against `Permissions.ConnectorsUse` at the moment it's actually needed — inside `internal/runs.resolveStepConnector`, via `ExecuteOptions.AllowedConnectors` (`internal/api/workflows.go`'s `startRunAndRespond` reads the session back out of the request context and threads it through). A step whose resolved connector id isn't in that list fails with `runs.ErrConnectorNotPermitted` — a step failure, not an HTTP-level rejection, because which connector a step resolves to can depend on a prior step's output or a `foreach` item, not just the request body ([ADR-0071](../../../adr/0071-application-permission-connectors-use.md)).
+
+Every other route (listing runs, listing workflows, reading a connector, ...) is admin-gated by `withAdminAuth` instead and never even looks at a session — there is no broader session-based enforcement point yet. `capabilities` from the vision document mirrors a pattern still established for plugins: `plugins.CatalogEntry.Permissions` is recorded but unchecked too — declaring a permission ahead of an enforcement point that doesn't exist yet would be validation with nothing to validate.
 
 ## Additive, never a new gate — until admin auth is opted into
 

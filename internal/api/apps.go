@@ -8,27 +8,35 @@ import (
 	"time"
 
 	"github.com/lucasglmt/patchcord/internal/apps"
+	"github.com/lucasglmt/patchcord/internal/auth"
 )
 
 // appSummary is the JSON shape of one installed application, as returned
 // by GET /v1/apps.
 type appSummary struct {
-	ID           string   `json:"id"`
-	Version      string   `json:"version"`
-	WorkflowsRun []string `json:"workflows_run"`
+	ID            string   `json:"id"`
+	Version       string   `json:"version"`
+	WorkflowsRun  []string `json:"workflows_run"`
+	ConnectorsUse []string `json:"connectors_use"`
 }
 
 // appSessionResponse is the JSON shape of a newly issued application
 // session, as returned by POST /v1/apps/{id}/sessions.
 type appSessionResponse struct {
-	Token        string    `json:"token"`
-	AppID        string    `json:"app_id"`
-	WorkflowsRun []string  `json:"workflows_run"`
-	IssuedAt     time.Time `json:"issued_at"`
+	Token         string    `json:"token"`
+	AppID         string    `json:"app_id"`
+	WorkflowsRun  []string  `json:"workflows_run"`
+	ConnectorsUse []string  `json:"connectors_use"`
+	IssuedAt      time.Time `json:"issued_at"`
 }
 
 func toAppSummary(app apps.App) appSummary {
-	return appSummary{ID: app.ID, Version: app.Version, WorkflowsRun: app.Permissions.WorkflowsRun}
+	return appSummary{
+		ID:            app.ID,
+		Version:       app.Version,
+		WorkflowsRun:  app.Permissions.WorkflowsRun,
+		ConnectorsUse: app.Permissions.ConnectorsUse,
+	}
 }
 
 // @Summary      List installed applications
@@ -94,10 +102,11 @@ func handleCreateAppSession(deps Deps) http.HandlerFunc {
 		session := deps.Sessions.Issue(*app)
 
 		writeJSON(w, http.StatusCreated, appSessionResponse{
-			Token:        session.Token,
-			AppID:        session.AppID,
-			WorkflowsRun: session.Permissions.WorkflowsRun,
-			IssuedAt:     session.IssuedAt,
+			Token:         session.Token,
+			AppID:         session.AppID,
+			WorkflowsRun:  session.Permissions.WorkflowsRun,
+			ConnectorsUse: session.Permissions.ConnectorsUse,
+			IssuedAt:      session.IssuedAt,
 		})
 	}
 }
@@ -143,20 +152,26 @@ func bearerToken(r *http.Request) (string, bool) {
 // exists yet" branch (ADR-0026's original behavior) and its "does this
 // bearer token happen to be a valid app session" fallback once admin
 // authentication is enabled (ADR-0036).
-func appSessionAllowsRun(deps Deps, r *http.Request, token string) (ok bool, status int, msg string) {
+//
+// The resolved session is returned alongside ok so withRunAuth can stash it
+// in the request context (ADR-0071) — startRunAndRespond reads it back from
+// there to restrict which connectors the run may bind to
+// (session.Permissions.ConnectorsUse). It is the zero value when ok is
+// false.
+func appSessionAllowsRun(deps Deps, r *http.Request, token string) (session auth.Session, ok bool, status int, msg string) {
 	if deps.Sessions == nil {
-		return false, http.StatusInternalServerError, "app session: no session store configured"
+		return auth.Session{}, false, http.StatusInternalServerError, "app session: no session store configured"
 	}
 
 	session, err := deps.Sessions.Validate(token)
 	if err != nil {
-		return false, http.StatusUnauthorized, "app session: " + err.Error()
+		return auth.Session{}, false, http.StatusUnauthorized, "app session: " + err.Error()
 	}
 
 	workflowID := r.PathValue("id")
 	if !session.CanRunWorkflow(workflowID) {
-		return false, http.StatusForbidden, fmt.Sprintf("app %q is not permitted to run workflow %q", session.AppID, workflowID)
+		return auth.Session{}, false, http.StatusForbidden, fmt.Sprintf("app %q is not permitted to run workflow %q", session.AppID, workflowID)
 	}
 
-	return true, 0, ""
+	return session, true, 0, ""
 }

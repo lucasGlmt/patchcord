@@ -386,6 +386,15 @@ func handleRunWorkflow(deps Deps) http.HandlerFunc {
 // handleRunWorkflow and handleWebhookTrigger (webhooks.go, ADR-0037), which
 // differ only in how they authenticate the caller and where inputs/bindings
 // come from.
+//
+// If r's context carries an app session (withRunAuth stashed one via
+// withSession — ADR-0071), the run is restricted to that session's
+// Permissions.ConnectorsUse: any step that resolves to a connector outside
+// that list fails with runs.ErrConnectorNotPermitted. handleWebhookTrigger
+// never goes through withRunAuth, so it always runs unrestricted here —
+// with no consequence, since a webhook-triggered workflow can never bind a
+// connector in the first place (internal/workflow/compile.go's
+// validateNoConnectorBoundStep).
 func startRunAndRespond(w http.ResponseWriter, r *http.Request, deps Deps, workflowID string, inputs map[string]any, bindings map[string]string) {
 	if deps.Executor == nil {
 		http.Error(w, "run workflow: no action executor configured", http.StatusInternalServerError)
@@ -406,8 +415,13 @@ func startRunAndRespond(w http.ResponseWriter, r *http.Request, deps Deps, workf
 		return
 	}
 
+	opts := runs.ExecuteOptions{Secrets: deps.secrets(), Metrics: deps.metrics()}
+	if session, ok := sessionFromContext(r.Context()); ok {
+		opts.AllowedConnectors = &session.Permissions.ConnectorsUse
+	}
+
 	go func() {
-		if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, bindings, runs.ExecuteOptions{Secrets: deps.secrets(), Metrics: deps.metrics()}); err != nil {
+		if err := runs.Continue(deps.runCtx(), deps.DB, deps.Executor, def, run, preparedInputs, bindings, opts); err != nil {
 			deps.logger().Error("continue run",
 				slog.String("run_id", run.ID),
 				slog.String("workflow_id", workflowID),

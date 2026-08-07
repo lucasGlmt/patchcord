@@ -51,6 +51,14 @@ func withAdminAuth(deps Deps, next http.HandlerFunc) http.HandlerFunc {
 // access, like every other admin-gated route) or as a scoped app session —
 // an installed application keeps working with only its own session, never
 // needing an admin token of its own.
+//
+// Whenever a request is let through on the strength of a validated app
+// session (either branch below), that session is stashed in the request's
+// context via withSession (ADR-0071) — startRunAndRespond reads it back to
+// restrict which connectors the run may bind to. A request let through on
+// an admin token, or before any admin token exists with no bearer token at
+// all, carries no session — sessionFromContext reports none, and the run
+// remains unrestricted, exactly as before this existed.
 func withRunAuth(deps Deps, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		enforced, err := auth.AnyTokensExist(r.Context(), deps.DB)
@@ -66,11 +74,12 @@ func withRunAuth(deps Deps, next http.HandlerFunc) http.HandlerFunc {
 				next(w, r)
 				return
 			}
-			if ok, status, msg := appSessionAllowsRun(deps, r, token); !ok {
+			session, ok, status, msg := appSessionAllowsRun(deps, r, token)
+			if !ok {
 				http.Error(w, msg, status)
 				return
 			}
-			next(w, r)
+			next(w, withSession(r, session))
 			return
 		}
 
@@ -86,10 +95,11 @@ func withRunAuth(deps Deps, next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if ok, status, msg := appSessionAllowsRun(deps, r, token); !ok {
+		session, ok, status, msg := appSessionAllowsRun(deps, r, token)
+		if !ok {
 			http.Error(w, msg, status)
 			return
 		}
-		next(w, r)
+		next(w, withSession(r, session))
 	}
 }

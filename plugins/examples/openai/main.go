@@ -243,7 +243,7 @@ func main() {
 				}),
 			},
 		},
-		Permissions: []string{"network.outbound"},
+		Permissions: []patchcord.Permission{patchcord.PermissionNetworkOutbound},
 	}
 
 	if err := patchcord.Serve(plugin); err != nil {

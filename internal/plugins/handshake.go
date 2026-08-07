@@ -45,7 +45,10 @@ type Manifest struct {
 	PluginVersion   string
 	Connectors      []ConnectorDescriptor
 	Actions         []ActionDescriptor
-	Permissions     []string
+	// Permissions is validated against api/plugin/v1's recognized
+	// vocabulary by Handshake (ADR-0072) — shape only, not enforced
+	// against what the running process actually does.
+	Permissions []string
 }
 
 // Handshake calls the plugin's Handshake RPC, validates its response, and
@@ -79,6 +82,15 @@ func Handshake(ctx context.Context, client pluginv1.PluginServiceClient) (*Manif
 	}
 	if resp.GetPluginVersion() == "" {
 		return nil, errors.New("plugin manifest is missing a plugin version")
+	}
+	// Validated separately from PackageManifest.Permissions (manifest.go):
+	// catalog.go persists Permissions from this live handshake response,
+	// not from the packaged manifest.json — the two can diverge, so both
+	// must be checked (ADR-0072).
+	for i, perm := range resp.GetPermissions() {
+		if err := pluginv1.ValidatePermission(perm); err != nil {
+			return nil, fmt.Errorf("plugin manifest permissions[%d]: %w", i, err)
+		}
 	}
 
 	return &Manifest{

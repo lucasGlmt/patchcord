@@ -278,7 +278,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns every installed plugin and the connector types/action ids its manifest declares — enough for a client to build a connector-type picker without a copy of the CLI's own catalog logic.",
+                "description": "Returns every installed plugin and the connector types/action ids/permissions its manifest declares — enough for a client to build a connector-type picker without a copy of the CLI's own catalog logic.",
                 "produces": [
                     "application/json"
                 ],
@@ -719,6 +719,12 @@
                 "app_id": {
                     "type": "string"
                 },
+                "connectors_use": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "issued_at": {
                     "type": "string"
                 },
@@ -736,6 +742,12 @@
         "api.appSummary": {
             "type": "object",
             "properties": {
+                "connectors_use": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -880,6 +892,12 @@
                 },
                 "id": {
                     "type": "string"
+                },
+                "permissions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "version": {
                     "type": "string"

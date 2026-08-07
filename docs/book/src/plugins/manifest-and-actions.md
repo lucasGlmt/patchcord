@@ -7,6 +7,26 @@ A plugin has two distinct manifests, serving different moments in its lifecycle:
 
 Both describe the same plugin, but neither replaces the other: the package manifest gets you to a safe launch, the handshake manifest tells you what actually got launched.
 
+## Permission vocabulary
+
+`Permissions` is a list of scope strings — no longer freeform since [ADR-0072](../../../adr/0072-vocabulaire-permissions-greffons.md): each entry must be a recognized `pluginv1.Permission` (`api/plugin/v1/permissions.go`), the shared contract both `sdk/go-plugin` and the agent validate against.
+
+| Scope | Meaning |
+|---|---|
+| `network.outbound` | The plugin makes outbound network connections. Declared by every connector-consuming example plugin (`http`, `postgresql`, `mysql`, `openai`). |
+| `secrets.read:<connector-type>` | The plugin reads secrets belonging to connectors of the named type (vision document §9.1). Not declared by any example plugin today. |
+
+Validation happens at three points, all calling `pluginv1.ValidatePermission`: `sdk/go-plugin`'s `Serve` (rejects at plugin startup, the earliest signal for the plugin author), the agent's `internal/plugins.Handshake` (the packaged manifest and the live handshake response can diverge — `internal/plugins.CatalogEntry.Permissions` is persisted from the handshake, not the package), and `internal/plugins.ParsePackageManifest` (the packaged `manifest.json`). An unrecognized scope fails only the plugin that declared it — the agent keeps supervising every other installed plugin (non-negotiable #7).
+
+This is shape validation, not enforcement: nothing stops a plugin declaring `network.outbound` from also reading the filesystem. There is no sandboxing or capability gating yet — see the vision document §15.5 for the "capability broker" design that would eventually provide it.
+
+```go
+Plugin{
+    // ...
+    Permissions: []patchcord.Permission{patchcord.PermissionNetworkOutbound},
+}
+```
+
 ## What an action declares
 
 As of [ADR-0062](../../../adr/0062-descripteurs-schema-actions-et-connecteurs.md), an action declares its full shape — closing the gap with what the vision document (section 7.4) specified from the start: a stable, versioned identifier, a human-readable description, JSON Schema for its input and output, and a `Run` function. Declared capabilities, known errors, and test-mode behavior from that same section still aren't built — don't document a richer contract than what actually exists.

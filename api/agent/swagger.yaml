@@ -4,6 +4,10 @@ definitions:
     properties:
       app_id:
         type: string
+      connectors_use:
+        items:
+          type: string
+        type: array
       issued_at:
         type: string
       token:
@@ -15,6 +19,10 @@ definitions:
     type: object
   api.appSummary:
     properties:
+      connectors_use:
+        items:
+          type: string
+        type: array
       id:
         type: string
       version:
@@ -110,6 +118,10 @@ definitions:
         type: array
       id:
         type: string
+      permissions:
+        items:
+          type: string
+        type: array
       version:
         type: string
     type: object
@@ -510,7 +522,7 @@ paths:
       - connectors
   /plugins:
     get:
-      description: Returns every installed plugin and the connector types/action ids
+      description: Returns every installed plugin and the connector types/action ids/permissions
         its manifest declares — enough for a client to build a connector-type picker
         without a copy of the CLI's own catalog logic.
       produces:

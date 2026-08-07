@@ -3,6 +3,7 @@ package runs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -875,6 +876,173 @@ steps:
 	// failed to resolve — it must still be persisted, not discarded.
 	if steps[0].Input["value"] != "hello" {
 		t.Fatalf(`steps[0].Input["value"] = %v, want %q (resolved input must survive a later connector failure)`, steps[0].Input["value"], "hello")
+	}
+}
+
+func TestExecute_FailsTheStepWhenTheBoundConnectorIsNotPermitted(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: connector_not_permitted
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+`)
+
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", map[string]any{}, nil, map[string]struct{}{"postgresql.connection@1": {}}); err != nil {
+		t.Fatalf("connectors.Create() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	// AllowedConnectors is set but doesn't contain "my_conn" — the step
+	// must fail before the executor is ever called, exactly like an
+	// unresolvable connector.
+	allowed := []string{"some_other_conn"}
+	run, err := Execute(context.Background(), db, executor, "connector_not_permitted", nil,
+		map[string]string{"demo": "my_conn"}, ExecuteOptions{AllowedConnectors: &allowed})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunFailed {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunFailed)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor was called %d times, want 0 (should fail before calling the action)", len(executor.calls))
+	}
+
+	_, steps, err := GetRun(context.Background(), db, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun() error = %v", err)
+	}
+	if steps[0].Status != workflow.StepFailed {
+		t.Fatalf("step status = %s, want %s", steps[0].Status, workflow.StepFailed)
+	}
+	// steps[0].Error is a persisted string, not a wrapped error — check its
+	// content instead of errors.Is.
+	if !strings.Contains(steps[0].Error, ErrConnectorNotPermitted.Error()) {
+		t.Fatalf("steps[0].Error = %q, want it to mention %q", steps[0].Error, ErrConnectorNotPermitted.Error())
+	}
+}
+
+func TestExecute_AllowsTheBoundConnectorWhenPermitted(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: connector_permitted
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+`)
+
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", map[string]any{}, nil, map[string]struct{}{"postgresql.connection@1": {}}); err != nil {
+		t.Fatalf("connectors.Create() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	allowed := []string{"my_conn"}
+	run, err := Execute(context.Background(), db, executor, "connector_permitted", nil,
+		map[string]string{"demo": "my_conn"}, ExecuteOptions{AllowedConnectors: &allowed})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+	if len(executor.connectorsReceived) != 1 || executor.connectorsReceived[0] == nil {
+		t.Fatalf("connectorsReceived = %v, want one resolved connector", executor.connectorsReceived)
+	}
+}
+
+func TestExecute_NilAllowedConnectorsIsUnrestricted(t *testing.T) {
+	// Regression guard: every existing caller of Execute/Continue that
+	// leaves ExecuteOptions.AllowedConnectors unset (the CLI, the
+	// scheduler, an admin-token API request) must keep resolving any
+	// connector, exactly as before this field existed.
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: connector_unrestricted
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+`)
+
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", map[string]any{}, nil, map[string]struct{}{"postgresql.connection@1": {}}); err != nil {
+		t.Fatalf("connectors.Create() error = %v", err)
+	}
+
+	executor := &fakeExecutor{
+		responses: map[string]map[string]any{"text.uppercase@1": {"value": "HELLO"}},
+	}
+
+	run, err := Execute(context.Background(), db, executor, "connector_unrestricted", nil,
+		map[string]string{"demo": "my_conn"}, ExecuteOptions{})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunSucceeded {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+	}
+}
+
+func TestExecute_ForeachFailsWhenTheBoundConnectorIsNotPermitted(t *testing.T) {
+	db := openTestDB(t)
+	installTestWorkflow(t, db, `
+schema_version: 1
+id: foreach_connector_not_permitted
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: shout
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    foreach: "${{ workflow.inputs.names }}"
+    with:
+      value: "${{ each }}"
+`)
+
+	if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", map[string]any{}, nil, map[string]struct{}{"postgresql.connection@1": {}}); err != nil {
+		t.Fatalf("connectors.Create() error = %v", err)
+	}
+
+	executor := &echoValueExecutor{}
+	allowed := []string{"some_other_conn"}
+
+	run, err := Execute(context.Background(), db, executor, "foreach_connector_not_permitted",
+		map[string]any{"names": []any{"alice"}}, map[string]string{"demo": "my_conn"}, ExecuteOptions{AllowedConnectors: &allowed})
+	if err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if run.Status != workflow.RunFailed {
+		t.Fatalf("run status = %s, want %s", run.Status, workflow.RunFailed)
+	}
+	if len(executor.calls) != 0 {
+		t.Fatalf("executor was called %d times, want 0 (should fail before calling the action)", len(executor.calls))
 	}
 }
 

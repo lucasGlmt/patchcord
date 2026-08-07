@@ -15,6 +15,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/apps"
 	"github.com/lucasglmt/patchcord/internal/auth"
+	"github.com/lucasglmt/patchcord/internal/connectors"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
@@ -28,6 +29,34 @@ func installTestApp(t *testing.T, db *sql.DB, id string, workflowsRun ...string)
 	content := "id: " + id + "\nversion: \"0.1.0\"\npermissions:\n  workflows:\n    run:\n"
 	for _, w := range workflowsRun {
 		content += "      - " + w + "\n"
+	}
+	if err := os.WriteFile(filepath.Join(dir, apps.ManifestFileName), []byte(content), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>"+id+"</h1>"), 0o644); err != nil {
+		t.Fatalf("write index.html: %v", err)
+	}
+
+	app, err := apps.Install(context.Background(), db, dir)
+	if err != nil {
+		t.Fatalf("apps.Install() error = %v", err)
+	}
+	return app
+}
+
+// installTestAppWithConnectors is installTestApp plus a declared
+// connectors.use permission (ADR-0071).
+func installTestAppWithConnectors(t *testing.T, db *sql.DB, id string, workflowsRun []string, connectorsUse []string) *apps.App {
+	t.Helper()
+
+	dir := t.TempDir()
+	content := "id: " + id + "\nversion: \"0.1.0\"\npermissions:\n  workflows:\n    run:\n"
+	for _, w := range workflowsRun {
+		content += "      - " + w + "\n"
+	}
+	content += "  connectors:\n    use:\n"
+	for _, c := range connectorsUse {
+		content += "      - " + c + "\n"
 	}
 	if err := os.WriteFile(filepath.Join(dir, apps.ManifestFileName), []byte(content), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -440,15 +469,149 @@ func TestWithRunAuth(t *testing.T) {
 	})
 }
 
-// waitForRunToFinish decodes a runSummary from body and polls until the
-// run it names reaches a terminal status. Other tests in this package
-// (e.g. TestHandleRunWorkflow_StartsImmediatelyAndRunsInTheBackground)
+// connectorBoundTestWorkflow binds its only step to "${{ bindings.demo }}"
+// — used by TestWithRunAuth_RestrictsConnectors.
+const connectorBoundTestWorkflow = `
+schema_version: 1
+id: connector_bound
+version: 1
+trigger:
+  type: manual
+steps:
+  - id: only
+    uses: text.uppercase@1
+    connector: "${{ bindings.demo }}"
+    with:
+      value: "hello"
+`
+
+func TestWithRunAuth_RestrictsConnectors(t *testing.T) {
+	installConnector := func(t *testing.T, db *sql.DB) {
+		t.Helper()
+		if _, err := connectors.Create(context.Background(), db, "my_conn", "postgresql.connection@1", map[string]any{}, nil, map[string]struct{}{"postgresql.connection@1": {}}); err != nil {
+			t.Fatalf("connectors.Create() error = %v", err)
+		}
+	}
+
+	t.Run("a session without connectors.use fails a connector-bound run", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(connectorBoundTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		installConnector(t, db)
+		app := installTestAppWithConnectors(t, db, "dashboard", []string{"connector_bound"}, nil)
+		sessions := auth.NewStore()
+		session := sessions.Issue(*app)
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: sessions})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/connector_bound/run", strings.NewReader(`{"bindings":{"demo":"my_conn"}}`))
+		req.Header.Set("Authorization", "Bearer "+session.Token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		run := waitForRunToFinish(t, db, rec.Body)
+		if run.Status != workflow.RunFailed {
+			t.Fatalf("run status = %s, want %s (connector not declared in connectors.use)", run.Status, workflow.RunFailed)
+		}
+	})
+
+	t.Run("a session with the connector in connectors.use succeeds", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(connectorBoundTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		installConnector(t, db)
+		app := installTestAppWithConnectors(t, db, "dashboard", []string{"connector_bound"}, []string{"my_conn"})
+		sessions := auth.NewStore()
+		session := sessions.Issue(*app)
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: sessions})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/connector_bound/run", strings.NewReader(`{"bindings":{"demo":"my_conn"}}`))
+		req.Header.Set("Authorization", "Bearer "+session.Token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		run := waitForRunToFinish(t, db, rec.Body)
+		if run.Status != workflow.RunSucceeded {
+			t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+		}
+	})
+
+	t.Run("an admin token bypasses connectors.use entirely", func(t *testing.T) {
+		db := openMigratedTestDB(t)
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(connectorBoundTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		installConnector(t, db)
+		plaintext, _, err := auth.CreateToken(context.Background(), db, "ci")
+		if err != nil {
+			t.Fatalf("CreateToken() error = %v", err)
+		}
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: auth.NewStore()})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/connector_bound/run", strings.NewReader(`{"bindings":{"demo":"my_conn"}}`))
+		req.Header.Set("Authorization", "Bearer "+plaintext)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		run := waitForRunToFinish(t, db, rec.Body)
+		if run.Status != workflow.RunSucceeded {
+			t.Fatalf("run status = %s, want %s (admin token must not be restricted)", run.Status, workflow.RunSucceeded)
+		}
+	})
+
+	t.Run("an app with no connectors.use permission still runs a workflow with no connector-bound step", func(t *testing.T) {
+		// Regression guard: apps that only ever declared workflows.run
+		// (pre-ADR-0071) must keep working for workflows that never bind a
+		// connector in the first place.
+		db := openMigratedTestDB(t)
+		knownActions := map[string]workflow.KnownAction{"text.uppercase@1": {}}
+		if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
+			t.Fatalf("InstallWorkflow() error = %v", err)
+		}
+		app := installTestApp(t, db, "dashboard", "hello_patchcord")
+		sessions := auth.NewStore()
+		session := sessions.Issue(*app)
+		router := NewRouter(Deps{DB: db, Executor: fakeExecutor{}, Sessions: sessions})
+
+		req := httptest.NewRequest(http.MethodPost, "/v1/workflows/hello_patchcord/run", nil)
+		req.Header.Set("Authorization", "Bearer "+session.Token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("status = %d, want %d (body: %s)", rec.Code, http.StatusAccepted, rec.Body.String())
+		}
+		run := waitForRunToFinish(t, db, rec.Body)
+		if run.Status != workflow.RunSucceeded {
+			t.Fatalf("run status = %s, want %s", run.Status, workflow.RunSucceeded)
+		}
+	})
+}
+
+// waitForRunToFinish decodes a runSummary from body and polls until the run
+// it names reaches a terminal status, returning it. Other tests in this
+// package (e.g. TestHandleRunWorkflow_StartsImmediatelyAndRunsInTheBackground)
 // avoid this by asserting on the final status directly; here it exists
 // only to let handleRunWorkflow's background runs.Continue goroutine
 // finish and release its database connection before t.Cleanup closes db
 // — otherwise a later subtest opening a *sql.DB with the same shared-cache
-// in-memory URI can race with it and see stale state.
-func waitForRunToFinish(t *testing.T, db *sql.DB, body *bytes.Buffer) {
+// in-memory URI can race with it and see stale state. Most callers ignore
+// the return value; ADR-0071's connector-permission tests use it to assert
+// on the run's terminal status.
+func waitForRunToFinish(t *testing.T, db *sql.DB, body *bytes.Buffer) *runs.Run {
 	t.Helper()
 
 	var summary runSummary
@@ -463,7 +626,7 @@ func waitForRunToFinish(t *testing.T, db *sql.DB, body *bytes.Buffer) {
 			t.Fatalf("GetRun() error = %v", err)
 		}
 		if run.Status == "succeeded" || run.Status == "failed" {
-			return
+			return run
 		}
 		select {
 		case <-deadline:

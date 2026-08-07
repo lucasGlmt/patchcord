@@ -100,6 +100,71 @@ permissions:
 			t.Fatalf("ParseManifest() error = %v, want ErrInvalidManifest", err)
 		}
 	})
+
+	t.Run("parses connectors.use", func(t *testing.T) {
+		source := []byte(`
+id: dashboard
+version: "0.1.0"
+permissions:
+  workflows:
+    run: []
+  connectors:
+    use:
+      - accounting_mailbox
+      - crm_postgres
+`)
+		m, err := ParseManifest(source)
+		if err != nil {
+			t.Fatalf("ParseManifest() error = %v", err)
+		}
+		want := []string{"accounting_mailbox", "crm_postgres"}
+		if len(m.Permissions.ConnectorsUse) != len(want) {
+			t.Fatalf("Permissions.ConnectorsUse = %v, want %v", m.Permissions.ConnectorsUse, want)
+		}
+		for i := range want {
+			if m.Permissions.ConnectorsUse[i] != want[i] {
+				t.Fatalf("Permissions.ConnectorsUse = %v, want %v", m.Permissions.ConnectorsUse, want)
+			}
+		}
+	})
+
+	t.Run("defaults connectors.use to empty when the manifest predates it", func(t *testing.T) {
+		// Regression guard: a manifest written before ADR-0071 (only
+		// workflows.run, no permissions.connectors key at all) must still
+		// parse, with ConnectorsUse defaulting to empty rather than
+		// erroring.
+		source := []byte(`
+id: dashboard
+version: "0.1.0"
+permissions:
+  workflows:
+    run:
+      - hello_patchcord
+`)
+		m, err := ParseManifest(source)
+		if err != nil {
+			t.Fatalf("ParseManifest() error = %v", err)
+		}
+		if len(m.Permissions.ConnectorsUse) != 0 {
+			t.Fatalf("Permissions.ConnectorsUse = %v, want empty", m.Permissions.ConnectorsUse)
+		}
+	})
+
+	t.Run("rejects an empty entry in connectors.use", func(t *testing.T) {
+		source := []byte(`
+id: dashboard
+version: "0.1.0"
+permissions:
+  workflows:
+    run: []
+  connectors:
+    use:
+      - ""
+`)
+		if _, err := ParseManifest(source); !errors.Is(err, ErrInvalidManifest) {
+			t.Fatalf("ParseManifest() error = %v, want ErrInvalidManifest", err)
+		}
+	})
 }
 
 func TestLoadManifest(t *testing.T) {

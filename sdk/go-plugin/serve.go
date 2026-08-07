@@ -79,6 +79,14 @@ func newServer(plugin Plugin) (*server, error) {
 		return nil, fmt.Errorf("plugin manifest is missing a version")
 	}
 
+	permissions := make([]string, len(plugin.Permissions))
+	for i, perm := range plugin.Permissions {
+		if err := pluginv1.ValidatePermission(string(perm)); err != nil {
+			return nil, fmt.Errorf("permissions[%d]: %w", i, err)
+		}
+		permissions[i] = string(perm)
+	}
+
 	actions := make(map[string]Action, len(plugin.Actions))
 	actionDescs := make([]*pluginv1.ActionDescriptor, 0, len(plugin.Actions))
 	for _, action := range plugin.Actions {
@@ -122,7 +130,7 @@ func newServer(plugin Plugin) (*server, error) {
 		actions:     actions,
 		connDescs:   connDescs,
 		tester:      plugin.Tester,
-		permissions: plugin.Permissions,
+		permissions: permissions,
 	}, nil
 }
 

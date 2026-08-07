@@ -112,7 +112,20 @@ func (pingTester) TestConnector(ctx context.Context, connector patchcord.Connect
 
 Never include a secret value in the returned error's message — it becomes the message the CLI user sees. Leaving `Tester` unset is fine: the plugin then reports `Unimplemented` for `TestConnector`, which the agent surfaces distinctly from a test that ran and failed.
 
-## 5. Build and install it
+## 5. Optional: declare permissions
+
+If your plugin needs a capability the agent should be able to show the user before launching it, declare it — see [Manifest & Actions → Permission vocabulary](manifest-and-actions.md#permission-vocabulary) for the recognized scopes:
+
+```go
+plugin := patchcord.Plugin{
+	// ...
+	Permissions: []patchcord.Permission{patchcord.PermissionNetworkOutbound},
+}
+```
+
+`Serve` rejects an unrecognized scope before the plugin's gRPC server even starts — the earliest possible signal that a declared permission is malformed.
+
+## 6. Build and install it
 
 ```bash
 patchcord plugin new io.patchcord.example-text --module github.com/acme/example-text

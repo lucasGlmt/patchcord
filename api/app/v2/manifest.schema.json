@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://patchcord.dev/schemas/app/v2/manifest.schema.json",
+  "title": "Patchcord application manifest (v2)",
+  "description": "The patchcord-app.yaml manifest an installed application declares (vision doc §7.6, §9.3, §15.4). Adds permissions.connectors.use to v1's workflows.run, additively (ADR-0071) — internal/apps.ParseManifest accepts this shape today. capabilities from the vision document is still deliberately not part of this schema: there is no enforcement point for it yet, the same situation plugin permissions are in.",
+  "type": "object",
+  "required": ["id", "version", "permissions"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier of the application, used in its serving URL (/apps/{id}/) and in the sessions it issues."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application version, free-form (e.g. semantic version)."
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["workflows"],
+      "additionalProperties": false,
+      "properties": {
+        "workflows": {
+          "type": "object",
+          "required": ["run"],
+          "additionalProperties": false,
+          "properties": {
+            "run": {
+              "type": "array",
+              "description": "Workflow ids this application's sessions are allowed to run. A session issued for this application can never run a workflow outside this list.",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "connectors": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "use": {
+              "type": "array",
+              "description": "Connector ids a run started by this application's sessions is allowed to bind to a workflow step. Checked at connector-resolution time (uniformly for every way a step can reference a connector), not upfront when the run is created. A session with no connectors.use entry (or none declared at all) cannot resolve any connector-bound step.",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}
