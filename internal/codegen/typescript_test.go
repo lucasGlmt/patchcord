@@ -71,9 +71,9 @@ func TestConnectorTypeName(t *testing.T) {
 
 func TestSchemaToTS(t *testing.T) {
 	tests := []struct {
-		name string
+		name   string
 		schema map[string]any
-		want string
+		want   string
 	}{
 		{"string", map[string]any{"type": "string"}, "string"},
 		{"number", map[string]any{"type": "number"}, "number"},
@@ -254,7 +254,7 @@ func TestGenerateTypeScript_ArrayOfObjects(t *testing.T) {
 		Version:  "0.1.0",
 		Actions: []plugins.ActionDescriptor{
 			{
-				ID: "test.list@1",
+				ID:          "test.list@1",
 				InputSchema: map[string]any{},
 				OutputSchema: map[string]any{
 					"type": "object",
