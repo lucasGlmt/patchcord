@@ -147,6 +147,8 @@ func newDevCommand() *cobra.Command {
 	cmd.Flags().StringVar(&appDevCmd, "app-dev-cmd", "npm run dev", "command to run the embedded app's dev server, in the directory holding its package.json — split on whitespace, no shell involved")
 	cmd.Flags().BoolVar(&noAppDev, "no-app-dev", false, "never start the embedded app's dev server, even if package.json declares one")
 
+	cmd.AddCommand(newDevCodegenCommand())
+
 	return cmd
 }
 
