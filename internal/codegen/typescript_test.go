@@ -7,21 +7,74 @@ import (
 	"github.com/lucasglmt/patchcord/internal/plugins"
 )
 
-func TestPluginNamespace(t *testing.T) {
+func TestInferDomain(t *testing.T) {
 	tests := []struct {
-		id   string
-		want string
+		name  string
+		entry *plugins.CatalogEntry
+		want  string
 	}{
-		{"text", "Text"},
-		{"google-calendar", "GoogleCalendar"},
-		{"my.plugin", "MyPlugin"},
-		{"a_b-c.d", "ABCD"},
+		{
+			"common action domain",
+			&plugins.CatalogEntry{
+				PluginID: "fr.glmtsolutions.patchcord-imap-plugin",
+				Actions: []plugins.ActionDescriptor{
+					{ID: "imap.list-messages@1"},
+					{ID: "imap.get-message@1"},
+				},
+			},
+			"imap",
+		},
+		{
+			"single action",
+			&plugins.CatalogEntry{
+				PluginID: "text",
+				Actions:  []plugins.ActionDescriptor{{ID: "text.uppercase@1"}},
+			},
+			"text",
+		},
+		{
+			"mixed action domains fallback to connector",
+			&plugins.CatalogEntry{
+				PluginID: "multi",
+				Actions: []plugins.ActionDescriptor{
+					{ID: "foo.do@1"},
+					{ID: "bar.do@1"},
+				},
+				Connectors: []plugins.ConnectorDescriptor{
+					{Type: "baz.connection@1"},
+				},
+			},
+			"baz",
+		},
+		{
+			"no domain anywhere fallback to plugin id",
+			&plugins.CatalogEntry{
+				PluginID: "simple",
+				Actions:  []plugins.ActionDescriptor{{ID: "noprefix@1"}},
+			},
+			"simple",
+		},
+		{
+			"no actions uses connector domain",
+			&plugins.CatalogEntry{
+				PluginID: "db-plugin",
+				Connectors: []plugins.ConnectorDescriptor{
+					{Type: "postgresql.connection@1"},
+				},
+			},
+			"postgresql",
+		},
+		{
+			"empty plugin fallback to plugin id",
+			&plugins.CatalogEntry{PluginID: "empty"},
+			"empty",
+		},
 	}
 	for _, tt := range tests {
-		t.Run(tt.id, func(t *testing.T) {
-			got := pluginNamespace(tt.id)
+		t.Run(tt.name, func(t *testing.T) {
+			got := inferDomain(tt.entry)
 			if got != tt.want {
-				t.Errorf("pluginNamespace(%q) = %q, want %q", tt.id, got, tt.want)
+				t.Errorf("inferDomain() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -30,20 +83,21 @@ func TestPluginNamespace(t *testing.T) {
 func TestActionTypeName(t *testing.T) {
 	tests := []struct {
 		actionID string
-		pluginID string
+		domain   string
 		want     string
 	}{
 		{"text.uppercase@1", "text", "Uppercase"},
 		{"text.to-lower@2", "text", "ToLower"},
 		{"imap.fetch-messages@1", "imap", "FetchMessages"},
+		{"imap.list-messages@1", "imap", "ListMessages"},
 		{"noprefix@1", "other", "Noprefix"},
 		{"bare", "bare", "Bare"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.actionID, func(t *testing.T) {
-			got := actionTypeName(tt.actionID, tt.pluginID)
+			got := actionTypeName(tt.actionID, tt.domain)
 			if got != tt.want {
-				t.Errorf("actionTypeName(%q, %q) = %q, want %q", tt.actionID, tt.pluginID, got, tt.want)
+				t.Errorf("actionTypeName(%q, %q) = %q, want %q", tt.actionID, tt.domain, got, tt.want)
 			}
 		})
 	}
@@ -52,7 +106,7 @@ func TestActionTypeName(t *testing.T) {
 func TestConnectorTypeName(t *testing.T) {
 	tests := []struct {
 		connType string
-		pluginID string
+		domain   string
 		want     string
 	}{
 		{"postgresql.connection@1", "postgresql", "Connection"},
@@ -61,9 +115,9 @@ func TestConnectorTypeName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.connType, func(t *testing.T) {
-			got := connectorTypeName(tt.connType, tt.pluginID)
+			got := connectorTypeName(tt.connType, tt.domain)
 			if got != tt.want {
-				t.Errorf("connectorTypeName(%q, %q) = %q, want %q", tt.connType, tt.pluginID, got, tt.want)
+				t.Errorf("connectorTypeName(%q, %q) = %q, want %q", tt.connType, tt.domain, got, tt.want)
 			}
 		})
 	}
@@ -148,7 +202,7 @@ func TestGenerateTypeScript_SimpleAction(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -164,11 +218,63 @@ func TestGenerateTypeScript_SimpleAction(t *testing.T) {
 		"/** The string to convert. */",
 		"value: string;",
 		"export interface UppercaseOutput {",
+		// Type guard
+		"export function isUppercaseOutput(value: unknown): value is UppercaseOutput {",
+		`typeof obj.value === "string"`,
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(s, want) {
 			t.Errorf("output missing %q\n\nfull output:\n%s", want, s)
 		}
+	}
+}
+
+func TestGenerateTypeScript_NamespaceOverride(t *testing.T) {
+	entry := &plugins.CatalogEntry{
+		PluginID: "fr.glmtsolutions.patchcord-imap-plugin",
+		Version:  "0.1.0",
+		Actions: []plugins.ActionDescriptor{
+			{
+				ID:          "imap.list-messages@1",
+				Description: "List messages.",
+				InputSchema: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"folder": map[string]any{"type": "string"}},
+					"required":   []any{"folder"},
+				},
+				OutputSchema: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"count": map[string]any{"type": "number"}},
+					"required":   []any{"count"},
+				},
+			},
+		},
+	}
+
+	// Without override: inferred from action domain "imap".
+	out, err := GenerateTypeScript(entry, "")
+	if err != nil {
+		t.Fatalf("GenerateTypeScript() error: %v", err)
+	}
+	s := string(out)
+
+	if !strings.Contains(s, "export namespace Imap {") {
+		t.Errorf("expected inferred namespace Imap\n\n%s", s)
+	}
+	// Action name should strip "imap." prefix, leaving "ListMessages".
+	if !strings.Contains(s, "export interface ListMessagesInput {") {
+		t.Errorf("expected ListMessagesInput (not ImapListMessagesInput)\n\n%s", s)
+	}
+
+	// With override.
+	out2, err := GenerateTypeScript(entry, "Mail")
+	if err != nil {
+		t.Fatalf("GenerateTypeScript() error: %v", err)
+	}
+	s2 := string(out2)
+
+	if !strings.Contains(s2, "export namespace Mail {") {
+		t.Errorf("expected overridden namespace Mail\n\n%s", s2)
 	}
 }
 
@@ -192,7 +298,7 @@ func TestGenerateTypeScript_OptionalProperties(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -234,7 +340,7 @@ func TestGenerateTypeScript_NestedObject(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -277,7 +383,7 @@ func TestGenerateTypeScript_ArrayOfObjects(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -312,7 +418,7 @@ func TestGenerateTypeScript_EnumUnion(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -342,7 +448,7 @@ func TestGenerateTypeScript_NoActions(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -369,7 +475,7 @@ func TestGenerateTypeScript_NoConnectors(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -389,7 +495,7 @@ func TestGenerateTypeScript_EmptyPlugin(t *testing.T) {
 		Version:  "0.0.1",
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -431,7 +537,7 @@ func TestGenerateTypeScript_Connector(t *testing.T) {
 		},
 	}
 
-	out, err := GenerateTypeScript(entry)
+	out, err := GenerateTypeScript(entry, "")
 	if err != nil {
 		t.Fatalf("GenerateTypeScript() error: %v", err)
 	}
@@ -459,5 +565,89 @@ func TestSchemaNoType(t *testing.T) {
 	got := schemaToTS(schema, "")
 	if got != "unknown" {
 		t.Errorf("schemaToTS(no type) = %q, want %q", got, "unknown")
+	}
+}
+
+func TestTypeGuard_RequiredPrimitives(t *testing.T) {
+	entry := &plugins.CatalogEntry{
+		PluginID: "test",
+		Version:  "0.1.0",
+		Actions: []plugins.ActionDescriptor{
+			{
+				ID: "test.check@1",
+				InputSchema: map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"q": map[string]any{"type": "string"}},
+					"required":   []any{"q"},
+				},
+				OutputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"name":  map[string]any{"type": "string"},
+						"count": map[string]any{"type": "integer"},
+						"ok":    map[string]any{"type": "boolean"},
+						"items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+						"meta":  map[string]any{"type": "object"},
+						"extra": map[string]any{"type": "string"},
+					},
+					"required": []any{"name", "count", "ok", "items", "meta"},
+				},
+			},
+		},
+	}
+
+	out, err := GenerateTypeScript(entry, "")
+	if err != nil {
+		t.Fatalf("GenerateTypeScript() error: %v", err)
+	}
+	s := string(out)
+
+	mustContain := []string{
+		"export function isCheckOutput(value: unknown): value is CheckOutput {",
+		`typeof obj.name === "string"`,
+		`typeof obj.count === "number"`,
+		`typeof obj.ok === "boolean"`,
+		"Array.isArray(obj.items)",
+		`typeof obj.meta === "object" && obj.meta !== null`,
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(s, want) {
+			t.Errorf("output missing %q\n\nfull output:\n%s", want, s)
+		}
+	}
+
+	// "extra" is optional — must NOT appear in the type guard.
+	if strings.Contains(s, "obj.extra") {
+		t.Errorf("type guard should not check optional property 'extra'\n\n%s", s)
+	}
+}
+
+func TestTypeGuard_NoRequiredProperties(t *testing.T) {
+	entry := &plugins.CatalogEntry{
+		PluginID: "test",
+		Version:  "0.1.0",
+		Actions: []plugins.ActionDescriptor{
+			{
+				ID:          "test.any@1",
+				InputSchema: map[string]any{"type": "object"},
+				OutputSchema: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"hint": map[string]any{"type": "string"},
+					},
+					// No "required" — everything is optional.
+				},
+			},
+		},
+	}
+
+	out, err := GenerateTypeScript(entry, "")
+	if err != nil {
+		t.Fatalf("GenerateTypeScript() error: %v", err)
+	}
+	s := string(out)
+
+	if !strings.Contains(s, "return true;") {
+		t.Errorf("expected guard to return true when no required properties\n\n%s", s)
 	}
 }

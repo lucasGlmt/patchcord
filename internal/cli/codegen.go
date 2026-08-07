@@ -16,6 +16,7 @@ func newDevCodegenCommand() *cobra.Command {
 	var tsFlag bool
 	var outDir string
 	var dataDir string
+	var namespace string
 
 	cmd := &cobra.Command{
 		Use:   "codegen <plugin-id>",
@@ -25,7 +26,10 @@ func newDevCodegenCommand() *cobra.Command {
 			"language. The agent does not need to be running: the catalog is read\n" +
 			"directly from the SQLite database.\n\n" +
 			"Currently supported: --ts (TypeScript). The generated file is written to\n" +
-			"--out (default: current directory) as <plugin-id>.ts.",
+			"--out (default: current directory) as <plugin-id>.ts.\n\n" +
+			"The namespace wrapping the generated types is inferred from the common\n" +
+			"domain prefix of the plugin's action ids (e.g. actions imap.list-messages@1\n" +
+			"and imap.get-message@1 produce namespace Imap). Use --namespace to override.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !tsFlag {
@@ -49,7 +53,7 @@ func newDevCodegenCommand() *cobra.Command {
 				return fmt.Errorf("read plugin catalog: %w", err)
 			}
 
-			content, err := codegen.GenerateTypeScript(entry)
+			content, err := codegen.GenerateTypeScript(entry, namespace)
 			if err != nil {
 				return fmt.Errorf("generate typescript: %w", err)
 			}
@@ -66,6 +70,7 @@ func newDevCodegenCommand() *cobra.Command {
 
 	cmd.Flags().BoolVar(&tsFlag, "ts", false, "generate TypeScript interfaces")
 	cmd.Flags().StringVar(&outDir, "out", ".", "output directory")
+	cmd.Flags().StringVar(&namespace, "namespace", "", "override the generated namespace name (default: inferred from action ids)")
 	cmd.Flags().StringVar(&dataDir, "data-dir", defaultDataDir, "directory holding the agent's SQLite database (env PATCHCORD_DATA_DIR)")
 
 	return cmd
