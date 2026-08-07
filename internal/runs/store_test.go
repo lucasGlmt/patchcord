@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -324,7 +325,7 @@ func TestCancelRun(t *testing.T) {
 	installTestWorkflow(t, db, helloWorkflow)
 
 	t.Run("returns ErrRunNotFound for an unknown id", func(t *testing.T) {
-		err := CancelRun(context.Background(), db, "unknown")
+		err := CancelRun(context.Background(), db, "unknown", nil)
 		if !errors.Is(err, ErrRunNotFound) {
 			t.Fatalf("CancelRun() error = %v, want ErrRunNotFound", err)
 		}
@@ -337,7 +338,7 @@ func TestCancelRun(t *testing.T) {
 			t.Fatalf("Execute() error = %v", err)
 		}
 
-		err = CancelRun(context.Background(), db, run.ID)
+		err = CancelRun(context.Background(), db, run.ID, nil)
 		if !errors.Is(err, ErrRunNotCancellable) {
 			t.Fatalf("CancelRun() error = %v, want ErrRunNotCancellable", err)
 		}
@@ -353,8 +354,12 @@ func TestCancelRun(t *testing.T) {
 			t.Fatalf("createRun() error = %v", err)
 		}
 
-		if err := CancelRun(context.Background(), db, run.ID); err != nil {
+		m := metrics.New()
+		if err := CancelRun(context.Background(), db, run.ID, m); err != nil {
 			t.Fatalf("CancelRun() error = %v", err)
+		}
+		if got := m.Snapshot().Runs.Transitions["cancelled"]; got != 1 {
+			t.Fatalf("run_transitions_total{status=cancelled} = %d, want 1", got)
 		}
 
 		got, steps, err := GetRun(context.Background(), db, run.ID)

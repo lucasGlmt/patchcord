@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 )
 
 // testSupervisorConfig keeps timings short so crash/health-check/restart
@@ -100,7 +101,8 @@ func TestSupervisor_StartLaunchesAndStopsAHealthyPlugin(t *testing.T) {
 	seedCatalog(t, db, "io.patchcord.fake", fakePluginPath)
 
 	logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-	sup := NewSupervisor(testSupervisorConfig(), logger)
+	m := metrics.New()
+	sup := NewSupervisor(testSupervisorConfig(), logger, m)
 
 	if err := sup.Start(context.Background(), db); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -111,6 +113,9 @@ func TestSupervisor_StartLaunchesAndStopsAHealthyPlugin(t *testing.T) {
 	sup.mu.Unlock()
 	if rp == nil {
 		t.Fatal("expected the plugin to be running after Start()")
+	}
+	if snap := m.Snapshot(); len(snap.Plugins) != 1 || snap.Plugins[0].PluginID != "io.patchcord.fake" || !snap.Plugins[0].Running {
+		t.Fatalf("metrics snapshot plugins = %+v, want one running io.patchcord.fake entry", snap.Plugins)
 	}
 
 	healthCtx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -140,7 +145,7 @@ func TestSupervisor_ExecuteAction(t *testing.T) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-	sup := NewSupervisor(testSupervisorConfig(), logger)
+	sup := NewSupervisor(testSupervisorConfig(), logger, metrics.New())
 	if err := sup.Start(context.Background(), db); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -165,7 +170,7 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		seedCatalog(t, db, "io.patchcord.fake", fakePluginPath)
 
 		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-		sup := NewSupervisor(testSupervisorConfig(), logger)
+		sup := NewSupervisor(testSupervisorConfig(), logger, metrics.New())
 		if err := sup.Start(context.Background(), db); err != nil {
 			t.Fatalf("Start() error = %v", err)
 		}
@@ -181,7 +186,7 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		db := openCatalogTestDB(t)
 
 		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-		sup := NewSupervisor(testSupervisorConfig(), logger)
+		sup := NewSupervisor(testSupervisorConfig(), logger, metrics.New())
 		if err := sup.Start(context.Background(), db); err != nil {
 			t.Fatalf("Start() error = %v", err)
 		}
@@ -202,7 +207,8 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-		sup := NewSupervisor(testSupervisorConfig(), logger)
+		m := metrics.New()
+		sup := NewSupervisor(testSupervisorConfig(), logger, m)
 		if err := sup.Start(context.Background(), db); err != nil {
 			t.Fatalf("Start() error = %v", err)
 		}
@@ -214,6 +220,9 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		}
 		if !ok {
 			t.Fatal("ok = false, want true")
+		}
+		if got := m.Snapshot().Connectors.TestTotal["ok"]; got != 1 {
+			t.Fatalf("connector_test_total{result=ok} = %d, want 1", got)
 		}
 	})
 
@@ -227,7 +236,8 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-		sup := NewSupervisor(testSupervisorConfig(), logger)
+		m := metrics.New()
+		sup := NewSupervisor(testSupervisorConfig(), logger, m)
 		if err := sup.Start(context.Background(), db); err != nil {
 			t.Fatalf("Start() error = %v", err)
 		}
@@ -243,6 +253,9 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		if message != "boom" {
 			t.Fatalf("message = %q, want %q", message, "boom")
 		}
+		if got := m.Snapshot().Connectors.TestTotal["failed"]; got != 1 {
+			t.Fatalf("connector_test_total{result=failed} = %d, want 1", got)
+		}
 	})
 
 	t.Run("surfaces Unimplemented as an error for a plugin that doesn't support testing", func(t *testing.T) {
@@ -254,7 +267,8 @@ func TestSupervisor_TestConnector(t *testing.T) {
 		}
 
 		logger := slog.New(slog.NewTextHandler(&syncBuffer{}, nil))
-		sup := NewSupervisor(testSupervisorConfig(), logger)
+		m := metrics.New()
+		sup := NewSupervisor(testSupervisorConfig(), logger, m)
 		if err := sup.Start(context.Background(), db); err != nil {
 			t.Fatalf("Start() error = %v", err)
 		}
@@ -262,6 +276,9 @@ func TestSupervisor_TestConnector(t *testing.T) {
 
 		if _, _, err := sup.TestConnector(context.Background(), &connectors.ResolvedConnector{Type: "fake.connection@1"}); err == nil {
 			t.Fatal("expected an error for a plugin that does not support connector testing, got nil")
+		}
+		if got := m.Snapshot().Connectors.TestTotal["error"]; got != 1 {
+			t.Fatalf("connector_test_total{result=error} = %d, want 1", got)
 		}
 	})
 }
@@ -286,7 +303,8 @@ func TestSupervisor_RestartsACrashedPluginThenStaysUp(t *testing.T) {
 	// for the health-check-detected path).
 	cfg := testSupervisorConfig()
 	cfg.HealthCheckInterval = time.Second
-	sup := NewSupervisor(cfg, logger)
+	m := metrics.New()
+	sup := NewSupervisor(cfg, logger, m)
 
 	if err := sup.Start(context.Background(), db); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -312,6 +330,25 @@ func TestSupervisor_RestartsACrashedPluginThenStaysUp(t *testing.T) {
 	if strings.Contains(logStr, "quarantined") {
 		t.Fatalf("logs = %q, plugin should not have been quarantined", logStr)
 	}
+
+	// PluginStarted is recorded inside launchAndHandshake, strictly before
+	// restart() adds the plugin back to s.running — so by the time the
+	// waitForCondition above observes it in s.running, the metrics gauge
+	// has already been set. Still poll rather than read it once: the
+	// health-check ticker (1s interval) can otherwise race a slow test
+	// run and briefly flip it while this goroutine is scheduled out.
+	waitForCondition(t, 2*time.Second, func() bool {
+		snap := m.Snapshot()
+		return len(snap.Plugins) == 1 && snap.Plugins[0].PluginID == "io.patchcord.fake" && snap.Plugins[0].Running
+	})
+
+	snap := m.Snapshot()
+	if snap.Plugins[0].RestartsTotal == 0 {
+		t.Fatal("expected plugin_restarts_total to have recorded at least one restart attempt")
+	}
+	if snap.Plugins[0].QuarantinedTotal != 0 {
+		t.Fatalf("plugin_quarantined_total = %d, want 0 (plugin should not have been quarantined)", snap.Plugins[0].QuarantinedTotal)
+	}
 }
 
 func TestSupervisor_QuarantinesAfterRepeatedCrashes(t *testing.T) {
@@ -325,7 +362,8 @@ func TestSupervisor_QuarantinesAfterRepeatedCrashes(t *testing.T) {
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, nil))
 	cfg := testSupervisorConfig()
-	sup := NewSupervisor(cfg, logger)
+	m := metrics.New()
+	sup := NewSupervisor(cfg, logger, m)
 
 	if err := sup.Start(context.Background(), db); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -351,6 +389,20 @@ func TestSupervisor_QuarantinesAfterRepeatedCrashes(t *testing.T) {
 	if stillRunning {
 		t.Fatal("expected the plugin to be removed from the running set after quarantine")
 	}
+
+	snap := m.Snapshot()
+	if len(snap.Plugins) != 1 || snap.Plugins[0].PluginID != "io.patchcord.fake" {
+		t.Fatalf("metrics snapshot plugins = %+v, want exactly one io.patchcord.fake entry", snap.Plugins)
+	}
+	if snap.Plugins[0].Running {
+		t.Fatal("expected the plugin to be recorded as not running once quarantined")
+	}
+	if snap.Plugins[0].QuarantinedTotal != 1 {
+		t.Fatalf("plugin_quarantined_total = %d, want 1", snap.Plugins[0].QuarantinedTotal)
+	}
+	if int(snap.Plugins[0].RestartsTotal) != cfg.MaxRestarts {
+		t.Fatalf("plugin_restarts_total = %d, want %d (one attempt per retry before quarantine)", snap.Plugins[0].RestartsTotal, cfg.MaxRestarts)
+	}
 }
 
 func TestSupervisor_RestartsAndQuarantinesAnUnhealthyPlugin(t *testing.T) {
@@ -361,7 +413,8 @@ func TestSupervisor_RestartsAndQuarantinesAnUnhealthyPlugin(t *testing.T) {
 
 	logs := &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(logs, nil))
-	sup := NewSupervisor(testSupervisorConfig(), logger)
+	m := metrics.New()
+	sup := NewSupervisor(testSupervisorConfig(), logger, m)
 
 	if err := sup.Start(context.Background(), db); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -371,6 +424,10 @@ func TestSupervisor_RestartsAndQuarantinesAnUnhealthyPlugin(t *testing.T) {
 	waitForCondition(t, 5*time.Second, func() bool {
 		return strings.Contains(logs.String(), "plugin quarantined after repeated failures")
 	})
+
+	if snap := m.Snapshot(); len(snap.Plugins) != 1 || snap.Plugins[0].HealthCheckFailuresTotal == 0 {
+		t.Fatalf("metrics snapshot plugins = %+v, want plugin_health_check_failures_total > 0", snap.Plugins)
+	}
 
 	logStr := logs.String()
 	if !strings.Contains(logStr, "plugin health check failed") {

@@ -286,3 +286,65 @@ export interface PluginSummary {
   connectors: string[];
   actions: string[];
 }
+
+/**
+ * A snapshot of the agent's run/step metrics, as returned by
+ * PatchcordClient.system.metrics — how many runs/steps have transitioned
+ * into each status, and how many runs are currently active. See
+ * SystemMetrics.
+ */
+export interface RunMetrics {
+  /** Maps a run status (e.g. "running", "succeeded", "failed", "cancelled") to how many times a run has transitioned into it. */
+  transitions: Record<string, number>;
+  /** The number of runs currently in the running state. */
+  active: number;
+  steps: StepMetrics;
+}
+
+/** Step transitions recorded so far — nested under RunMetrics.steps. */
+export interface StepMetrics {
+  /** Maps a step status to how many times a step has transitioned into it. */
+  transitions: Record<string, number>;
+}
+
+/**
+ * One plugin's supervision history, within SystemMetrics.plugins. A plugin
+ * only appears once it has been observed at least once by the agent's
+ * plugin supervisor (typically: launched).
+ */
+export interface PluginMetrics {
+  pluginId: string;
+  running: boolean;
+  restartsTotal: number;
+  healthCheckFailuresTotal: number;
+  quarantinedTotal: number;
+}
+
+/** The scheduler's activity so far, within SystemMetrics.scheduler. */
+export interface SchedulerMetrics {
+  firesTotal: number;
+  /** Maps a skip reason (e.g. "caught_up") to how many due occurrences were skipped for it. */
+  skippedTotal: Record<string, number>;
+  /** The number of workflows currently registered with a schedule trigger. */
+  active: number;
+}
+
+/** Connector test attempts recorded so far, within SystemMetrics.connectors. */
+export interface ConnectorMetrics {
+  /** Maps a test result ("ok", "failed", "error") to how many attempts ended with it. */
+  testTotal: Record<string, number>;
+}
+
+/**
+ * A point-in-time snapshot of the agent's in-process metrics registry, as
+ * returned by PatchcordClient.system.metrics (GET /v1/system/metrics) —
+ * the same counters and gauges GET /metrics exposes in Prometheus text
+ * format for external scraping, reshaped as JSON for building a dashboard
+ * or widget directly against this SDK. See ADR-0070.
+ */
+export interface SystemMetrics {
+  runs: RunMetrics;
+  plugins: PluginMetrics[];
+  scheduler: SchedulerMetrics;
+  connectors: ConnectorMetrics;
+}

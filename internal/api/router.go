@@ -8,6 +8,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/api/agent"
 	"github.com/lucasglmt/patchcord/internal/auth"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/secrets"
 )
@@ -54,6 +55,12 @@ type Deps struct {
 	// build Deps{DB: db} directly keep resolving "env" references exactly
 	// as before secrets.MultiStore existed (ADR-0040).
 	Secrets secrets.Store
+	// Metrics is the agent's in-process metrics registry, read by
+	// GET /v1/system/metrics (JSON) and GET /metrics (Prometheus text) —
+	// see ADR-0070. Defaults to a private, unscraped metrics.Registry when
+	// nil, so existing callers that build Deps{DB: db} directly keep
+	// working exactly as before metrics existed.
+	Metrics *metrics.Registry
 	// AppsDirectoryListingEnabled turns on GET /apps/, an Apache-style index
 	// page listing every installed application with a link to its
 	// /apps/{id}/. Defaults to false, so existing callers that build
@@ -82,6 +89,10 @@ func (d Deps) logger() *slog.Logger {
 	return slog.Default()
 }
 
+func (d Deps) metrics() *metrics.Registry {
+	return metrics.OrNoop(d.Metrics)
+}
+
 // NewRouter returns the agent's public HTTP API handler, wiring every route
 // behind withAdminAuth (ADR-0036) except four deliberate exceptions:
 // GET /v1/system/health (a liveness check has to answer before any caller
@@ -97,7 +108,10 @@ func (d Deps) logger() *slog.Logger {
 // POST /v1/workflows/{id}/run and POST /v1/apps/{id}/sessions (see
 // withRunAuth and handleCreateAppSession's doc comment), and
 // POST /v1/webhooks/{id} (never admin-gated at all — see
-// handleWebhookTrigger's doc comment, ADR-0037).
+// handleWebhookTrigger's doc comment, ADR-0037). GET /metrics sits outside
+// the /v1 prefix too (Prometheus scrapers expect it at the root — see
+// ADR-0070) but is not an exception to withAdminAuth: it is gated exactly
+// like every other state-exposing route.
 func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/system/health", handleHealth(deps))
@@ -120,6 +134,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("DELETE /v1/connectors/{id}", withAdminAuth(deps, handleDeleteConnector(deps)))
 	mux.HandleFunc("POST /v1/connectors/{id}/test", withAdminAuth(deps, handleTestConnector(deps)))
 	mux.HandleFunc("GET /v1/plugins", withAdminAuth(deps, handleListPlugins(deps)))
+	mux.HandleFunc("GET /v1/system/metrics", withAdminAuth(deps, handleSystemMetrics(deps)))
+	mux.HandleFunc("GET /metrics", withAdminAuth(deps, handlePrometheusMetrics(deps)))
 	return withCORS(deps, mux)
 }
 

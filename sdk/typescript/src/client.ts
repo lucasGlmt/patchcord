@@ -10,6 +10,7 @@ import type {
   ListRunsOptions,
   PluginSummary,
   RunWorkflowOptions,
+  SystemMetrics,
   WorkflowDetail,
   WorkflowSummary,
 } from "./types.js";
@@ -22,6 +23,7 @@ import {
   healthStatusFromWire,
   pluginSummaryFromWire,
   runSummaryFromWire,
+  systemMetricsFromWire,
   workflowDetailFromWire,
   workflowSummaryFromWire,
   type WireAppSession,
@@ -31,6 +33,7 @@ import {
   type WireHealthStatus,
   type WirePluginSummary,
   type WireRunSummary,
+  type WireSystemMetrics,
   type WireWorkflowDetail,
   type WireWorkflowSummary,
 } from "./wire.js";
@@ -58,10 +61,14 @@ export interface PatchcordClientOptions {
 /**
  * Client for the Patchcord agent's public HTTP API (vision document,
  * section 10.2), covering every `/v1/*` route the agent implements today:
- * `system.health`, `workflows.list`/`run`, `runs.list`/`get`/`cancel`, and
- * `apps.list`/`createSession`. The vision document's fuller `client.*`
- * surface (plugins/connectors/actions/files/...) has no server-side
- * implementation yet — see internal/api/doc.go — so it isn't wrapped here.
+ * `system.health`/`metrics`, `workflows.list`/`run`,
+ * `runs.list`/`get`/`cancel`, and `apps.list`/`createSession`. The vision
+ * document's fuller `client.*` surface (plugins/connectors/actions/files/...)
+ * has no server-side implementation yet — see internal/api/doc.go — so it
+ * isn't wrapped here. GET /metrics (Prometheus text format) is the one
+ * exception: it sits outside `/v1/*` by design (ADR-0070) and is meant for
+ * direct scraping, not application code — see `system.metrics` for the
+ * JSON equivalent this SDK does wrap.
  */
 export class PatchcordClient {
   #baseUrl: string;
@@ -71,6 +78,16 @@ export class PatchcordClient {
   readonly system: {
     /** Reports whether the agent's database is reachable (GET /v1/system/health). */
     health(): Promise<HealthStatus>;
+    /**
+     * Returns a snapshot of the agent's in-process metrics — run/step
+     * transitions and counts, plugin supervision, scheduler activity,
+     * connector tests (GET /v1/system/metrics). The same underlying
+     * counters are also exposed in Prometheus text format at GET /metrics,
+     * outside `/v1/*` and not wrapped by this SDK — that endpoint is for
+     * direct scraping by an external Prometheus/Grafana, not application
+     * code. See ADR-0070.
+     */
+    metrics(): Promise<SystemMetrics>;
   };
 
   readonly workflows: {
@@ -168,6 +185,7 @@ export class PatchcordClient {
 
     this.system = {
       health: () => this.#health(),
+      metrics: () => this.#metrics(),
     };
     this.workflows = {
       list: () => this.#listWorkflows(),
@@ -243,6 +261,11 @@ export class PatchcordClient {
   async #health(): Promise<HealthStatus> {
     const response = await this.#fetch(`${this.#baseUrl}/v1/system/health`);
     return healthStatusFromWire((await response.json()) as WireHealthStatus);
+  }
+
+  async #metrics(): Promise<SystemMetrics> {
+    const wire = await this.#request<WireSystemMetrics>("GET", "/v1/system/metrics");
+    return systemMetricsFromWire(wire);
   }
 
   async #listWorkflows(): Promise<WorkflowSummary[]> {

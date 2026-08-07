@@ -73,23 +73,23 @@ func TestWatchRun_ObservesEachStatusChangeInOrder(t *testing.T) {
 	const gap = 20 * time.Millisecond
 	go func() {
 		time.Sleep(gap)
-		if err := updateRunStatus(context.Background(), db, run, workflow.RunRunning, nil, nil); err != nil {
+		if err := updateRunStatus(context.Background(), db, run, workflow.RunRunning, nil, nil, nil); err != nil {
 			t.Errorf("updateRunStatus(running) error = %v", err)
 		}
 
 		time.Sleep(gap)
-		if err := updateStepStatus(context.Background(), db, run.ID, stepID, workflow.StepPending, workflow.StepRunning, nil, nil, nil); err != nil {
+		if err := updateStepStatus(context.Background(), db, run.ID, stepID, workflow.StepPending, workflow.StepRunning, nil, nil, nil, nil); err != nil {
 			t.Errorf("updateStepStatus(running) error = %v", err)
 		}
 
 		time.Sleep(gap)
 		output := map[string]any{"value": "HELLO"}
-		if err := updateStepStatus(context.Background(), db, run.ID, stepID, workflow.StepRunning, workflow.StepSucceeded, nil, output, nil); err != nil {
+		if err := updateStepStatus(context.Background(), db, run.ID, stepID, workflow.StepRunning, workflow.StepSucceeded, nil, output, nil, nil); err != nil {
 			t.Errorf("updateStepStatus(succeeded) error = %v", err)
 		}
 
 		time.Sleep(gap)
-		if err := updateRunStatus(context.Background(), db, run, workflow.RunSucceeded, output, nil); err != nil {
+		if err := updateRunStatus(context.Background(), db, run, workflow.RunSucceeded, output, nil, nil); err != nil {
 			t.Errorf("updateRunStatus(succeeded) error = %v", err)
 		}
 	}()

@@ -71,6 +71,25 @@ function startFakeAgent(): Promise<{ baseUrl: string; close: () => Promise<void>
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/v1/system/metrics") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          runs: {
+            transitions: { running: 1, succeeded: 1 },
+            active: 1,
+            steps: { transitions: { succeeded: 1 } },
+          },
+          plugins: [
+            { plugin_id: "io.patchcord.fake", running: true, restarts_total: 2, health_check_failures_total: 1, quarantined_total: 0 },
+          ],
+          scheduler: { fires_total: 3, skipped_total: { caught_up: 1 }, active: 2 },
+          connectors: { test_total: { ok: 1, error: 1 } },
+        }),
+      );
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/v1/workflows") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify([{ id: "demo", version: 1, installed_at: "2026-01-01T00:00:00Z" }]));
@@ -313,6 +332,43 @@ test("PatchcordClient.system.health reports the agent's database status", async 
     assert.deepEqual(await client.system.health(), { status: "ok", database: "ok" });
   } finally {
     await agent.close();
+  }
+});
+
+test("PatchcordClient.system.metrics returns a camelCased metrics snapshot", async () => {
+  const agent = await startFakeAgent();
+  try {
+    const client = new PatchcordClient({ baseUrl: agent.baseUrl });
+    assert.deepEqual(await client.system.metrics(), {
+      runs: {
+        transitions: { running: 1, succeeded: 1 },
+        active: 1,
+        steps: { transitions: { succeeded: 1 } },
+      },
+      plugins: [
+        { pluginId: "io.patchcord.fake", running: true, restartsTotal: 2, healthCheckFailuresTotal: 1, quarantinedTotal: 0 },
+      ],
+      scheduler: { firesTotal: 3, skippedTotal: { caught_up: 1 }, active: 2 },
+      connectors: { testTotal: { ok: 1, error: 1 } },
+    });
+  } finally {
+    await agent.close();
+  }
+});
+
+test("PatchcordClient.system.metrics rejects a non-2xx response", async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(401, { "Content-Type": "text/plain" });
+    res.end("admin auth: missing bearer token");
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const addr = server.address() as AddressInfo;
+
+  try {
+    const client = new PatchcordClient({ baseUrl: `http://127.0.0.1:${addr.port}` });
+    await assert.rejects(() => client.system.metrics(), /401/);
+  } finally {
+    await new Promise((r) => server.close(() => r(undefined)));
   }
 });
 

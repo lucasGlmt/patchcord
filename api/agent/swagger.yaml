@@ -24,6 +24,14 @@ definitions:
           type: string
         type: array
     type: object
+  api.connectorMetricsResponse:
+    properties:
+      test_total:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+    type: object
   api.connectorSecretRef:
     properties:
       key:
@@ -77,6 +85,19 @@ definitions:
       version:
         type: string
     type: object
+  api.pluginMetricsResponse:
+    properties:
+      health_check_failures_total:
+        type: integer
+      plugin_id:
+        type: string
+      quarantined_total:
+        type: integer
+      restarts_total:
+        type: integer
+      running:
+        type: boolean
+    type: object
   api.pluginSummary:
     properties:
       actions:
@@ -91,6 +112,18 @@ definitions:
         type: string
       version:
         type: string
+    type: object
+  api.runMetricsResponse:
+    properties:
+      active:
+        type: integer
+      steps:
+        $ref: '#/definitions/api.stepMetricsResponse'
+      transitions:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
     type: object
   api.runStep:
     properties:
@@ -149,6 +182,39 @@ definitions:
       inputs:
         additionalProperties: {}
         type: object
+    type: object
+  api.schedulerMetricsResponse:
+    properties:
+      active:
+        type: integer
+      fires_total:
+        type: integer
+      skipped_total:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+    type: object
+  api.stepMetricsResponse:
+    properties:
+      transitions:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+    type: object
+  api.systemMetricsResponse:
+    properties:
+      connectors:
+        $ref: '#/definitions/api.connectorMetricsResponse'
+      plugins:
+        items:
+          $ref: '#/definitions/api.pluginMetricsResponse'
+        type: array
+      runs:
+        $ref: '#/definitions/api.runMetricsResponse'
+      scheduler:
+        $ref: '#/definitions/api.schedulerMetricsResponse'
     type: object
   api.workflowBindingDetail:
     properties:
@@ -587,6 +653,24 @@ paths:
           schema:
             $ref: '#/definitions/api.healthResponse'
       summary: Check agent health
+      tags:
+      - system
+  /system/metrics:
+    get:
+      description: Returns a JSON snapshot of the agent's in-process metrics registry
+        (run/step transitions and durations, plugin supervision, scheduler activity,
+        connector tests) — the same data GET /metrics exposes in Prometheus text format,
+        reshaped for a dashboard or application. See ADR-0070.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.systemMetricsResponse'
+      security:
+      - BearerAuth: []
+      summary: Get a metrics snapshot
       tags:
       - system
   /webhooks/{id}:

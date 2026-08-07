@@ -882,7 +882,7 @@ func TestStart_CreatesARunningRunWithoutExecutingAnyStep(t *testing.T) {
 	db := openTestDB(t)
 	installTestWorkflow(t, db, helloWorkflow)
 
-	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"}, nil)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -906,7 +906,7 @@ func TestStart_CreatesARunningRunWithoutExecutingAnyStep(t *testing.T) {
 func TestStart_UnknownWorkflowFailsFast(t *testing.T) {
 	db := openTestDB(t)
 
-	if _, _, _, err := Start(context.Background(), db, "unknown", nil); !errors.Is(err, ErrWorkflowNotFound) {
+	if _, _, _, err := Start(context.Background(), db, "unknown", nil, nil); !errors.Is(err, ErrWorkflowNotFound) {
 		t.Fatalf("Start() error = %v, want ErrWorkflowNotFound", err)
 	}
 }
@@ -930,7 +930,7 @@ steps:
       value: "${{ workflow.inputs.name }}"
 `)
 
-	_, run, preparedInputs, err := Start(context.Background(), db, "greet", map[string]any{})
+	_, run, preparedInputs, err := Start(context.Background(), db, "greet", map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -961,7 +961,7 @@ steps:
       value: "${{ workflow.inputs.name }}"
 `)
 
-	if _, _, _, err := Start(context.Background(), db, "greet", map[string]any{}); !errors.Is(err, workflow.ErrInvalidInputs) {
+	if _, _, _, err := Start(context.Background(), db, "greet", map[string]any{}, nil); !errors.Is(err, workflow.ErrInvalidInputs) {
 		t.Fatalf("Start() error = %v, want workflow.ErrInvalidInputs", err)
 	}
 }
@@ -1014,7 +1014,7 @@ func TestContinue_DrivesAnAlreadyStartedRunToCompletion(t *testing.T) {
 	db := openTestDB(t)
 	installTestWorkflow(t, db, helloWorkflow)
 
-	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"}, nil)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -1044,7 +1044,7 @@ func TestStartThenBackgroundContinue(t *testing.T) {
 	db := openTestDB(t)
 	installTestWorkflow(t, db, helloWorkflow)
 
-	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"})
+	def, run, _, err := Start(context.Background(), db, "hello_patchcord", map[string]any{"value": "hi"}, nil)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}

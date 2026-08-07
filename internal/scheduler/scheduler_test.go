@@ -11,6 +11,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/workflow"
@@ -245,15 +246,22 @@ func TestRunner_fire(t *testing.T) {
 			}
 
 			executor := newRecordingExecutor()
-			r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+			m := metrics.New()
+			r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, m)
 
 			row := scheduleRow{WorkflowID: def.ID, Cron: expr, OnMissed: tt.onMissed, NextRunAt: tt.nextRunAt}
 			r.fire(ctx, row, tt.now)
 
 			if tt.wantFire {
 				executor.expectCall(t)
+				if got := m.Snapshot().Scheduler.FiresTotal; got != 1 {
+					t.Errorf("schedule_fires_total = %d, want 1", got)
+				}
 			} else {
 				executor.expectNoCall(t)
+				if got := m.Snapshot().Scheduler.SkippedTotal["caught_up"]; got != 1 {
+					t.Errorf(`schedule_skipped_total{reason="caught_up"} = %d, want 1`, got)
+				}
 			}
 
 			wantNext, err := cron.ParseStandard(expr)
@@ -287,11 +295,15 @@ func TestRunner_tick_firesDueSchedule(t *testing.T) {
 	}
 
 	executor := newRecordingExecutor()
-	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	m := metrics.New()
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, m)
 
 	r.tick(ctx)
 
 	executor.expectCall(t)
+	if got := m.Snapshot().Scheduler.Active; got != 1 {
+		t.Errorf("active_schedules = %d, want 1", got)
+	}
 }
 
 func TestRunner_tick_ignoresNotYetDueSchedule(t *testing.T) {
@@ -304,11 +316,15 @@ func TestRunner_tick_ignoresNotYetDueSchedule(t *testing.T) {
 	}
 
 	executor := newRecordingExecutor()
-	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	m := metrics.New()
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, m)
 
 	r.tick(ctx)
 
 	executor.expectNoCall(t)
+	if got := m.Snapshot().Scheduler.Active; got != 1 {
+		t.Errorf("active_schedules = %d, want 1", got)
+	}
 }
 
 // TestRunner_Run_ticksImmediatelyThenStopsOnCancel exercises Run itself
@@ -333,7 +349,7 @@ func TestRunner_Run_ticksImmediatelyThenStopsOnCancel(t *testing.T) {
 	}
 
 	executor := newRecordingExecutor()
-	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	r := NewRunner(db, executor, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil)
 
 	done := make(chan struct{})
 	go func() {

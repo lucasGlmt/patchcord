@@ -148,7 +148,7 @@ func handleCancelRun(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 
-		err := runs.CancelRun(r.Context(), deps.DB, id)
+		err := runs.CancelRun(r.Context(), deps.DB, id, deps.metrics())
 		if errors.Is(err, runs.ErrRunNotFound) {
 			http.Error(w, fmt.Sprintf("run %q was not found", id), http.StatusNotFound)
 			return

@@ -166,7 +166,7 @@ func TestHandleCancelRun_CancelsAQueuedRun(t *testing.T) {
 	if _, err := runs.InstallWorkflow(context.Background(), db, []byte(eventsTestWorkflow), knownActions); err != nil {
 		t.Fatalf("InstallWorkflow() error = %v", err)
 	}
-	_, run, _, err := runs.Start(context.Background(), db, "hello_patchcord", nil)
+	_, run, _, err := runs.Start(context.Background(), db, "hello_patchcord", nil, nil)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}

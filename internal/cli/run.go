@@ -185,7 +185,7 @@ func newRunCancelCommand() *cobra.Command {
 			}
 			defer db.Close()
 
-			err = runs.CancelRun(cmd.Context(), db, args[0])
+			err = runs.CancelRun(cmd.Context(), db, args[0], nil)
 			if errors.Is(err, runs.ErrRunNotFound) {
 				return fmt.Errorf("cancel run: %q was not found", args[0])
 			}

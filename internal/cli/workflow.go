@@ -292,7 +292,7 @@ func newWorkflowRunCommand() *cobra.Command {
 			// `patchcord serve` does at startup (see ADR-0017 for why
 			// workflow execution can't stay a pure catalog read, unlike
 			// the other one-shot plugin/workflow commands).
-			supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
+			supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger, nil)
 			if err := supervisor.Start(cmd.Context(), db); err != nil {
 				return fmt.Errorf("start plugin supervisor: %w", err)
 			}

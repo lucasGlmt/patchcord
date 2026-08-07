@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
 
@@ -261,8 +262,16 @@ func createRun(ctx context.Context, db *sql.DB, def *workflow.Definition, inputs
 // updateRunStatus validates the transition, then persists it. On the
 // transition into a terminal state, outputs and runErr (if any) are
 // recorded and finished_at is set; on the transition out of queued,
-// started_at is set.
-func updateRunStatus(ctx context.Context, db *sql.DB, run *Run, to workflow.RunStatus, outputs map[string]any, runErr error) error {
+// started_at is set. It also records the transition into m (nil-safe via
+// metrics.OrNoop): a run_transitions_total{status} count always, the
+// active-runs gauge moving on entering/leaving the running state, and — on
+// a terminal transition — the run's total duration, read back from
+// started_at rather than tracked in Go, since run.StartedAt is not
+// reliably populated on every *Run this function is called with (see
+// createRun/Start).
+func updateRunStatus(ctx context.Context, db *sql.DB, run *Run, to workflow.RunStatus, outputs map[string]any, runErr error, m *metrics.Registry) error {
+	m = metrics.OrNoop(m)
+
 	if err := workflow.ValidateRunTransition(run.Status, to); err != nil {
 		return err
 	}
@@ -277,11 +286,14 @@ func updateRunStatus(ctx context.Context, db *sql.DB, run *Run, to workflow.RunS
 		errText = runErr.Error()
 	}
 
+	fromQueued := run.Status == workflow.RunQueued
+	isTerminal := to == workflow.RunSucceeded || to == workflow.RunFailed || to == workflow.RunCancelled
+
 	var startedAtClause, finishedAtClause string
-	if run.Status == workflow.RunQueued {
+	if fromQueued {
 		startedAtClause = ", started_at = CURRENT_TIMESTAMP"
 	}
-	if to == workflow.RunSucceeded || to == workflow.RunFailed || to == workflow.RunCancelled {
+	if isTerminal {
 		finishedAtClause = ", finished_at = CURRENT_TIMESTAMP"
 	}
 
@@ -293,6 +305,21 @@ func updateRunStatus(ctx context.Context, db *sql.DB, run *Run, to workflow.RunS
 		return fmt.Errorf("update run %s status: %w", run.ID, err)
 	}
 
+	var duration time.Duration
+	if isTerminal {
+		var startedAt sql.NullTime
+		if err := db.QueryRowContext(ctx, `SELECT started_at FROM runs WHERE id = ?`, run.ID).Scan(&startedAt); err == nil && startedAt.Valid {
+			duration = time.Since(startedAt.Time)
+		}
+	}
+	m.RecordRunTransition(string(to), duration)
+	if fromQueued {
+		m.ActiveRunsInc()
+	}
+	if isTerminal {
+		m.ActiveRunsDec()
+	}
+
 	run.Status = to
 	run.Outputs = outputs
 	if runErr != nil {
@@ -301,8 +328,15 @@ func updateRunStatus(ctx context.Context, db *sql.DB, run *Run, to workflow.RunS
 	return nil
 }
 
-// updateStepStatus validates the transition, then persists it.
-func updateStepStatus(ctx context.Context, db *sql.DB, runID, stepID string, from, to workflow.StepStatus, input, output map[string]any, stepErr error) error {
+// updateStepStatus validates the transition, then persists it. It also
+// records the transition into m (nil-safe via metrics.OrNoop): a
+// step_transitions_total{status} count always, and — on a transition out
+// of running into a terminal status — the step's duration, read back from
+// started_at (updateStepStatus is not given a *Step to track it on, unlike
+// updateRunStatus's *Run).
+func updateStepStatus(ctx context.Context, db *sql.DB, runID, stepID string, from, to workflow.StepStatus, input, output map[string]any, stepErr error, m *metrics.Registry) error {
+	m = metrics.OrNoop(m)
+
 	if err := workflow.ValidateStepTransition(from, to); err != nil {
 		return err
 	}
@@ -321,11 +355,13 @@ func updateStepStatus(ctx context.Context, db *sql.DB, runID, stepID string, fro
 		errText = stepErr.Error()
 	}
 
+	isTerminal := to == workflow.StepSucceeded || to == workflow.StepFailed || to == workflow.StepSkipped || to == workflow.StepCancelled
+
 	var startedAtClause, finishedAtClause string
 	if from == workflow.StepPending {
 		startedAtClause = ", started_at = CURRENT_TIMESTAMP"
 	}
-	if to == workflow.StepSucceeded || to == workflow.StepFailed || to == workflow.StepSkipped || to == workflow.StepCancelled {
+	if isTerminal {
 		finishedAtClause = ", finished_at = CURRENT_TIMESTAMP"
 	}
 
@@ -336,6 +372,15 @@ func updateStepStatus(ctx context.Context, db *sql.DB, runID, stepID string, fro
 	if err != nil {
 		return fmt.Errorf("update step %s/%s status: %w", runID, stepID, err)
 	}
+
+	var duration time.Duration
+	if from == workflow.StepRunning && isTerminal {
+		var startedAt sql.NullTime
+		if err := db.QueryRowContext(ctx, `SELECT started_at FROM run_steps WHERE run_id = ? AND step_id = ?`, runID, stepID).Scan(&startedAt); err == nil && startedAt.Valid {
+			duration = time.Since(startedAt.Time)
+		}
+	}
+	m.RecordStepTransition(string(to), duration)
 
 	return nil
 }
@@ -473,13 +518,15 @@ func ListRuns(ctx context.Context, db *sql.DB, workflowID string) ([]Run, error)
 }
 
 // CancelRun marks a run still in the queued or running state as cancelled,
-// along with any of its steps that never reached a terminal state.
+// along with any of its steps that never reached a terminal state. m
+// (nil-safe via metrics.OrNoop) records the resulting transitions exactly
+// like a run cancelled through the normal Continue path would.
 //
 // patchcord workflow run executes synchronously within its own process, so
 // this cannot interrupt a run actively in progress elsewhere — it is meant
 // for a run left behind non-terminal by a crashed process. It returns
 // ErrRunNotCancellable if the run has already reached a terminal state.
-func CancelRun(ctx context.Context, db *sql.DB, id string) error {
+func CancelRun(ctx context.Context, db *sql.DB, id string, m *metrics.Registry) error {
 	run, steps, err := GetRun(ctx, db, id)
 	if err != nil {
 		return err
@@ -490,7 +537,7 @@ func CancelRun(ctx context.Context, db *sql.DB, id string) error {
 	}
 
 	cancelErr := errors.New("cancelled")
-	if err := updateRunStatus(ctx, db, run, workflow.RunCancelled, run.Outputs, cancelErr); err != nil {
+	if err := updateRunStatus(ctx, db, run, workflow.RunCancelled, run.Outputs, cancelErr, m); err != nil {
 		return err
 	}
 
@@ -498,7 +545,7 @@ func CancelRun(ctx context.Context, db *sql.DB, id string) error {
 		if step.Status != workflow.StepPending && step.Status != workflow.StepRunning {
 			continue
 		}
-		if err := updateStepStatus(ctx, db, id, step.StepID, step.Status, workflow.StepCancelled, step.Input, step.Output, nil); err != nil {
+		if err := updateStepStatus(ctx, db, id, step.StepID, step.Status, workflow.StepCancelled, step.Input, step.Output, nil, m); err != nil {
 			return err
 		}
 	}

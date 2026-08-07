@@ -20,6 +20,7 @@ The SDK wraps every `/v1/*` route the agent implements today — no more, no les
 | Namespace | Backed by |
 |---|---|
 | `client.system.health()` | `GET /v1/system/health` |
+| `client.system.metrics()` | `GET /v1/system/metrics` — a JSON snapshot of the agent's in-process metrics (run/step transitions, plugin supervision, scheduler activity, connector tests). See [ADR-0070](../../../adr/0070-metriques-prometheus-du-core.md). |
 | `client.workflows.list()`, `client.workflows.get(...)`, `client.workflows.run(...)` | `GET /v1/workflows`, `GET /v1/workflows/{id}`, `POST /v1/workflows/{id}/run` |
 | `client.runs.list(...)`, `client.runs.get(...)`, `client.runs.cancel(...)` | `GET /v1/runs`, `GET /v1/runs/{id}`, `POST /v1/runs/{id}/cancel` |
 | `client.apps.list()`, `client.apps.createSession(...)` | `GET /v1/apps`, `POST /v1/apps/{id}/sessions` |
@@ -27,6 +28,8 @@ The SDK wraps every `/v1/*` route the agent implements today — no more, no les
 | `client.plugins.list()` | `GET /v1/plugins` |
 
 The vision document's fuller `client.*` surface (section 10.2) also describes `actions`, `files`, `notifications`, and `storage` namespaces. None of those have a server-side HTTP implementation yet (`internal/api/doc.go` is explicit about this), so the SDK does not expose them either — adding a client method ahead of its endpoint would let application code compile against something that doesn't exist at runtime.
+
+One deliberate exception to "every `/v1/*` route": `GET /metrics`, the agent's Prometheus text-exposition endpoint, sits outside `/v1/*` by design and is not wrapped here — it's for direct scraping by an external Prometheus/Grafana server, not application code. `client.system.metrics()` is its JSON equivalent, on the regular `/v1/*` contract.
 
 ## Where to go next
 

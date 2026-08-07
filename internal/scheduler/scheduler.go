@@ -16,6 +16,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/runs"
 	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
@@ -113,21 +114,24 @@ type Runner struct {
 	executor runs.ActionExecutor
 	logger   *slog.Logger
 	secrets  secrets.Store
+	metrics  *metrics.Registry
 }
 
 // NewRunner builds a Runner. logger defaults to slog.Default() when nil,
 // secretStore to secrets.EnvStore{} when nil — same default a directly
 // built runs.ExecuteOptions{} falls back to, so a scheduled run resolves
 // connector secrets exactly like a manual one unless the caller wires in
-// the agent's configured secrets.MultiStore (internal/runtime.NewAgent).
-func NewRunner(db *sql.DB, executor runs.ActionExecutor, logger *slog.Logger, secretStore secrets.Store) *Runner {
+// the agent's configured secrets.MultiStore (internal/runtime.NewAgent). m
+// defaults to a private, unscraped metrics.Registry when nil — see
+// ADR-0070.
+func NewRunner(db *sql.DB, executor runs.ActionExecutor, logger *slog.Logger, secretStore secrets.Store, m *metrics.Registry) *Runner {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if secretStore == nil {
 		secretStore = secrets.EnvStore{}
 	}
-	return &Runner{db: db, executor: executor, logger: logger, secrets: secretStore}
+	return &Runner{db: db, executor: executor, logger: logger, secrets: secretStore, metrics: metrics.OrNoop(m)}
 }
 
 // Run polls for due schedules immediately, then every pollInterval, until
@@ -154,6 +158,12 @@ func (r *Runner) Run(ctx context.Context) {
 func (r *Runner) tick(ctx context.Context) {
 	now := time.Now()
 
+	if n, err := countSchedules(ctx, r.db); err != nil {
+		r.logger.Error("count schedules", slog.String("error", err.Error()))
+	} else {
+		r.metrics.SetActiveSchedules(n)
+	}
+
 	due, err := dueSchedules(ctx, r.db, now)
 	if err != nil {
 		r.logger.Error("list due schedules", slog.String("error", err.Error()))
@@ -163,6 +173,17 @@ func (r *Runner) tick(ctx context.Context) {
 	for _, s := range due {
 		r.fire(ctx, s, now)
 	}
+}
+
+// countSchedules returns the number of workflows currently registered with
+// a schedule trigger — the active_schedules gauge's value, refreshed once
+// per tick (see Runner.tick).
+func countSchedules(ctx context.Context, db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schedules`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count schedules: %w", err)
+	}
+	return n, nil
 }
 
 // scheduleRow is one row of the schedules table.
@@ -241,11 +262,13 @@ func (r *Runner) fire(ctx context.Context, s scheduleRow, now time.Time) {
 	if !shouldFire {
 		r.logger.Info("schedule caught up without firing",
 			slog.String("workflow_id", s.WorkflowID), slog.Int("missed_occurrences", missed), slog.String("on_missed", s.OnMissed))
+		r.metrics.ScheduleSkipped("caught_up")
 		return
 	}
 
+	r.metrics.ScheduleFired()
 	go func() {
-		if _, err := runs.Execute(ctx, r.db, r.executor, s.WorkflowID, map[string]any{}, map[string]string{}, runs.ExecuteOptions{Secrets: r.secrets}); err != nil {
+		if _, err := runs.Execute(ctx, r.db, r.executor, s.WorkflowID, map[string]any{}, map[string]string{}, runs.ExecuteOptions{Secrets: r.secrets, Metrics: r.metrics}); err != nil {
 			r.logger.Error("scheduled run failed", slog.String("workflow_id", s.WorkflowID), slog.String("error", err.Error()))
 		}
 	}()

@@ -39,4 +39,6 @@ See the full guide in the docs book: [Getting Started with the TypeScript SDK](h
 
 ## Scope
 
-This package covers every `/v1/*` route the agent exposes: workflows, runs (including live events over SSE), connectors, plugins, and application sessions. It does not know about any concrete business service (Patchcord's core never does either — ADR-0004) — connectivity to a specific external system is a plugin's job, not this SDK's.
+This package covers every `/v1/*` route the agent exposes: workflows, runs (including live events over SSE), connectors, plugins, application sessions, and a system metrics snapshot (`system.metrics`). It does not know about any concrete business service (Patchcord's core never does either — ADR-0004) — connectivity to a specific external system is a plugin's job, not this SDK's.
+
+`GET /metrics` (the agent's Prometheus text-exposition endpoint) is the one route this SDK does not wrap: it lives outside `/v1/*` by design and is meant for direct scraping by an external Prometheus/Grafana, not application code — see [ADR-0070](https://github.com/lucasglmt/patchcord/blob/main/docs/adr/0070-metriques-prometheus-du-core.md).

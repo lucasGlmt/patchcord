@@ -7,15 +7,21 @@ import type {
   AppSession,
   AppSummary,
   Connector,
+  ConnectorMetrics,
   ConnectorSecretRef,
   ConnectorTestResult,
   HealthStatus,
+  PluginMetrics,
   PluginSummary,
   RunEvent,
+  RunMetrics,
   RunStatus,
   RunStep,
   RunSummary,
+  SchedulerMetrics,
+  StepMetrics,
   StepStatus,
+  SystemMetrics,
   WorkflowBindingDetail,
   WorkflowDetail,
   WorkflowInputDetail,
@@ -281,5 +287,83 @@ export function pluginSummaryFromWire(wire: WirePluginSummary): PluginSummary {
     version: wire.version,
     connectors: wire.connectors ?? [],
     actions: wire.actions ?? [],
+  };
+}
+
+export interface WireStepMetrics {
+  transitions: Record<string, number>;
+}
+
+export interface WireRunMetrics {
+  transitions: Record<string, number>;
+  active: number;
+  steps: WireStepMetrics;
+}
+
+export interface WirePluginMetrics {
+  plugin_id: string;
+  running: boolean;
+  restarts_total: number;
+  health_check_failures_total: number;
+  quarantined_total: number;
+}
+
+export interface WireSchedulerMetrics {
+  fires_total: number;
+  skipped_total: Record<string, number>;
+  active: number;
+}
+
+export interface WireConnectorMetrics {
+  test_total: Record<string, number>;
+}
+
+export interface WireSystemMetrics {
+  runs: WireRunMetrics;
+  plugins: WirePluginMetrics[];
+  scheduler: WireSchedulerMetrics;
+  connectors: WireConnectorMetrics;
+}
+
+function stepMetricsFromWire(wire: WireStepMetrics): StepMetrics {
+  return { transitions: wire.transitions ?? {} };
+}
+
+function runMetricsFromWire(wire: WireRunMetrics): RunMetrics {
+  return {
+    transitions: wire.transitions ?? {},
+    active: wire.active,
+    steps: stepMetricsFromWire(wire.steps),
+  };
+}
+
+function pluginMetricsFromWire(wire: WirePluginMetrics): PluginMetrics {
+  return {
+    pluginId: wire.plugin_id,
+    running: wire.running,
+    restartsTotal: wire.restarts_total,
+    healthCheckFailuresTotal: wire.health_check_failures_total,
+    quarantinedTotal: wire.quarantined_total,
+  };
+}
+
+function schedulerMetricsFromWire(wire: WireSchedulerMetrics): SchedulerMetrics {
+  return {
+    firesTotal: wire.fires_total,
+    skippedTotal: wire.skipped_total ?? {},
+    active: wire.active,
+  };
+}
+
+function connectorMetricsFromWire(wire: WireConnectorMetrics): ConnectorMetrics {
+  return { testTotal: wire.test_total ?? {} };
+}
+
+export function systemMetricsFromWire(wire: WireSystemMetrics): SystemMetrics {
+  return {
+    runs: runMetricsFromWire(wire.runs),
+    plugins: (wire.plugins ?? []).map(pluginMetricsFromWire),
+    scheduler: schedulerMetricsFromWire(wire.scheduler),
+    connectors: connectorMetricsFromWire(wire.connectors),
   };
 }

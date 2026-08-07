@@ -15,6 +15,7 @@ import (
 
 	"github.com/lucasglmt/patchcord/internal/api"
 	"github.com/lucasglmt/patchcord/internal/auth"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/persistence"
 	"github.com/lucasglmt/patchcord/internal/plugins"
 	"github.com/lucasglmt/patchcord/internal/scheduler"
@@ -102,7 +103,13 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("seed embedded plugins: %w", err)
 	}
 
-	supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
+	// metricsRegistry is the agent's single in-process metrics registry for
+	// this run: every subsystem that records anything (the plugin
+	// supervisor, the scheduler, runs) shares this one instance, and both
+	// GET /metrics and GET /v1/system/metrics read from it. See ADR-0070.
+	metricsRegistry := metrics.New()
+
+	supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger, metricsRegistry)
 	if err := supervisor.Start(context.Background(), db); err != nil {
 		_ = listener.Close()
 		_ = db.Close()
@@ -120,7 +127,7 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 	// The scheduler fires "schedule"-triggered workflows (ADR-0035) the same
 	// way handleRunWorkflow fires a manual one — under runCtx, so it shares
 	// the same shutdown-cancellation behavior.
-	go scheduler.NewRunner(db, supervisor, logger, secretStore).Run(runCtx)
+	go scheduler.NewRunner(db, supervisor, logger, secretStore, metricsRegistry).Run(runCtx)
 
 	return &Agent{
 		cfg:    cfg,
@@ -134,6 +141,7 @@ func NewAgent(cfg Config, logger *slog.Logger) (*Agent, error) {
 				Sessions:                    auth.NewStore(),
 				ConnectorTester:             supervisor,
 				Secrets:                     secretStore,
+				Metrics:                     metricsRegistry,
 				AppsDirectoryListingEnabled: cfg.AppsDirectoryListingEnabled,
 			}),
 			// ReadHeaderTimeout bounds how long a client may take sending

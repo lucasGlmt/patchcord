@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 )
 
 // SupervisorConfig controls the Plugin Supervisor's health check and
@@ -67,8 +68,9 @@ func (c SupervisorConfig) withDefaults() SupervisorConfig {
 // must never take the agent down holds because the Supervisor is the only
 // thing watching plugin processes.
 type Supervisor struct {
-	cfg    SupervisorConfig
-	logger *slog.Logger
+	cfg     SupervisorConfig
+	logger  *slog.Logger
+	metrics *metrics.Registry
 
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc
@@ -85,14 +87,17 @@ type runningPlugin struct {
 }
 
 // NewSupervisor creates a Supervisor. Call Start to launch the catalog's
-// plugins and begin supervising them.
-func NewSupervisor(cfg SupervisorConfig, logger *slog.Logger) *Supervisor {
+// plugins and begin supervising them. m defaults to a private, unscraped
+// metrics.Registry when nil, so existing callers that build a Supervisor
+// without one keep working exactly as before metrics existed.
+func NewSupervisor(cfg SupervisorConfig, logger *slog.Logger, m *metrics.Registry) *Supervisor {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Supervisor{
 		cfg:     cfg.withDefaults(),
 		logger:  logger,
+		metrics: metrics.OrNoop(m),
 		running: make(map[string]*runningPlugin),
 	}
 }
@@ -200,10 +205,20 @@ func (s *Supervisor) TestConnector(ctx context.Context, connector *connectors.Re
 	s.mu.Unlock()
 
 	if rp == nil {
+		s.metrics.RecordConnectorTest("error")
 		return false, "", fmt.Errorf("connector type %q is not currently available (no running plugin declares it)", connector.Type)
 	}
 
-	return TestConnector(ctx, rp.proc.Client, connector)
+	ok, message, err = TestConnector(ctx, rp.proc.Client, connector)
+	switch {
+	case err != nil:
+		s.metrics.RecordConnectorTest("error")
+	case !ok:
+		s.metrics.RecordConnectorTest("failed")
+	default:
+		s.metrics.RecordConnectorTest("ok")
+	}
+	return ok, message, err
 }
 
 // launchAndHandshake launches entry's executable and validates it with a
@@ -226,6 +241,7 @@ func (s *Supervisor) launchAndHandshake(ctx context.Context, entry CatalogEntry)
 	}
 
 	s.logger.Info("plugin launched", slog.String("plugin_id", entry.PluginID))
+	s.metrics.PluginStarted(entry.PluginID)
 	return proc, true
 }
 
@@ -257,6 +273,7 @@ func (s *Supervisor) watch(ctx context.Context, entry CatalogEntry) {
 			s.logger.Error("plugin crashed",
 				slog.String("plugin_id", entry.PluginID),
 				slog.Any("error", proc.ExitErr()))
+			s.metrics.PluginStopped(entry.PluginID)
 			if !s.restart(ctx, entry, &restarts) {
 				return
 			}
@@ -274,10 +291,12 @@ func (s *Supervisor) watch(ctx context.Context, entry CatalogEntry) {
 				slog.String("plugin_id", entry.PluginID),
 				slog.Any("error", err),
 				slog.String("status", resp.GetStatus().String()))
+			s.metrics.PluginHealthCheckFailed(entry.PluginID)
 
 			closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			_ = proc.Close(closeCtx)
 			closeCancel()
+			s.metrics.PluginStopped(entry.PluginID)
 
 			if !s.restart(ctx, entry, &restarts) {
 				return
@@ -296,6 +315,7 @@ func (s *Supervisor) restart(ctx context.Context, entry CatalogEntry, restarts *
 			s.logger.Error("plugin quarantined after repeated failures",
 				slog.String("plugin_id", entry.PluginID),
 				slog.Int("restarts", *restarts))
+			s.metrics.PluginQuarantined(entry.PluginID)
 			s.mu.Lock()
 			delete(s.running, entry.PluginID)
 			s.mu.Unlock()
@@ -307,6 +327,7 @@ func (s *Supervisor) restart(ctx context.Context, entry CatalogEntry, restarts *
 			slog.String("plugin_id", entry.PluginID),
 			slog.Int("attempt", *restarts),
 			slog.Int("max_restarts", s.cfg.MaxRestarts))
+		s.metrics.PluginRestarted(entry.PluginID)
 
 		select {
 		case <-time.After(s.cfg.RestartDelay):

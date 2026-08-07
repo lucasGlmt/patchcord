@@ -487,6 +487,31 @@
                 }
             }
         },
+        "/system/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a JSON snapshot of the agent's in-process metrics registry (run/step transitions and durations, plugin supervision, scheduler activity, connector tests) — the same data GET /metrics exposes in Prometheus text format, reshaped for a dashboard or application. See ADR-0070.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "system"
+                ],
+                "summary": "Get a metrics snapshot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.systemMetricsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/webhooks/{id}": {
             "post": {
                 "description": "Starts a new run of the latest installed version of the named workflow, if it declares a \"webhook\" trigger — the request body's top-level JSON object becomes the run's inputs directly, not wrapped in {\"inputs\": ...}. Requires \"X-Patchcord-Webhook-Token: \u003cthe trigger's resolved secret_ref\u003e\" — never an admin token.",
@@ -725,6 +750,18 @@
                 }
             }
         },
+        "api.connectorMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "test_total": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            }
+        },
         "api.connectorSecretRef": {
             "type": "object",
             "properties": {
@@ -806,6 +843,26 @@
                 }
             }
         },
+        "api.pluginMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "health_check_failures_total": {
+                    "type": "integer"
+                },
+                "plugin_id": {
+                    "type": "string"
+                },
+                "quarantined_total": {
+                    "type": "integer"
+                },
+                "restarts_total": {
+                    "type": "integer"
+                },
+                "running": {
+                    "type": "boolean"
+                }
+            }
+        },
         "api.pluginSummary": {
             "type": "object",
             "properties": {
@@ -826,6 +883,24 @@
                 },
                 "version": {
                     "type": "string"
+                }
+            }
+        },
+        "api.runMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "steps": {
+                    "$ref": "#/definitions/api.stepMetricsResponse"
+                },
+                "transitions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
                 }
             }
         },
@@ -912,6 +987,56 @@
                 "inputs": {
                     "type": "object",
                     "additionalProperties": {}
+                }
+            }
+        },
+        "api.schedulerMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "integer"
+                },
+                "fires_total": {
+                    "type": "integer"
+                },
+                "skipped_total": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            }
+        },
+        "api.stepMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "transitions": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            }
+        },
+        "api.systemMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "connectors": {
+                    "$ref": "#/definitions/api.connectorMetricsResponse"
+                },
+                "plugins": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/api.pluginMetricsResponse"
+                    }
+                },
+                "runs": {
+                    "$ref": "#/definitions/api.runMetricsResponse"
+                },
+                "scheduler": {
+                    "$ref": "#/definitions/api.schedulerMetricsResponse"
                 }
             }
         },

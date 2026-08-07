@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/lucasglmt/patchcord/internal/connectors"
+	"github.com/lucasglmt/patchcord/internal/metrics"
 	"github.com/lucasglmt/patchcord/internal/secrets"
 	"github.com/lucasglmt/patchcord/internal/workflow"
 )
@@ -49,6 +50,12 @@ type ExecuteOptions struct {
 	// resolving "env" references exactly as before secrets.MultiStore
 	// existed.
 	Secrets secrets.Store
+	// Metrics records run/step transitions as they happen (run and step
+	// counts by status, duration histograms, the active-runs gauge).
+	// Defaults to a private, unscraped metrics.Registry when nil, so
+	// existing callers keep working exactly as before metrics existed —
+	// see ADR-0070.
+	Metrics *metrics.Registry
 }
 
 func (o ExecuteOptions) withDefaults() ExecuteOptions {
@@ -58,6 +65,7 @@ func (o ExecuteOptions) withDefaults() ExecuteOptions {
 	if o.Secrets == nil {
 		o.Secrets = secrets.EnvStore{}
 	}
+	o.Metrics = metrics.OrNoop(o.Metrics)
 	return o
 }
 
@@ -112,7 +120,11 @@ func stepFailureStatus(err error) workflow.StepStatus {
 // disconnects immediately) still gets a consistently created, Running run
 // row rather than an ambiguous half-created one — the step loop in Continue
 // is what turns a cancelled ctx into a properly recorded RunCancelled.
-func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string]any) (*workflow.Definition, *Run, map[string]any, error) {
+// m (nil-safe via metrics.OrNoop) records the run's transition into the
+// running state, including incrementing the active-runs gauge — callers
+// that also call Continue directly (rather than through Execute) must pass
+// the same m to both, or the gauge will drift.
+func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string]any, m *metrics.Registry) (*workflow.Definition, *Run, map[string]any, error) {
 	pctx, cancel := context.WithTimeout(context.Background(), persistTimeout)
 	defer cancel()
 
@@ -131,7 +143,7 @@ func Start(ctx context.Context, db *sql.DB, workflowID string, inputs map[string
 		return nil, nil, nil, err
 	}
 
-	if err := updateRunStatus(pctx, db, run, workflow.RunRunning, nil, nil); err != nil {
+	if err := updateRunStatus(pctx, db, run, workflow.RunRunning, nil, nil, m); err != nil {
 		return nil, nil, nil, err
 	}
 
@@ -210,7 +222,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		if step.ElseOf != "" && ranSteps[step.ElseOf] {
 			cancel()
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
 			// Propagate "taken" through the chain: this step didn't run,
@@ -229,10 +241,10 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 		if ifErr != nil {
 			cancel()
 			runErr = fmt.Errorf("step %q: if: %w", step.ID, ifErr)
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr, opts.Metrics); err != nil {
 				return err
 			}
 			nextPending = i + 1
@@ -241,7 +253,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		if !runStep {
 			cancel()
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
 			nextPending = i + 1
@@ -267,10 +279,10 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 			if foreachErr != nil {
 				cancel()
 				runErr = fmt.Errorf("step %q: %w", step.ID, foreachErr)
-				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil); err != nil {
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, nil, nil, nil, opts.Metrics); err != nil {
 					return err
 				}
-				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr); err != nil {
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), nil, nil, runErr, opts.Metrics); err != nil {
 					return err
 				}
 				nextPending = i + 1
@@ -282,7 +294,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 			// item, but the list being iterated is the one stable thing
 			// worth recording for replay/debugging.
 			foreachInput := map[string]any{"items": items}
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, foreachInput, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, foreachInput, nil, nil, opts.Metrics); err != nil {
 				cancel()
 				return err
 			}
@@ -312,14 +324,14 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 			if iterErr != nil {
 				runErr = fmt.Errorf("step %q: %w", step.ID, iterErr)
-				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), foreachInput, nil, runErr); err != nil {
+				if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), foreachInput, nil, runErr, opts.Metrics); err != nil {
 					return err
 				}
 				nextPending = i + 1
 				break
 			}
 
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, foreachInput, aggregated, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, foreachInput, aggregated, nil, opts.Metrics); err != nil {
 				return err
 			}
 
@@ -345,17 +357,17 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 			// connector's did not) — persist it either way rather than
 			// discarding data that was actually computed.
 			runErr = fmt.Errorf("step %q: %w", step.ID, resolveErr)
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, runErr); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, runErr, opts.Metrics); err != nil {
 				return err
 			}
 			nextPending = i + 1
 			break
 		}
 
-		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil); err != nil {
+		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepRunning, resolvedInput, nil, nil, opts.Metrics); err != nil {
 			cancel()
 			return err
 		}
@@ -365,14 +377,14 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 
 		if execErr != nil {
 			runErr = fmt.Errorf("step %q: %w", step.ID, execErr)
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, execErr); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, stepFailureStatus(runErr), resolvedInput, nil, execErr, opts.Metrics); err != nil {
 				return err
 			}
 			nextPending = i + 1
 			break
 		}
 
-		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, resolvedInput, output, nil); err != nil {
+		if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepRunning, workflow.StepSucceeded, resolvedInput, output, nil, opts.Metrics); err != nil {
 			return err
 		}
 
@@ -395,7 +407,7 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 		}
 
 		for _, step := range def.Steps[nextPending:] {
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, skippedStatus, nil, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, skippedStatus, nil, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
 		}
@@ -405,13 +417,13 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 		// after it is recorded skipped, same as the failure path above, but
 		// the run itself finishes Succeeded.
 		for _, step := range def.Steps[nextPending:] {
-			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil); err != nil {
+			if err := updateStepStatus(pctx, db, run.ID, step.ID, workflow.StepPending, workflow.StepSkipped, nil, nil, nil, opts.Metrics); err != nil {
 				return err
 			}
 		}
 	}
 
-	if err := updateRunStatus(pctx, db, run, finalStatus, runOutputs, runErr); err != nil {
+	if err := updateRunStatus(pctx, db, run, finalStatus, runOutputs, runErr, opts.Metrics); err != nil {
 		return err
 	}
 
@@ -424,7 +436,9 @@ func Continue(ctx context.Context, db *sql.DB, executor ActionExecutor, def *wor
 // what each half does; most callers (the CLI's `workflow run`, most tests)
 // want this blocking, all-in-one behavior.
 func Execute(ctx context.Context, db *sql.DB, executor ActionExecutor, workflowID string, inputs map[string]any, bindings map[string]string, opts ExecuteOptions) (*Run, error) {
-	def, run, preparedInputs, err := Start(ctx, db, workflowID, inputs)
+	opts = opts.withDefaults()
+
+	def, run, preparedInputs, err := Start(ctx, db, workflowID, inputs, opts.Metrics)
 	if err != nil {
 		return nil, err
 	}

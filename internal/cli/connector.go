@@ -257,7 +257,7 @@ func newConnectorTestCommand() *cobra.Command {
 			// so this command launches and supervises the installed plugins
 			// for the duration of this one test — same reasoning as
 			// `workflow run` (ADR-0017).
-			supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger)
+			supervisor := plugins.NewSupervisor(plugins.SupervisorConfig{}, logger, nil)
 			if err := supervisor.Start(cmd.Context(), db); err != nil {
 				return fmt.Errorf("start plugin supervisor: %w", err)
 			}

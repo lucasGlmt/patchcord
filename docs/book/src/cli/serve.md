@@ -44,6 +44,26 @@ patchcord serve --listen 0.0.0.0:7331
 
 Both resolve the same built-in per-user data directory by default ([ADR-0052](../../../adr/0052-defaut-data-dir-dossier-standard-du-systeme.md)) — no `--data-dir` needed to keep them in sync.
 
+## Metrics
+
+The agent exposes its in-process metrics (run/step transitions and durations, plugin supervision, scheduler activity, connector test results) two ways, both backed by the same registry — see [ADR-0070](../../../adr/0070-metriques-prometheus-du-core.md):
+
+- `GET /metrics` — Prometheus text-exposition format, for an external Prometheus/Grafana server to scrape. Deliberately outside the `/v1` prefix every other route uses, since Prometheus scrapers universally expect `/metrics` at the root.
+- `GET /v1/system/metrics` — a JSON snapshot of the same registry, on the regular `/v1/*` contract. The TypeScript SDK wraps it as `client.system.metrics()` — see [SDK TypeScript](../sdk-ts/index.md).
+
+Both routes require the same admin bearer token as every other state-exposing route once one has been created (see [Admin authentication](#admin-authentication) above) — a bare `curl http://127.0.0.1:7331/metrics` returns `401` once an admin token exists. Point an external Prometheus at it with a scrape config like:
+
+```yaml
+scrape_configs:
+  - job_name: patchcord
+    static_configs:
+      - targets: ["127.0.0.1:7331"]
+    authorization:
+      credentials: "<admin token>"
+```
+
+Metrics are in-memory only and reset on every restart — Patchcord itself never retains history; an external Prometheus server is the system of record for that.
+
 ## Docker
 
 ```bash
